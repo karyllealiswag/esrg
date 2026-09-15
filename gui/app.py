@@ -1,14 +1,11 @@
 """
 app.py — Desktop GUI for the ESRG pipeline.
 
-Purpose : Load a slice, run the pipeline, inspect any stage, and read the scores —
-          giving per-stage error tracking and an annotated output.
-Function : A Tkinter app with a controls sidebar (method, seeding, ablation switches,
-          parameters), a centre viewer with one button per pipeline stage, a
-          diagnostics panel, and a score bar; runs the pipeline off the UI thread and
-          can save every stage image plus the mask, overlay, and config.
-Notes   : Manual seeding lets the user click the tumor for the hard cases (pituitary,
-          glioma) where automatic seeding is unreliable. Run: python -m gui.app
+Purpose : Load an MRI slice, run the pipeline, inspect any stage, and read
+          evaluation scores with a modern clinical workstation interface.
+Function : Tkinter app with a clinical control sidebar, a high-contrast MRI
+          viewer with stage navigation tabs, a diagnostics inspector, and a
+          results metric bar. Runs off the UI thread and exports all stage masks.
 """
 import os
 import sys
@@ -25,18 +22,82 @@ from esrg import Config, run
 from esrg import visualize as viz
 from esrg.io_utils import find_mask_for
 
-BG, PANEL, FG, DIM, ACCENT = "#1a1a2e", "#0f172a", "#e2e8f0", "#94a3b8", "#3b82f6"
-OK, WARN, FAIL = "#22c55e", "#f59e0b", "#ef4444"
-MONO = ("Courier", 9)
+# ── Clinical Light Theme Tokens ──────────────────────────────────────────────
+APP_BG      = "#f1f5f9"  
+PANEL_BG    = "#ffffff"  
+PANEL_ALT   = "#f8fafc"  
+BORDER_CLR  = "#e2e8f0"  
+BORDER_MED  = "#cbd5e1"  
+
+TEXT_MAIN   = "#0f172a"  
+TEXT_MUTED  = "#475569"  
+TEXT_FAINT  = "#94a3b8"  
+
+PRIMARY     = "#0284c7"  
+PRIMARY_HOV = "#0369a1"  
+VIEWPORT_BG = "#090d16"  
+
+# Status Badges
+OK_CLR      = "#16a34a"  
+WARN_CLR    = "#d97706"  
+FAIL_CLR    = "#dc2626"  
+
+# Typography
+FONT_TITLE  = ("Segoe UI", 11, "bold")
+FONT_SUB    = ("Segoe UI", 9)
+FONT_BOLD   = ("Segoe UI", 8, "bold")
+FONT_UI     = ("Segoe UI", 9)
+FONT_SM     = ("Segoe UI", 8)
+FONT_MONO   = ("Menlo", 8)
+
+
+# ── Custom Cross-Platform Flat Button ────────────────────────────────────────
+class FlatButton(tk.Label):
+    def __init__(self, master, text, command, bg, fg, hover_bg, **kwargs):
+        self.border_clr = kwargs.pop('border_color', BORDER_CLR)
+        kwargs.setdefault('highlightthickness', 1)
+        kwargs.setdefault('highlightbackground', self.border_clr)
+        
+        super().__init__(master, text=text, bg=bg, fg=fg, cursor="hand2", **kwargs)
+        self.default_bg = bg
+        self.hover_bg = hover_bg
+        self.command = command
+        
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<Button-1>", self._on_click)
+
+    def _on_enter(self, e):
+        if str(self.cget("state")) != "disabled":
+            self.config(bg=self.hover_bg)
+
+    def _on_leave(self, e):
+        if str(self.cget("state")) != "disabled":
+            self.config(bg=self.default_bg)
+
+    def _on_click(self, e):
+        if str(self.cget("state")) != "disabled":
+            self.command()
+
+    def set_style(self, bg, fg, border=None):
+        self.default_bg = bg
+        self.config(bg=bg, fg=fg)
+        if border:
+            self.config(highlightbackground=border)
 
 
 class ESRGApp:
     def __init__(self, root):
         self.root = root
-        root.title("Enhanced Seeded Region Growing — Brain Tumor Segmentation")
-        root.configure(bg=BG)
-        root.geometry("1320x820")
-        root.minsize(1000, 640)
+        root.title("Enhanced SRG Localization & Delineation")
+        root.configure(bg=APP_BG)
+        root.geometry("1380x860")
+        root.minsize(1080, 680)
+
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("TScrollbar", gripcount=0, background=PANEL_ALT,
+                        troughcolor=PANEL_BG, bordercolor=BORDER_CLR, arrowcolor=TEXT_MUTED)
 
         self.cfg = Config()
         self.image_path = None
@@ -58,152 +119,238 @@ class ESRGApp:
 
         self._build()
 
-    # ── Layout ───────────────────────────────────────────────────────────────
+    # ── Master Layout ────────────────────────────────────────────────────────
     def _build(self):
-        bar = tk.Frame(self.root, bg="#0f0f1a", pady=6, padx=12)
-        bar.pack(side=tk.TOP, fill=tk.X)
-        tk.Label(bar, text="ESRG  |  Brain Tumor Segmentation", bg="#0f0f1a",
-                 fg=DIM, font=MONO).pack(side=tk.LEFT)
-        tk.Label(bar, text="Enhancement of Adams & Bischof (1994)", bg="#0f0f1a",
-                 fg="#334155", font=("Courier", 8)).pack(side=tk.RIGHT)
+        header = tk.Frame(self.root, bg=PANEL_BG, padx=18, pady=10,
+                          highlightthickness=1, highlightbackground=BORDER_CLR)
+        header.pack(side=tk.TOP, fill=tk.X)
 
-        self.score_lbl = tk.Label(self.root, text="Load an MRI slice to begin.",
-                                  bg=PANEL, fg=FG, font=MONO, anchor="w", pady=8, padx=12)
-        self.score_lbl.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=(0, 8))
+        title_box = tk.Frame(header, bg=PANEL_BG)
+        title_box.pack(side=tk.LEFT)
+        tk.Label(title_box, text="ENHANCED SRG LOCALIZATION & DELINEATION", bg=PANEL_BG,
+                 fg=TEXT_MAIN, font=FONT_TITLE).pack(side=tk.LEFT)
+        tk.Label(title_box, text=" |  MRI Segmentation & Validation Pipeline",
+                 bg=PANEL_BG, fg=TEXT_MUTED, font=FONT_SUB).pack(side=tk.LEFT)
 
-        body = tk.Frame(self.root, bg=BG)
-        body.pack(fill=tk.BOTH, expand=True, padx=10, pady=8)
+        tk.Label(header, text="Enhanced Adams & Bischof (1994) Seeded Region Growing",
+                 bg=PANEL_BG, fg=TEXT_FAINT, font=FONT_SM).pack(side=tk.RIGHT)
 
-        side = tk.Frame(body, bg=PANEL, width=250, padx=12, pady=12)
-        side.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
-        side.pack_propagate(False)
-        self._build_sidebar(side)
+        score_strip = tk.Frame(self.root, bg=PANEL_BG, padx=16, pady=8,
+                               highlightthickness=1, highlightbackground=BORDER_CLR)
+        score_strip.pack(side=tk.BOTTOM, fill=tk.X, padx=12, pady=(0, 10))
 
-        centre = tk.Frame(body, bg=BG)
-        centre.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self._build_viewer(centre)
+        tk.Label(score_strip, text="EVALUATION METRICS:", bg=PANEL_BG,
+                 fg=PRIMARY, font=FONT_BOLD).pack(side=tk.LEFT, padx=(0, 8))
+        self.score_lbl = tk.Label(score_strip, text="Load an MRI slice and run the pipeline to view metrics.",
+                                  bg=PANEL_BG, fg=TEXT_MUTED, font=FONT_UI, anchor="w")
+        self.score_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        right = tk.Frame(body, bg=PANEL, width=310, padx=10, pady=10)
-        right.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 0))
-        right.pack_propagate(False)
-        self._build_diagnostics(right)
+        body = tk.Frame(self.root, bg=APP_BG)
+        body.pack(fill=tk.BOTH, expand=True, padx=12, pady=10)
 
-    def _section(self, parent, text):
-        tk.Label(parent, text=text, bg=parent.cget("bg"), fg=ACCENT,
-                 font=("Courier", 7, "bold"), anchor="w").pack(fill=tk.X, pady=(10, 4))
+        sidebar_frame = tk.Frame(body, bg=PANEL_BG, width=280,
+                                 highlightthickness=1, highlightbackground=BORDER_CLR)
+        sidebar_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        sidebar_frame.pack_propagate(False)
+        self._build_sidebar(sidebar_frame)
+
+        center_frame = tk.Frame(body, bg=APP_BG)
+        center_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._build_viewer(center_frame)
+
+        diagnostics_frame = tk.Frame(body, bg=PANEL_BG, width=320,
+                                     highlightthickness=1, highlightbackground=BORDER_CLR)
+        diagnostics_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 0))
+        diagnostics_frame.pack_propagate(False)
+        self._build_diagnostics(diagnostics_frame)
+
+    # ── Sidebar & Parameter Controls ─────────────────────────────────────────
+    def _section_header(self, parent, text):
+        hdr = tk.Frame(parent, bg=PANEL_BG)
+        hdr.pack(fill=tk.X, pady=(12, 4))
+        tk.Label(hdr, text=text.upper(), bg=PANEL_BG, fg=PRIMARY,
+                 font=FONT_BOLD, anchor="w").pack(side=tk.LEFT)
+        tk.Frame(hdr, bg=BORDER_CLR, height=1).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 0))
 
     def _build_sidebar(self, p):
-        self._section(p, "INPUT")
-        tk.Button(p, text="Load MRI slice", command=self._load, bg="#1e293b", fg=FG,
-                  relief=tk.FLAT, font=MONO, cursor="hand2", pady=6).pack(fill=tk.X)
-        self.file_lbl = tk.Label(p, text="No image loaded.", bg=PANEL, fg=DIM,
-                                 font=("Courier", 7), anchor="w", wraplength=225, justify=tk.LEFT)
-        self.file_lbl.pack(fill=tk.X, pady=(4, 0))
+        # 1. Pinned Action Buttons (Always visible at the bottom)
+        action_frame = tk.Frame(p, bg=PANEL_BG, padx=12)
+        action_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
 
-        self._section(p, "METHOD")
-        for val, lab in (("esrg", "ESRG (proposed)"), ("srg", "SRG (Adams & Bischof)")):
-            tk.Radiobutton(p, text=lab, variable=self.method, value=val, bg=PANEL, fg=FG,
-                           selectcolor="#1e293b", activebackground=PANEL, font=("Courier", 8),
-                           anchor="w").pack(fill=tk.X)
+        tk.Frame(action_frame, bg=BORDER_CLR, height=1).pack(fill=tk.X, pady=(0, 10))
 
-        self._section(p, "SEEDING")
-        for val, lab in (("auto", "Automatic (Objective 1)"), ("manual", "Manual clicks")):
-            tk.Radiobutton(p, text=lab, variable=self.seed_mode, value=val, bg=PANEL, fg=FG,
-                           selectcolor="#1e293b", activebackground=PANEL, font=("Courier", 8),
-                           anchor="w").pack(fill=tk.X)
-        tk.Button(p, text="Clear manual seeds", command=self._clear_seeds, bg="#1e293b",
-                  fg=DIM, relief=tk.FLAT, font=("Courier", 8), pady=3).pack(fill=tk.X, pady=(3, 0))
+        self.run_btn = FlatButton(action_frame, text="RUN PIPELINE", command=self._run,
+                                  bg=PRIMARY, fg="#ffffff", hover_bg=PRIMARY_HOV,
+                                  border_color=PRIMARY, font=("Segoe UI", 10, "bold"), pady=8)
+        self.run_btn.pack(fill=tk.X)
 
-        self._section(p, "ABLATION (E4)")
-        for var, lab in ((self.use_local, "Local log measure (Obj 2)"),
-                         (self.use_stop, "Adaptive stopping (Obj 3)"),
-                         (self.use_n4, "N4 bias correction")):
-            tk.Checkbutton(p, text=lab, variable=var, bg=PANEL, fg=FG, selectcolor="#1e293b",
-                           activebackground=PANEL, font=("Courier", 8), anchor="w").pack(fill=tk.X)
+        FlatButton(action_frame, text="Export All Stages…", command=self._save,
+                   bg=PANEL_ALT, fg=TEXT_MAIN, hover_bg=BORDER_CLR,
+                   font=FONT_SM, pady=6).pack(fill=tk.X, pady=(6, 2))
 
-        self._section(p, "PARAMETERS")
-        self._slider(p, "k_L (stopping)", self.k_local, 0.5, 4.0, 0.1)
-        self._slider(p, "r (window)", self.radius, 1, 8, 1)
-        self._slider(p, "K (Otsu classes)", self.classes, 2, 5, 1)
+        self.status_lbl = tk.Label(action_frame, text="Ready", bg=PANEL_BG, fg=TEXT_MUTED,
+                                   font=FONT_SM, anchor="w", wraplength=235, justify=tk.LEFT)
+        self.status_lbl.pack(fill=tk.X, pady=(4, 8))
 
-        self._section(p, "DISPLAY")
-        self._slider(p, "Overlay opacity", self.opacity, 0.0, 1.0, 0.05, self._redraw)
-        tk.Checkbutton(p, text="Show TP/FP/FN colours", variable=self.error_mode, bg=PANEL,
-                       fg=FG, selectcolor="#1e293b", activebackground=PANEL,
-                       font=("Courier", 8), anchor="w", command=self._redraw).pack(fill=tk.X)
+        # 2. Scrollable Parameters (Takes remaining top space)
+        canvas = tk.Canvas(p, bg=PANEL_BG, highlightthickness=0)
+        sb = ttk.Scrollbar(p, orient="vertical", command=canvas.yview)
+        
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        scroll_content = tk.Frame(canvas, bg=PANEL_BG, padx=12, pady=8)
 
-        self.run_btn = tk.Button(p, text="RUN", command=self._run, bg="#0c2a4a", fg=ACCENT,
-                                 relief=tk.FLAT, font=("Courier", 10, "bold"),
-                                 cursor="hand2", pady=10)
-        self.run_btn.pack(fill=tk.X, pady=(14, 0))
-        tk.Button(p, text="Save outputs", command=self._save, bg="#1e293b", fg=DIM,
-                  relief=tk.FLAT, font=("Courier", 8), pady=4).pack(fill=tk.X, pady=(4, 0))
-        self.status_lbl = tk.Label(p, text="", bg=PANEL, fg=ACCENT, font=("Courier", 8),
-                                   anchor="w", wraplength=225, justify=tk.LEFT)
-        self.status_lbl.pack(fill=tk.X, pady=(6, 0))
+        scroll_content.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        cw = canvas.create_window((0, 0), window=scroll_content, anchor="nw")
+        canvas.configure(yscrollcommand=sb.set)
+        p.bind("<Configure>", lambda e: canvas.itemconfig(cw, width=e.width - 16))
+
+        # Input Source
+        self._section_header(scroll_content, "Input Data")
+        FlatButton(scroll_content, text="Open MRI Slice…", command=self._load,
+                   bg=PANEL_ALT, fg=TEXT_MAIN, hover_bg=BORDER_CLR, font=FONT_UI, pady=6).pack(fill=tk.X, pady=(4, 2))
+
+        self.file_lbl = tk.Label(scroll_content, text="No MRI scan selected", bg=PANEL_BG,
+                                 fg=TEXT_FAINT, font=FONT_SM, anchor="w", wraplength=235, justify=tk.LEFT)
+        self.file_lbl.pack(fill=tk.X, pady=(2, 6))
+
+        # Pipeline Method
+        self._section_header(scroll_content, "Pipeline Method")
+        for val, lab in (("esrg", "ESRG (Enhanced Model)"), ("srg", "SRG Baseline (1994)")):
+            tk.Radiobutton(scroll_content, text=lab, variable=self.method, value=val,
+                           bg=PANEL_BG, fg=TEXT_MAIN, selectcolor=PANEL_ALT,
+                           activebackground=PANEL_BG, font=FONT_UI, anchor="w",
+                           highlightthickness=0).pack(fill=tk.X, pady=1)
+
+        # Seeding Protocol
+        self._section_header(scroll_content, "Seeding Strategy")
+        for val, lab in (("auto", "Automated Candidate (Obj 1)"), ("manual", "Manual Landmark Seed")):
+            tk.Radiobutton(scroll_content, text=lab, variable=self.seed_mode, value=val,
+                           bg=PANEL_BG, fg=TEXT_MAIN, selectcolor=PANEL_ALT,
+                           activebackground=PANEL_BG, font=FONT_UI, anchor="w",
+                           highlightthickness=0).pack(fill=tk.X, pady=1)
+
+        FlatButton(scroll_content, text="Clear Manual Seeds", command=self._clear_seeds,
+                   bg=PANEL_BG, fg=TEXT_MUTED, hover_bg=PANEL_ALT, font=FONT_SM, pady=4).pack(fill=tk.X, pady=(6, 4))
+
+        # Ablation Switches
+        self._section_header(scroll_content, "Ablation Controls")
+        for var, lab in ((self.use_local, "Local Log Measure (Obj 2)"),
+                         (self.use_stop, "Adaptive Termination (Obj 3)"),
+                         (self.use_n4, "N4 Bias Correction")):
+            tk.Checkbutton(scroll_content, text=lab, variable=var, bg=PANEL_BG,
+                           fg=TEXT_MAIN, selectcolor=PANEL_ALT, activebackground=PANEL_BG,
+                           font=FONT_UI, anchor="w", highlightthickness=0).pack(fill=tk.X, pady=1)
+
+        # Hyperparameters
+        self._section_header(scroll_content, "Hyperparameters")
+        self._slider(scroll_content, "k_L — Local Stopping Factor", self.k_local, 0.5, 4.0, 0.1)
+        self._slider(scroll_content, "r — Neighborhood Radius", self.radius, 1, 8, 1)
+        self._slider(scroll_content, "K — Otsu Threshold Classes", self.classes, 2, 5, 1)
+
+        # Visualization Options
+        self._section_header(scroll_content, "Display Settings")
+        self._slider(scroll_content, "Overlay Opacity", self.opacity, 0.0, 1.0, 0.05, self._redraw)
+        tk.Checkbutton(scroll_content, text="Show Error Heatmap (TP/FP/FN)",
+                       variable=self.error_mode, bg=PANEL_BG, fg=TEXT_MAIN,
+                       selectcolor=PANEL_ALT, activebackground=PANEL_BG,
+                       font=FONT_UI, anchor="w", highlightthickness=0,
+                       command=self._redraw).pack(fill=tk.X, pady=(2, 6))
 
     def _slider(self, p, label, var, lo, hi, res, cmd=None):
-        tk.Label(p, text=label, bg=PANEL, fg=DIM, font=("Courier", 7), anchor="w").pack(fill=tk.X)
-        tk.Scale(p, variable=var, from_=lo, to=hi, resolution=res, orient=tk.HORIZONTAL,
-                 bg=PANEL, fg=DIM, troughcolor="#1e293b", highlightthickness=0,
-                 font=("Courier", 7), command=(lambda _: cmd()) if cmd else None).pack(fill=tk.X)
+        box = tk.Frame(p, bg=PANEL_BG)
+        box.pack(fill=tk.X, pady=(2, 4))
+        tk.Label(box, text=label, bg=PANEL_BG, fg=TEXT_MUTED,
+                 font=FONT_SM, anchor="w").pack(fill=tk.X)
+        tk.Scale(box, variable=var, from_=lo, to=hi, resolution=res, orient=tk.HORIZONTAL,
+                 bg=PANEL_BG, fg=TEXT_MAIN, troughcolor=PANEL_ALT, activebackground=PRIMARY,
+                 highlightthickness=0, bd=1, relief=tk.FLAT, font=FONT_SM,
+                 command=(lambda _: cmd()) if cmd else None).pack(fill=tk.X)
 
+    # ── Viewer & Stage Tab Strip ─────────────────────────────────────────────
     def _build_viewer(self, p):
-        self.stage_bar = tk.Frame(p, bg=BG)
-        self.stage_bar.pack(side=tk.TOP, fill=tk.X, pady=(0, 6))
+        stage_strip_card = tk.Frame(p, bg=PANEL_BG, padx=8, pady=6,
+                                    highlightthickness=1, highlightbackground=BORDER_CLR)
+        stage_strip_card.pack(side=tk.TOP, fill=tk.X, pady=(0, 8))
+
+        tk.Label(stage_strip_card, text="STAGE:", bg=PANEL_BG, fg=TEXT_FAINT,
+                 font=FONT_BOLD).pack(side=tk.LEFT, padx=(4, 8))
+
+        self.stage_bar = tk.Frame(stage_strip_card, bg=PANEL_BG)
+        self.stage_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.stage_buttons = {}
 
-        wrap = tk.Frame(p, bg=PANEL, bd=1, relief=tk.SOLID)
-        wrap.pack(fill=tk.BOTH, expand=True)
-        self.canvas = tk.Canvas(wrap, bg="#0c1526", highlightthickness=0)
+        self._init_empty_stage_tabs()
+
+        viewer_card = tk.Frame(p, bg=VIEWPORT_BG, highlightthickness=1, highlightbackground=BORDER_MED)
+        viewer_card.pack(fill=tk.BOTH, expand=True)
+
+        self.canvas = tk.Canvas(viewer_card, bg=VIEWPORT_BG, highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
         self.canvas.bind("<Button-1>", self._on_click)
         self.canvas.bind("<Configure>", lambda e: self._redraw())
 
+    def _init_empty_stage_tabs(self):
+        self._clear_stages()
+        lbl = tk.Label(self.stage_bar, text="No stages processed yet",
+                       bg=PANEL_BG, fg=TEXT_FAINT, font=FONT_SM)
+        lbl.pack(side=tk.LEFT, padx=4)
+
+    # ── Diagnostics & Telemetry Panel ────────────────────────────────────────
     def _build_diagnostics(self, p):
-        tk.Label(p, text="STAGE DIAGNOSTICS", bg=PANEL, fg=ACCENT,
-                 font=("Courier", 7, "bold"), anchor="w").pack(fill=tk.X)
-        frame = tk.Frame(p, bg=PANEL)
-        frame.pack(fill=tk.BOTH, expand=True, pady=(6, 0))
-        sb = tk.Scrollbar(frame)
+        head = tk.Frame(p, bg=PANEL_BG, padx=10, pady=8)
+        head.pack(fill=tk.X)
+        tk.Label(head, text="STAGE TELEMETRY", bg=PANEL_BG, fg=PRIMARY,
+                 font=FONT_BOLD).pack(side=tk.LEFT)
+
+        container = tk.Frame(p, bg=PANEL_BG, padx=8)
+        container.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+
+        sb = ttk.Scrollbar(container)
         sb.pack(side=tk.RIGHT, fill=tk.Y)
-        self.diag = tk.Text(frame, bg="#0c1526", fg=FG, font=("Courier", 8), wrap=tk.WORD,
-                            relief=tk.FLAT, yscrollcommand=sb.set, padx=8, pady=8)
+
+        self.diag = tk.Text(container, bg=PANEL_ALT, fg=TEXT_MAIN, font=FONT_MONO,
+                            wrap=tk.WORD, relief=tk.SOLID, bd=1, highlightthickness=0,
+                            yscrollcommand=sb.set, padx=10, pady=10)
         self.diag.pack(fill=tk.BOTH, expand=True)
         sb.config(command=self.diag.yview)
-        self.diag.insert("1.0", "Run the pipeline to see per-stage diagnostics.\n")
+
+        self.diag.insert("1.0", "Execute the segmentation pipeline to inspect per-stage metrics and parameters.\n")
         self.diag.config(state=tk.DISABLED)
 
-    # ── Actions ──────────────────────────────────────────────────────────────
+    # ── Controller & Backend Invocation ──────────────────────────────────────
     def _load(self):
         path = filedialog.askopenfilename(
-            title="Select MRI slice",
-            filetypes=[("Images", "*.jpg *.jpeg *.png *.bmp *.tif *.tiff"), ("All files", "*.*")])
+            title="Select MRI Slice",
+            filetypes=[("Medical Images", "*.jpg *.jpeg *.png *.bmp *.tif *.tiff"), ("All Files", "*.*")])
         if not path:
             return
         self.image_path = path
         self.result = None
         self.manual_points = []
         gt = find_mask_for(path)
-        self.file_lbl.config(text=os.path.basename(path) +
-                             ("\nGround truth found." if gt else "\nNo ground truth mask."))
-        self._clear_stages()
-        self.score_lbl.config(text="Image loaded. Press RUN.")
+        gt_status = "Ground truth detected" if gt else "No ground truth found"
+        self.file_lbl.config(text=f"{os.path.basename(path)}\n• {gt_status}", fg=TEXT_MUTED)
+        self._init_empty_stage_tabs()
+        self.score_lbl.config(text="MRI slice loaded. Press 'RUN PIPELINE' to execute.", fg=TEXT_MAIN)
         self._redraw()
 
     def _clear_seeds(self):
         self.manual_points = []
-        self.status_lbl.config(text="Manual seeds cleared.")
+        self.status_lbl.config(text="Manual seed coordinates cleared.", fg=TEXT_MUTED)
         self._redraw()
 
     def _on_click(self, event):
-        """In manual mode, a click plants a seed at that pixel."""
         if self.seed_mode.get() != "manual" or not self.image_path:
             return
         rc = self._canvas_to_image(event.x, event.y)
         if rc:
             self.manual_points.append(rc)
-            self.status_lbl.config(text=f"{len(self.manual_points)} manual seed(s).")
+            self.status_lbl.config(text=f"{len(self.manual_points)} manual seed coordinate(s) placed.", fg=PRIMARY)
             self._redraw()
 
     def _current_config(self):
@@ -216,13 +363,16 @@ class ESRGApp:
 
     def _run(self):
         if not self.image_path:
-            messagebox.showwarning("No image", "Load an MRI slice first.")
+            messagebox.showwarning("Input Required", "Please load an MRI slice before running.")
             return
         if self.seed_mode.get() == "manual" and not self.manual_points:
-            messagebox.showwarning("No seeds", "Click on the tumor to plant a seed.")
+            messagebox.showwarning("Seed Required", "Click on the tumor region to place at least one seed.")
             return
+
         cfg = self._current_config()
-        self.run_btn.config(state=tk.DISABLED, text="Running…")
+        self.run_btn.config(state="disabled", text="Processing…", cursor="arrow")
+        self.run_btn.set_style(bg=BORDER_MED, fg=TEXT_MAIN, border=BORDER_MED)
+        self.status_lbl.config(text="Segmenting slice…", fg=PRIMARY)
 
         def worker():
             try:
@@ -235,20 +385,27 @@ class ESRGApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _done(self, res, err):
-        self.run_btn.config(state=tk.NORMAL, text="RUN")
+        self.run_btn.config(state="normal", text="RUN PIPELINE", cursor="hand2")
+        self.run_btn.set_style(bg=PRIMARY, fg="#ffffff", border=PRIMARY)
+        
         if err:
-            self.status_lbl.config(text="Failed.")
-            messagebox.showerror("Pipeline error", str(err))
+            self.status_lbl.config(text="Pipeline execution failed.", fg=FAIL_CLR)
+            messagebox.showerror("Execution Error", str(err))
             return
+
         self.result = res
-        self.status_lbl.config(text=res.status)
+        self.status_lbl.config(text=f"Status: {res.status}", fg=OK_CLR if res.status == "OK" else WARN_CLR)
         self._build_stage_buttons()
         self.current = "final"
         self._select("final")
-        self.score_lbl.config(
-            text=viz.score_line(res.scores) if res.status != "NO TUMOR CANDIDATE"
-            else "NO TUMOR CANDIDATE — no seed survived interior filtering.",
-            fg=FAIL if res.status != "OK" else FG)
+
+        if res.status != "NO TUMOR CANDIDATE":
+            self.score_lbl.config(text=viz.score_line(res.scores), fg=TEXT_MAIN)
+        else:
+            self.score_lbl.config(
+                text="NO TUMOR CANDIDATE DETECTED — Seeds were filtered during interior checks.",
+                fg=FAIL_CLR
+            )
 
     def _clear_stages(self):
         for w in self.stage_bar.winfo_children():
@@ -256,20 +413,37 @@ class ESRGApp:
         self.stage_buttons = {}
 
     def _build_stage_buttons(self):
-        """One button per stage; colour encodes that stage's status."""
         self._clear_stages()
+        status_colors = {"OK": OK_CLR, "WARN": WARN_CLR, "FAIL": FAIL_CLR}
+
         for st in self.result.stages:
-            colour = {"OK": DIM, "WARN": WARN, "FAIL": FAIL}[st.status]
-            b = tk.Button(self.stage_bar, text=st.name, bg="#1e293b", fg=colour,
-                          relief=tk.FLAT, font=("Courier", 8), cursor="hand2", padx=8, pady=5,
-                          command=lambda k=st.key: self._select(k))
-            b.pack(side=tk.LEFT, padx=(0, 4))
-            self.stage_buttons[st.key] = b
+            badge_color = status_colors.get(st.status, TEXT_MUTED)
+
+            btn = FlatButton(
+                self.stage_bar,
+                text=f"{st.name} ●",
+                command=lambda k=st.key: self._select(k),
+                bg=PANEL_ALT,
+                fg=badge_color,
+                hover_bg=BORDER_CLR,
+                font=FONT_BOLD,
+                padx=10,
+                pady=4
+            )
+            btn.pack(side=tk.LEFT, padx=(0, 4))
+            self.stage_buttons[st.key] = btn
 
     def _select(self, key):
         self.current = key
         for k, b in self.stage_buttons.items():
-            b.config(bg="#0c2a4a" if k == key else "#1e293b")
+            if k == key:
+                b.set_style(bg=PRIMARY, fg="#ffffff", border=PRIMARY)
+            else:
+                st = self.result.stage(k)
+                status_colors = {"OK": OK_CLR, "WARN": WARN_CLR, "FAIL": FAIL_CLR}
+                color = status_colors.get(st.status, TEXT_MUTED) if st else TEXT_MUTED
+                b.set_style(bg=PANEL_ALT, fg=color, border=BORDER_CLR)
+
         self._show_diagnostics(key)
         self._redraw()
 
@@ -277,27 +451,34 @@ class ESRGApp:
         st = self.result.stage(key)
         self.diag.config(state=tk.NORMAL)
         self.diag.delete("1.0", tk.END)
+
         if st:
-            self.diag.insert(tk.END, f"{st.name}\nstatus: {st.status}   {st.seconds * 1000:.0f} ms\n\n")
+            header_str = f"STAGE: {st.name.upper()}\nStatus   : {st.status}\nDuration : {st.seconds * 1000:.1f} ms\n"
+            self.diag.insert(tk.END, header_str)
+            self.diag.insert(tk.END, "-" * 34 + "\n")
+
             for k, v in st.info.items():
                 if isinstance(v, list) and v and isinstance(v[0], dict):
-                    self.diag.insert(tk.END, f"{k}:\n")
+                    self.diag.insert(tk.END, f"\n[{k}]\n")
                     for item in v:
-                        self.diag.insert(tk.END, "  " + ", ".join(f"{a}={b}" for a, b in item.items()) + "\n")
+                        self.diag.insert(tk.END, "  • " + ", ".join(f"{a}: {b}" for a, b in item.items()) + "\n")
                 else:
-                    self.diag.insert(tk.END, f"{k}: {v}\n")
+                    self.diag.insert(tk.END, f"{k:<18}: {v}\n")
+
             if key == "final" and self.result.scores:
-                self.diag.insert(tk.END, "\nscores:\n")
+                self.diag.insert(tk.END, "\n" + "=" * 34 + "\nSEGMENTATION ACCURACY:\n")
                 for k, v in self.result.scores.items():
-                    self.diag.insert(tk.END, f"  {k}: {v}\n")
+                    self.diag.insert(tk.END, f"  {k:<16}: {v}\n")
+
         self.diag.config(state=tk.DISABLED)
 
-    # ── Drawing ──────────────────────────────────────────────────────────────
+    # ── Rendering & Visual Geometry ──────────────────────────────────────────
     def _geometry(self):
         if not self.result:
             return None
         h, w = self.result.stage("input").image.shape
-        cw, ch = max(self.canvas.winfo_width(), 50), max(self.canvas.winfo_height(), 50)
+        cw = max(self.canvas.winfo_width(), 50)
+        ch = max(self.canvas.winfo_height(), 50)
         s = min(cw / w, ch / h)
         return w, h, s, (cw - w * s) / 2, (ch - h * s) / 2
 
@@ -311,11 +492,19 @@ class ESRGApp:
 
     def _redraw(self):
         self.canvas.delete("all")
+        cw = max(self.canvas.winfo_width(), 50)
+        ch = max(self.canvas.winfo_height(), 50)
+
         if not self.result:
-            cw, ch = max(self.canvas.winfo_width(), 50), max(self.canvas.winfo_height(), 50)
-            self.canvas.create_text(cw // 2, ch // 2, text="Load an MRI slice and press RUN",
-                                    fill="#1e3a5a", font=MONO)
+            self.canvas.create_text(
+                cw // 2, ch // 2,
+                text="Load an MRI slice to initialize viewport\n(Manual landmark placement is active in Manual mode)",
+                fill=TEXT_FAINT,
+                font=FONT_SUB,
+                justify=tk.CENTER
+            )
             return
+
         st = self.result.stage(self.current) or self.result.stages[-1]
         base = self.result.stage("input").image
 
@@ -331,30 +520,39 @@ class ESRGApp:
 
         w, h, s, ox, oy = self._geometry()
         img = Image.fromarray(rgb.astype(np.uint8)).resize(
-            (max(1, int(w * s)), max(1, int(h * s))), Image.NEAREST)
+            (max(1, int(w * s)), max(1, int(h * s))), Image.NEAREST
+        )
         self._photo = ImageTk.PhotoImage(img)
         self.canvas.create_image(ox, oy, anchor=tk.NW, image=self._photo)
 
     def _save(self):
-        """Write the final mask, the annotated overlay and every stage view."""
         if not self.result:
-            messagebox.showwarning("Nothing to save", "Run the pipeline first.")
+            messagebox.showwarning("Export Failed", "Run the segmentation pipeline before exporting.")
             return
-        folder = filedialog.askdirectory(title="Choose an output folder")
+
+        folder = filedialog.askdirectory(title="Choose Output Directory")
         if not folder:
             return
+
         from esrg.io_utils import save_png
         stem = os.path.splitext(os.path.basename(self.image_path))[0]
         base = self.result.stage("input").image
+
         save_png(self.result.mask, os.path.join(folder, f"{stem}_mask.png"))
-        save_png(viz.overlay_result(base, self.result.mask, self.result.gt,
-                                    self.opacity.get(), self.error_mode.get()),
-                 os.path.join(folder, f"{stem}_overlay.png"))
+        save_png(
+            viz.overlay_result(base, self.result.mask, self.result.gt,
+                               self.opacity.get(), self.error_mode.get()),
+            os.path.join(folder, f"{stem}_overlay.png")
+        )
+
         for st in self.result.stages:
-            save_png(viz.render_stage(st, base, self.result.gt, self.opacity.get()),
-                     os.path.join(folder, f"{stem}_stage_{st.key}.png"))
+            save_png(
+                viz.render_stage(st, base, self.result.gt, self.opacity.get()),
+                os.path.join(folder, f"{stem}_stage_{st.key}.png")
+            )
+
         self._current_config().save(os.path.join(folder, f"{stem}_config.json"))
-        self.status_lbl.config(text=f"Saved to {folder}")
+        self.status_lbl.config(text=f"Exported to {os.path.basename(folder)}/", fg=OK_CLR)
 
 
 if __name__ == "__main__":
