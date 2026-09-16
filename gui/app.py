@@ -94,7 +94,7 @@ class FlatButton(tk.Label):
 class ESRGApp:
     def __init__(self, root):
         self.root = root
-        root.title("Enhanced SRG Localization & Delineation")
+        root.title("Enhanced SRG in MRI Image Segmentation")
         root.configure(bg=APP_BG)
         root.geometry("1380x860")
         root.minsize(1080, 680)
@@ -138,10 +138,8 @@ class ESRGApp:
 
         title_box = tk.Frame(header, bg=PANEL_BG)
         title_box.pack(side=tk.LEFT)
-        tk.Label(title_box, text="ENHANCED SRG LOCALIZATION & DELINEATION", bg=PANEL_BG,
+        tk.Label(title_box, text="ENHANCED SRG IN MRI IMAGE SEGMENTATION", bg=PANEL_BG,
                  fg=TEXT_MAIN, font=FONT_TITLE).pack(side=tk.LEFT)
-        tk.Label(title_box, text=" |  MRI Segmentation & Validation Pipeline",
-                 bg=PANEL_BG, fg=TEXT_MUTED, font=FONT_SUB).pack(side=tk.LEFT)
 
         tk.Label(header, text="Enhanced Adams & Bischof (1994) Seeded Region Growing",
                  bg=PANEL_BG, fg=TEXT_FAINT, font=FONT_SM).pack(side=tk.RIGHT)
@@ -194,10 +192,6 @@ class ESRGApp:
                                   bg=PRIMARY, fg="#ffffff", hover_bg=PRIMARY_HOV,
                                   border_color=PRIMARY, font=("Segoe UI", 10, "bold"), pady=8)
         self.run_btn.pack(fill=tk.X)
-
-        FlatButton(action_frame, text="Export All Stages…", command=self._save,
-                   bg=PANEL_ALT, fg=TEXT_MAIN, hover_bg=BORDER_CLR,
-                   font=FONT_SM, pady=6).pack(fill=tk.X, pady=(6, 2))
 
         self.status_lbl = tk.Label(action_frame, text="Ready", bg=PANEL_BG, fg=TEXT_MUTED,
                                    font=FONT_SM, anchor="w", wraplength=235, justify=tk.LEFT)
@@ -667,36 +661,6 @@ class ESRGApp:
         )
         self._photo = ImageTk.PhotoImage(img)
         self.canvas.create_image(ox, oy, anchor=tk.NW, image=self._photo)
-
-    def _save(self):
-        if not self.result:
-            messagebox.showwarning("Export Failed", "Run the segmentation pipeline before exporting.")
-            return
-
-        folder = filedialog.askdirectory(title="Choose Output Directory")
-        if not folder:
-            return
-
-        from esrg.io_utils import save_png
-        stem = os.path.splitext(os.path.basename(self.image_path))[0]
-        base = self.result.stage("input").image
-
-        save_png(self.result.mask, os.path.join(folder, f"{stem}_mask.png"))
-        save_png(
-            viz.overlay_result(base, self.result.mask, self.result.gt,
-                               self.opacity.get(), self.error_mode.get()),
-            os.path.join(folder, f"{stem}_overlay.png")
-        )
-
-        for st in self.result.stages:
-            save_png(
-                viz.render_stage(st, base, self.result.gt, self.opacity.get()),
-                os.path.join(folder, f"{stem}_stage_{st.key}.png")
-            )
-
-        self._current_config().save(os.path.join(folder, f"{stem}_config.json"))
-        self.status_lbl.config(text=f"Exported to {os.path.basename(folder)}/", fg=OK_CLR)
-
 
 if __name__ == "__main__":
     root = tk.Tk()
