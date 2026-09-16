@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from esrg import Config, run
 from esrg import visualize as viz
-from esrg.io_utils import find_mask_for
+from esrg.io_utils import find_mask_for, load_image
 
 # ── Clinical Light Theme Tokens ──────────────────────────────────────────────
 APP_BG      = "#f1f5f9"  
@@ -110,6 +110,11 @@ class ESRGApp:
         self.current = "final"
         self.manual_points = []
         self._photo = None
+        self.raw_image = None  # grayscale float64 preview shown before the pipeline runs
+        self.zoom = 1.0
+        self.pan_x = 0.0
+        self.pan_y = 0.0
+        self._pan_start = None
 
         self.opacity = tk.DoubleVar(value=0.55)
         self.error_mode = tk.BooleanVar(value=False)
@@ -215,6 +220,28 @@ class ESRGApp:
         canvas.configure(yscrollcommand=sb.set)
         p.bind("<Configure>", lambda e: canvas.itemconfig(cw, width=e.width - 16))
 
+        def _on_mousewheel(event):
+            if event.num == 4:
+                canvas.yview_scroll(-1, "units")
+            elif event.num == 5:
+                canvas.yview_scroll(1, "units")
+            else:
+                canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+
+        # scroll_content fully covers the canvas, so hovering anywhere over
+        # the panel actually targets one of its child widgets (a label,
+        # radiobutton, frame, ...), not the canvas itself. Bind the wheel
+        # directly to every one of them, walking the tree as it's built.
+        def _bind_wheel_tree(widget):
+            widget.bind("<MouseWheel>", _on_mousewheel, add="+")
+            widget.bind("<Button-4>", _on_mousewheel, add="+")
+            widget.bind("<Button-5>", _on_mousewheel, add="+")
+            for child in widget.winfo_children():
+                _bind_wheel_tree(child)
+
+        self._sidebar_bind_wheel = _bind_wheel_tree
+        _bind_wheel_tree(canvas)
+
         # Input Source
         self._section_header(scroll_content, "Input Data")
         FlatButton(scroll_content, text="Open MRI Slice…", command=self._load,
@@ -284,6 +311,8 @@ class ESRGApp:
                        font=FONT_UI, anchor="w", highlightthickness=0,
                        command=self._redraw).pack(fill=tk.X, pady=(2, 6))
 
+        self._sidebar_bind_wheel(scroll_content)
+
     def _slider(self, p, label, var, lo, hi, res, cmd=None):
         box = tk.Frame(p, bg=PANEL_BG)
         box.pack(fill=tk.X, pady=(2, 4))
@@ -309,6 +338,22 @@ class ESRGApp:
 
         self._init_empty_stage_tabs()
 
+        zoom_box = tk.Frame(stage_strip_card, bg=PANEL_BG)
+        zoom_box.pack(side=tk.RIGHT, padx=(8, 4))
+
+        FlatButton(zoom_box, text="Reset", command=self._zoom_reset,
+                   bg=PANEL_ALT, fg=TEXT_MUTED, hover_bg=BORDER_CLR,
+                   font=FONT_SM, padx=8, pady=3).pack(side=tk.RIGHT, padx=(4, 0))
+        FlatButton(zoom_box, text="+", command=self._zoom_in,
+                   bg=PANEL_ALT, fg=TEXT_MAIN, hover_bg=BORDER_CLR,
+                   font=("Segoe UI", 10, "bold"), padx=10, pady=3).pack(side=tk.RIGHT, padx=(4, 0))
+        self.zoom_lbl = tk.Label(zoom_box, text="100%", bg=PANEL_BG, fg=TEXT_MUTED,
+                                 font=FONT_SM, width=5, anchor="center")
+        self.zoom_lbl.pack(side=tk.RIGHT, padx=(4, 0))
+        FlatButton(zoom_box, text="−", command=self._zoom_out,
+                   bg=PANEL_ALT, fg=TEXT_MAIN, hover_bg=BORDER_CLR,
+                   font=("Segoe UI", 10, "bold"), padx=10, pady=3).pack(side=tk.RIGHT)
+
         viewer_card = tk.Frame(p, bg=VIEWPORT_BG, highlightthickness=1, highlightbackground=BORDER_MED)
         viewer_card.pack(fill=tk.BOTH, expand=True)
 
@@ -316,6 +361,13 @@ class ESRGApp:
         self.canvas.pack(fill=tk.BOTH, expand=True)
         self.canvas.bind("<Button-1>", self._on_click)
         self.canvas.bind("<Configure>", lambda e: self._redraw())
+        self.canvas.bind("<MouseWheel>", self._on_wheel_zoom)
+        self.canvas.bind("<Button-4>", self._on_wheel_zoom)
+        self.canvas.bind("<Button-5>", self._on_wheel_zoom)
+        # Right-click drag pans around the zoomed-in image (left click is
+        # reserved for placing manual seeds).
+        self.canvas.bind("<ButtonPress-3>", self._on_pan_start)
+        self.canvas.bind("<B3-Motion>", self._on_pan_move)
 
     def _init_empty_stage_tabs(self):
         self._clear_stages()
@@ -355,11 +407,21 @@ class ESRGApp:
         self.image_path = path
         self.result = None
         self.manual_points = []
+
+        try:
+            self.raw_image, _ = load_image(path, self.cfg.max_side)
+        except Exception as e:
+            self.raw_image = None
+            messagebox.showerror("Load Failed", f"Could not read this image:\n{e}")
+            return
+
+        self._zoom_reset()
+
         gt = find_mask_for(path)
         gt_status = "Ground truth detected" if gt else "No ground truth found"
         self.file_lbl.config(text=f"{os.path.basename(path)}\n• {gt_status}", fg=TEXT_MUTED)
         self._init_empty_stage_tabs()
-        self.score_lbl.config(text="MRI slice loaded. Press 'RUN PIPELINE' to execute.", fg=TEXT_MAIN)
+        self.score_lbl.config(text="MRI slice loaded — verify the preview, then press 'RUN PIPELINE'.", fg=TEXT_MAIN)
         self._redraw()
 
     def _clear_seeds(self):
@@ -500,15 +562,62 @@ class ESRGApp:
 
         self.diag.config(state=tk.DISABLED)
 
+    # ── Zoom & Pan ────────────────────────────────────────────────────────────
+    def _has_image(self):
+        return self.result is not None or self.raw_image is not None
+
+    def _set_zoom(self, z):
+        self.zoom = max(0.25, min(8.0, z))
+        self.zoom_lbl.config(text=f"{round(self.zoom * 100)}%")
+        self._redraw()
+
+    def _zoom_in(self):
+        if self._has_image():
+            self._set_zoom(self.zoom * 1.25)
+
+    def _zoom_out(self):
+        if self._has_image():
+            self._set_zoom(self.zoom / 1.25)
+
+    def _zoom_reset(self):
+        self.pan_x = 0.0
+        self.pan_y = 0.0
+        self._set_zoom(1.0)
+
+    def _on_wheel_zoom(self, event):
+        if not self._has_image():
+            return
+        if getattr(event, "num", None) == 5 or getattr(event, "delta", 0) < 0:
+            self._zoom_out()
+        else:
+            self._zoom_in()
+
+    def _on_pan_start(self, event):
+        if self._has_image():
+            self._pan_start = (event.x, event.y, self.pan_x, self.pan_y)
+
+    def _on_pan_move(self, event):
+        if not self._pan_start:
+            return
+        sx, sy, px, py = self._pan_start
+        self.pan_x = px + (event.x - sx)
+        self.pan_y = py + (event.y - sy)
+        self._redraw()
+
     # ── Rendering & Visual Geometry ──────────────────────────────────────────
     def _geometry(self):
-        if not self.result:
+        if self.result:
+            h, w = self.result.stage("input").image.shape
+        elif self.raw_image is not None:
+            h, w = self.raw_image.shape
+        else:
             return None
-        h, w = self.result.stage("input").image.shape
         cw = max(self.canvas.winfo_width(), 50)
         ch = max(self.canvas.winfo_height(), 50)
-        s = min(cw / w, ch / h)
-        return w, h, s, (cw - w * s) / 2, (ch - h * s) / 2
+        s = min(cw / w, ch / h) * self.zoom
+        ox = (cw - w * s) / 2 + self.pan_x
+        oy = (ch - h * s) / 2 + self.pan_y
+        return w, h, s, ox, oy
 
     def _canvas_to_image(self, x, y):
         g = self._geometry()
@@ -523,24 +632,30 @@ class ESRGApp:
         cw = max(self.canvas.winfo_width(), 50)
         ch = max(self.canvas.winfo_height(), 50)
 
-        if not self.result:
+        if not self.result and self.raw_image is None:
             self.canvas.create_text(
                 cw // 2, ch // 2,
-                text="Load an MRI slice to initialize viewport\n(Manual landmark placement is active in Manual mode)",
+                text="Load an MRI slice to initialize viewport\n(Manual landmark placement is active in Manual mode)\n"
+                     "Scroll or use +/− to zoom, right-click drag to pan",
                 fill=TEXT_FAINT,
                 font=FONT_SUB,
                 justify=tk.CENTER
             )
             return
 
-        st = self.result.stage(self.current) or self.result.stages[-1]
-        base = self.result.stage("input").image
-
-        if st.key == "final":
-            rgb = viz.overlay_result(base, st.image, self.result.gt,
-                                     self.opacity.get(), self.error_mode.get())
+        if not self.result:
+            # Raw scan preview, shown before the pipeline has run so the user
+            # can confirm the correct slice was loaded.
+            rgb = np.repeat(self.raw_image[:, :, None], 3, axis=2)
         else:
-            rgb = viz.render_stage(st, base, self.result.gt, self.opacity.get())
+            st = self.result.stage(self.current) or self.result.stages[-1]
+            base = self.result.stage("input").image
+
+            if st.key == "final":
+                rgb = viz.overlay_result(base, st.image, self.result.gt,
+                                         self.opacity.get(), self.error_mode.get())
+            else:
+                rgb = viz.render_stage(st, base, self.result.gt, self.opacity.get())
 
         if self.seed_mode.get() == "manual" and self.manual_points:
             for r, c, t in self.manual_points:
