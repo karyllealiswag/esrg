@@ -47,6 +47,9 @@ FAIL_CLR    = "#dc2626"
 # type 2+ are the other competing regions. SRG itself does not distinguish them.
 SEED_RGB = viz.SEED_COLORS
 
+ZOOM_MIN = 0.25
+ZOOM_MAX = 8.0
+
 # Typography
 FONT_TITLE  = ("Segoe UI", 11, "bold")
 FONT_SUB    = ("Segoe UI", 9)
@@ -115,6 +118,11 @@ class ESRGApp:
         self.pan_x = 0.0
         self.pan_y = 0.0
         self._pan_start = None
+        self._left_press = None
+        self._left_dragging = False
+        self.compare_overlay = tk.BooleanVar(value=False)
+        self._compare_photos = []
+        self.diag_visible = tk.BooleanVar(value=True)
 
         self.opacity = tk.DoubleVar(value=0.55)
         self.error_mode = tk.BooleanVar(value=False)
@@ -148,6 +156,34 @@ class ESRGApp:
                                highlightthickness=1, highlightbackground=BORDER_CLR)
         score_strip.pack(side=tk.BOTTOM, fill=tk.X, padx=12, pady=(0, 10))
 
+        # Zoom controls live in the footer (not the stage/compare strip above
+        # the viewer) so they stay put no matter which view is active.
+        zoom_box = tk.Frame(score_strip, bg=PANEL_BG)
+        zoom_box.pack(side=tk.RIGHT, padx=(8, 0))
+
+        FlatButton(zoom_box, text="Reset", command=self._zoom_reset,
+                   bg=PANEL_ALT, fg=TEXT_MUTED, hover_bg=BORDER_CLR,
+                   font=FONT_SM, padx=8, pady=3).pack(side=tk.RIGHT, padx=(4, 0))
+        FlatButton(zoom_box, text="+", command=self._zoom_in,
+                   bg=PANEL_ALT, fg=TEXT_MAIN, hover_bg=BORDER_CLR,
+                   font=("Segoe UI", 10, "bold"), padx=10, pady=3).pack(side=tk.RIGHT, padx=(4, 0))
+        self.zoom_lbl = tk.Label(zoom_box, text="100%", bg=PANEL_BG, fg=TEXT_MUTED,
+                                 font=FONT_SM, width=5, anchor="center")
+        self.zoom_lbl.pack(side=tk.RIGHT, padx=(4, 0))
+        FlatButton(zoom_box, text="−", command=self._zoom_out,
+                   bg=PANEL_ALT, fg=TEXT_MAIN, hover_bg=BORDER_CLR,
+                   font=("Segoe UI", 10, "bold"), padx=10, pady=3).pack(side=tk.RIGHT)
+        tk.Label(zoom_box, text="ZOOM:", bg=PANEL_BG, fg=TEXT_FAINT,
+                 font=FONT_BOLD).pack(side=tk.RIGHT, padx=(0, 6))
+
+        # Lets the Stage Telemetry panel be hidden to reclaim width for the
+        # viewer (e.g. the side-by-side Compare view) on narrower windows.
+        self._diag_toggle_btn = FlatButton(
+            score_strip, text="Telemetry ◂", command=self._toggle_diagnostics,
+            bg=PANEL_ALT, fg=TEXT_MUTED, hover_bg=BORDER_CLR,
+            font=FONT_SM, padx=8, pady=3)
+        self._diag_toggle_btn.pack(side=tk.RIGHT, padx=(8, 0))
+
         tk.Label(score_strip, text="EVALUATION METRICS:", bg=PANEL_BG,
                  fg=PRIMARY, font=FONT_BOLD).pack(side=tk.LEFT, padx=(0, 8))
         self.score_lbl = tk.Label(score_strip, text="Load an MRI slice and run the pipeline to view metrics.",
@@ -167,11 +203,11 @@ class ESRGApp:
         center_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self._build_viewer(center_frame)
 
-        diagnostics_frame = tk.Frame(body, bg=PANEL_BG, width=320,
-                                     highlightthickness=1, highlightbackground=BORDER_CLR)
-        diagnostics_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 0))
-        diagnostics_frame.pack_propagate(False)
-        self._build_diagnostics(diagnostics_frame)
+        self.diagnostics_frame = tk.Frame(body, bg=PANEL_BG, width=320,
+                                          highlightthickness=1, highlightbackground=BORDER_CLR)
+        self.diagnostics_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 0))
+        self.diagnostics_frame.pack_propagate(False)
+        self._build_diagnostics(self.diagnostics_frame)
 
     # ── Sidebar & Parameter Controls ─────────────────────────────────────────
     def _section_header(self, parent, text):
@@ -188,7 +224,7 @@ class ESRGApp:
 
         tk.Frame(action_frame, bg=BORDER_CLR, height=1).pack(fill=tk.X, pady=(0, 10))
 
-        self.run_btn = FlatButton(action_frame, text="RUN PIPELINE", command=self._run,
+        self.run_btn = FlatButton(action_frame, text="RUN", command=self._run,
                                   bg=PRIMARY, fg="#ffffff", hover_bg=PRIMARY_HOV,
                                   border_color=PRIMARY, font=("Segoe UI", 10, "bold"), pady=8)
         self.run_btn.pack(fill=tk.X)
@@ -326,48 +362,124 @@ class ESRGApp:
         tk.Label(stage_strip_card, text="STAGE:", bg=PANEL_BG, fg=TEXT_FAINT,
                  font=FONT_BOLD).pack(side=tk.LEFT, padx=(4, 8))
 
-        self.stage_bar = tk.Frame(stage_strip_card, bg=PANEL_BG)
-        self.stage_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # The tab row is horizontally scrollable rather than a plain Frame:
+        # a plain Frame's natural width (sum of every stage tab + Compare)
+        # otherwise inflates stage_strip_card's requested width, which in
+        # turn inflates center_frame's requested width and can make Tk's
+        # pack manager silently evict the diagnostics panel on the right for
+        # lack of cavity space once enough tabs exist. A Canvas's requested
+        # size is independent of its scrollable content, so this decouples
+        # tab count from the rest of the window's layout entirely (same
+        # pattern already used for the sidebar's vertical parameter scroll).
+        tab_canvas = tk.Canvas(stage_strip_card, bg=PANEL_BG, height=28, highlightthickness=0)
+        tab_canvas.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        self.stage_bar = tk.Frame(tab_canvas, bg=PANEL_BG)
         self.stage_buttons = {}
+        tab_window = tab_canvas.create_window((0, 0), window=self.stage_bar, anchor="nw")
+        self.stage_bar.bind(
+            "<Configure>",
+            lambda e: tab_canvas.configure(scrollregion=tab_canvas.bbox("all")))
+        tab_canvas.bind(
+            "<Configure>",
+            lambda e: tab_canvas.itemconfig(tab_window, height=e.height))
+
+        def _tab_scroll(event):
+            if getattr(event, "num", None) == 4:
+                tab_canvas.xview_scroll(-1, "units")
+            elif getattr(event, "num", None) == 5:
+                tab_canvas.xview_scroll(1, "units")
+            else:
+                tab_canvas.xview_scroll(-1 if event.delta > 0 else 1, "units")
+
+        tab_canvas.bind("<MouseWheel>", _tab_scroll)
+        tab_canvas.bind("<Button-4>", _tab_scroll)
+        tab_canvas.bind("<Button-5>", _tab_scroll)
+        self._tab_scroll = _tab_scroll
 
         self._init_empty_stage_tabs()
 
-        zoom_box = tk.Frame(stage_strip_card, bg=PANEL_BG)
-        zoom_box.pack(side=tk.RIGHT, padx=(8, 4))
-
-        FlatButton(zoom_box, text="Reset", command=self._zoom_reset,
-                   bg=PANEL_ALT, fg=TEXT_MUTED, hover_bg=BORDER_CLR,
-                   font=FONT_SM, padx=8, pady=3).pack(side=tk.RIGHT, padx=(4, 0))
-        FlatButton(zoom_box, text="+", command=self._zoom_in,
-                   bg=PANEL_ALT, fg=TEXT_MAIN, hover_bg=BORDER_CLR,
-                   font=("Segoe UI", 10, "bold"), padx=10, pady=3).pack(side=tk.RIGHT, padx=(4, 0))
-        self.zoom_lbl = tk.Label(zoom_box, text="100%", bg=PANEL_BG, fg=TEXT_MUTED,
-                                 font=FONT_SM, width=5, anchor="center")
-        self.zoom_lbl.pack(side=tk.RIGHT, padx=(4, 0))
-        FlatButton(zoom_box, text="−", command=self._zoom_out,
-                   bg=PANEL_ALT, fg=TEXT_MAIN, hover_bg=BORDER_CLR,
-                   font=("Segoe UI", 10, "bold"), padx=10, pady=3).pack(side=tk.RIGHT)
+        # Only meaningful while the COMPARE tab is active, but always visible
+        # so it's easy to find alongside the other viewer controls.
+        tk.Checkbutton(stage_strip_card, text="Overlay", variable=self.compare_overlay,
+                       command=self._redraw, bg=PANEL_BG, fg=TEXT_MAIN,
+                       selectcolor=PANEL_ALT, activebackground=PANEL_BG,
+                       font=FONT_UI, highlightthickness=0).pack(side=tk.RIGHT, padx=(8, 4))
 
         viewer_card = tk.Frame(p, bg=VIEWPORT_BG, highlightthickness=1, highlightbackground=BORDER_MED)
         viewer_card.pack(fill=tk.BOTH, expand=True)
 
         self.canvas = tk.Canvas(viewer_card, bg=VIEWPORT_BG, highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True)
-        self.canvas.bind("<Button-1>", self._on_click)
         self.canvas.bind("<Configure>", lambda e: self._redraw())
         self.canvas.bind("<MouseWheel>", self._on_wheel_zoom)
         self.canvas.bind("<Button-4>", self._on_wheel_zoom)
         self.canvas.bind("<Button-5>", self._on_wheel_zoom)
-        # Right-click drag pans around the zoomed-in image (left click is
-        # reserved for placing manual seeds).
+        # macOS synthesizes Control+MouseWheel (and Control+Button-4/5 on
+        # X11-style setups) for trackpad pinch gestures in non-native-gesture
+        # Tk apps, so pinch-to-zoom needs an explicit binding of its own.
+        self.canvas.bind("<Control-MouseWheel>", self._on_wheel_zoom)
+        self.canvas.bind("<Control-Button-4>", self._on_wheel_zoom)
+        self.canvas.bind("<Control-Button-5>", self._on_wheel_zoom)
+        # Right-click drag (desktop mouse) or left-click-and-hold drag
+        # (trackpad-friendly, no right-click gesture needed) both pan around
+        # the zoomed-in image. A plain left click with no meaningful drag
+        # still places a manual seed, via the click/drag disambiguation in
+        # _on_left_press/_on_left_drag/_on_left_release.
+        self.canvas.bind("<ButtonPress-1>", self._on_left_press)
+        self.canvas.bind("<B1-Motion>", self._on_left_drag)
+        self.canvas.bind("<ButtonRelease-1>", self._on_left_release)
         self.canvas.bind("<ButtonPress-3>", self._on_pan_start)
         self.canvas.bind("<B3-Motion>", self._on_pan_move)
+
+        # Side-by-side Compare pane: two independently-clipped canvases so a
+        # zoomed-in mask can never bleed across into the other panel (a
+        # single shared canvas only clips to its own outer bounds, not to
+        # sub-regions drawn onto it). Built once, hidden until Compare mode
+        # with "Overlay" unchecked is actually selected (see
+        # _sync_viewer_visibility).
+        self.compare_pane = tk.Frame(viewer_card, bg=VIEWPORT_BG)
+
+        left_box = tk.Frame(self.compare_pane, bg=VIEWPORT_BG)
+        left_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tk.Label(left_box, text="ESRG SEGMENTATION MASK", bg=VIEWPORT_BG,
+                 fg="#f87171", font=FONT_BOLD).pack(side=tk.TOP, fill=tk.X, pady=(6, 4))
+        self.cmp_canvas_l = tk.Canvas(left_box, bg=VIEWPORT_BG, highlightthickness=0)
+        self.cmp_canvas_l.pack(fill=tk.BOTH, expand=True)
+
+        tk.Frame(self.compare_pane, bg=BORDER_MED, width=2).pack(side=tk.LEFT, fill=tk.Y)
+
+        right_box = tk.Frame(self.compare_pane, bg=VIEWPORT_BG)
+        right_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tk.Label(right_box, text="GROUND TRUTH MASK", bg=VIEWPORT_BG,
+                 fg="#4ade80", font=FONT_BOLD).pack(side=tk.TOP, fill=tk.X, pady=(6, 4))
+        self.cmp_canvas_r = tk.Canvas(right_box, bg=VIEWPORT_BG, highlightthickness=0)
+        self.cmp_canvas_r.pack(fill=tk.BOTH, expand=True)
+
+        for c in (self.cmp_canvas_l, self.cmp_canvas_r):
+            c.bind("<Configure>", lambda e: self._redraw())
+            c.bind("<MouseWheel>", self._on_wheel_zoom)
+            c.bind("<Button-4>", self._on_wheel_zoom)
+            c.bind("<Button-5>", self._on_wheel_zoom)
+            c.bind("<Control-MouseWheel>", self._on_wheel_zoom)
+            c.bind("<Control-Button-4>", self._on_wheel_zoom)
+            c.bind("<Control-Button-5>", self._on_wheel_zoom)
+            c.bind("<ButtonPress-3>", self._on_pan_start)
+            c.bind("<B3-Motion>", self._on_pan_move)
+            # No seed placement is meaningful on these panels, so plain
+            # left-click-and-drag can pan immediately with no click/drag
+            # disambiguation needed.
+            c.bind("<ButtonPress-1>", self._on_pan_start)
+            c.bind("<B1-Motion>", self._on_pan_move)
 
     def _init_empty_stage_tabs(self):
         self._clear_stages()
         lbl = tk.Label(self.stage_bar, text="No stages processed yet",
                        bg=PANEL_BG, fg=TEXT_FAINT, font=FONT_SM)
         lbl.pack(side=tk.LEFT, padx=4)
+        lbl.bind("<MouseWheel>", self._tab_scroll)
+        lbl.bind("<Button-4>", self._tab_scroll)
+        lbl.bind("<Button-5>", self._tab_scroll)
 
     # ── Diagnostics & Telemetry Panel ────────────────────────────────────────
     def _build_diagnostics(self, p):
@@ -390,6 +502,20 @@ class ESRGApp:
 
         self.diag.insert("1.0", "Execute the segmentation pipeline to inspect per-stage metrics and parameters.\n")
         self.diag.config(state=tk.DISABLED)
+
+    def _toggle_diagnostics(self):
+        self.diag_visible.set(not self.diag_visible.get())
+        if self.diag_visible.get():
+            self.diagnostics_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 0))
+            self._diag_toggle_btn.config(text="Telemetry ◂")
+        else:
+            self.diagnostics_frame.pack_forget()
+            self._diag_toggle_btn.config(text="Telemetry ▸")
+        # Force Tk to recompute geometry synchronously so the redraw below
+        # already sees the post-toggle canvas size instead of a stale one
+        # (otherwise it only self-corrects on the next natural <Configure>).
+        self.root.update_idletasks()
+        self._redraw()
 
     # ── Controller & Backend Invocation ──────────────────────────────────────
     def _load(self):
@@ -415,7 +541,7 @@ class ESRGApp:
         gt_status = "Ground truth detected" if gt else "No ground truth found"
         self.file_lbl.config(text=f"{os.path.basename(path)}\n• {gt_status}", fg=TEXT_MUTED)
         self._init_empty_stage_tabs()
-        self.score_lbl.config(text="MRI slice loaded — verify the preview, then press 'RUN PIPELINE'.", fg=TEXT_MAIN)
+        self.score_lbl.config(text="MRI slice loaded — verify the preview, then press 'RUN'.", fg=TEXT_MAIN)
         self._redraw()
 
     def _clear_seeds(self):
@@ -469,7 +595,7 @@ class ESRGApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _done(self, res, err):
-        self.run_btn.config(state="normal", text="RUN PIPELINE", cursor="hand2")
+        self.run_btn.config(state="normal", text="RUN", cursor="hand2")
         self.run_btn.set_style(bg=PRIMARY, fg="#ffffff", border=PRIMARY)
         
         if err:
@@ -515,7 +641,28 @@ class ESRGApp:
                 pady=4
             )
             btn.pack(side=tk.LEFT, padx=(0, 4))
+            btn.bind("<MouseWheel>", self._tab_scroll, add="+")
+            btn.bind("<Button-4>", self._tab_scroll, add="+")
+            btn.bind("<Button-5>", self._tab_scroll, add="+")
             self.stage_buttons[st.key] = btn
+
+        if self.result.gt is not None:
+            btn = FlatButton(
+                self.stage_bar,
+                text="Compare ●",
+                command=lambda: self._select("compare"),
+                bg=PANEL_ALT,
+                fg=TEXT_MUTED,
+                hover_bg=BORDER_CLR,
+                font=FONT_BOLD,
+                padx=10,
+                pady=4
+            )
+            btn.pack(side=tk.LEFT, padx=(0, 4))
+            btn.bind("<MouseWheel>", self._tab_scroll, add="+")
+            btn.bind("<Button-4>", self._tab_scroll, add="+")
+            btn.bind("<Button-5>", self._tab_scroll, add="+")
+            self.stage_buttons["compare"] = btn
 
     def _select(self, key):
         self.current = key
@@ -532,10 +679,25 @@ class ESRGApp:
         self._redraw()
 
     def _show_diagnostics(self, key):
-        st = self.result.stage(key)
         self.diag.config(state=tk.NORMAL)
         self.diag.delete("1.0", tk.END)
 
+        if key == "compare":
+            self.diag.insert(tk.END, "SIDE-BY-SIDE COMPARISON\n" + "-" * 34 + "\n")
+            self.diag.insert(tk.END,
+                "Left  : ESRG segmentation mask (red)\n"
+                "Right : Ground truth mask (green)\n\n"
+                "Toggle \"Overlay\" above the viewer to blend\n"
+                "both masks onto a single image instead.\n")
+            if self.result.scores:
+                self.diag.insert(tk.END, "\n" + "=" * 34 + "\nSEGMENTATION ACCURACY:\n")
+                for k, v in self.result.scores.items():
+                    self.diag.insert(tk.END, f"  {k:<16}: {v}\n")
+            self.diag.see("1.0")
+            self.diag.config(state=tk.DISABLED)
+            return
+
+        st = self.result.stage(key)
         if st:
             header_str = f"STAGE: {st.name.upper()}\nStatus   : {st.status}\nDuration : {st.seconds * 1000:.1f} ms\n"
             self.diag.insert(tk.END, header_str)
@@ -554,14 +716,22 @@ class ESRGApp:
                 for k, v in self.result.scores.items():
                     self.diag.insert(tk.END, f"  {k:<16}: {v}\n")
 
+        self.diag.see("1.0")
         self.diag.config(state=tk.DISABLED)
 
     # ── Zoom & Pan ────────────────────────────────────────────────────────────
     def _has_image(self):
         return self.result is not None or self.raw_image is not None
 
+    def _is_compare_active(self):
+        return (self.result is not None and self.current == "compare"
+                and self.result.gt is not None)
+
+    def _wants_split_compare(self):
+        return self._is_compare_active() and not self.compare_overlay.get()
+
     def _set_zoom(self, z):
-        self.zoom = max(0.25, min(8.0, z))
+        self.zoom = max(ZOOM_MIN, min(ZOOM_MAX, z))
         self.zoom_lbl.config(text=f"{round(self.zoom * 100)}%")
         self._redraw()
 
@@ -581,10 +751,28 @@ class ESRGApp:
     def _on_wheel_zoom(self, event):
         if not self._has_image():
             return
-        if getattr(event, "num", None) == 5 or getattr(event, "delta", 0) < 0:
-            self._zoom_out()
-        else:
-            self._zoom_in()
+        canvas = event.widget
+        zoom_in = not (getattr(event, "num", None) == 5 or getattr(event, "delta", 0) < 0)
+        new_zoom = max(ZOOM_MIN, min(ZOOM_MAX, self.zoom * 1.25 if zoom_in else self.zoom / 1.25))
+
+        # Anchor the zoom on the cursor/pinch position: find the image-space
+        # point under the cursor before changing zoom, then solve pan so
+        # that same point stays under the cursor afterwards. Both compare
+        # panels share identical w/h/s and only differ by a constant offset,
+        # so solving in whichever panel the cursor is over and writing the
+        # result into the shared pan keeps them moving in lockstep.
+        g = self._geometry(canvas)
+        if g and new_zoom != self.zoom:
+            w, h, s_old, ox_old, oy_old = g
+            ix = (event.x - ox_old) / s_old
+            iy = (event.y - oy_old) / s_old
+            cw = max(canvas.winfo_width(), 50)
+            ch = max(canvas.winfo_height(), 50)
+            s_new = min(cw / w, ch / h) * new_zoom
+            self.pan_x = event.x - ix * s_new - (cw - w * s_new) / 2
+            self.pan_y = event.y - iy * s_new - (ch - h * s_new) / 2
+
+        self._set_zoom(new_zoom)
 
     def _on_pan_start(self, event):
         if self._has_image():
@@ -598,16 +786,67 @@ class ESRGApp:
         self.pan_y = py + (event.y - sy)
         self._redraw()
 
+    # Left-click-and-hold drag pans the main viewer too (a trackpad has no
+    # natural right-click-drag gesture), while a plain click with no real
+    # movement still places a manual seed. Distinguish the two by how far
+    # the pointer actually moved before release.
+    _DRAG_THRESHOLD = 4
+
+    def _on_left_press(self, event):
+        if self._has_image():
+            self._left_press = (event.x, event.y, self.pan_x, self.pan_y)
+            self._left_dragging = False
+
+    def _on_left_drag(self, event):
+        if not self._left_press:
+            return
+        sx, sy, px, py = self._left_press
+        dx, dy = event.x - sx, event.y - sy
+        if not self._left_dragging and (abs(dx) + abs(dy)) > self._DRAG_THRESHOLD:
+            self._left_dragging = True
+        if self._left_dragging:
+            self.pan_x = px + dx
+            self.pan_y = py + dy
+            self._redraw()
+
+    def _on_left_release(self, event):
+        if self._left_press and not self._left_dragging:
+            self._on_click(event)
+        self._left_press = None
+        self._left_dragging = False
+
     # ── Rendering & Visual Geometry ──────────────────────────────────────────
-    def _geometry(self):
+    def _sync_viewer_visibility(self):
+        """Show self.canvas or the split self.compare_pane depending on the
+        active view, so exactly one of them is packed at any time. Each
+        canvas naturally clips its own drawing to its own bounds, which is
+        what keeps zoomed compare panels from bleeding into one another."""
+        want_split = self._wants_split_compare()
+        is_split = bool(self.compare_pane.winfo_ismapped())
+        if want_split == is_split:
+            return
+        if want_split:
+            self.canvas.pack_forget()
+            self.compare_pane.pack(fill=tk.BOTH, expand=True)
+        else:
+            self.compare_pane.pack_forget()
+            self.canvas.pack(fill=tk.BOTH, expand=True)
+        # The canvas layout class just changed (one full-width canvas <->
+        # two half-width canvases) so a raw pixel pan offset from the old
+        # layout is meaningless in the new one. Zoom level is kept.
+        self.pan_x = 0.0
+        self.pan_y = 0.0
+
+    def _geometry(self, canvas=None):
+        canvas = canvas or self.canvas
         if self.result:
             h, w = self.result.stage("input").image.shape
         elif self.raw_image is not None:
             h, w = self.raw_image.shape
         else:
             return None
-        cw = max(self.canvas.winfo_width(), 50)
-        ch = max(self.canvas.winfo_height(), 50)
+        cw = max(canvas.winfo_width(), 50)
+        ch = max(canvas.winfo_height(), 50)
         s = min(cw / w, ch / h) * self.zoom
         ox = (cw - w * s) / 2 + self.pan_x
         oy = (ch - h * s) / 2 + self.pan_y
@@ -622,6 +861,12 @@ class ESRGApp:
         return (r, c) if 0 <= r < h and 0 <= c < w else None
 
     def _redraw(self):
+        self._sync_viewer_visibility()
+
+        if self._wants_split_compare():
+            self._redraw_compare_split()
+            return
+
         self.canvas.delete("all")
         cw = max(self.canvas.winfo_width(), 50)
         ch = max(self.canvas.winfo_height(), 50)
@@ -641,6 +886,9 @@ class ESRGApp:
             # Raw scan preview, shown before the pipeline has run so the user
             # can confirm the correct slice was loaded.
             rgb = np.repeat(self.raw_image[:, :, None], 3, axis=2)
+        elif self._is_compare_active():
+            self._redraw_compare_overlay(cw, ch)
+            return
         else:
             st = self.result.stage(self.current) or self.result.stages[-1]
             base = self.result.stage("input").image
@@ -661,6 +909,58 @@ class ESRGApp:
         )
         self._photo = ImageTk.PhotoImage(img)
         self.canvas.create_image(ox, oy, anchor=tk.NW, image=self._photo)
+
+    @staticmethod
+    def _mask_rgb(base_img, mask, color, opacity):
+        rgb = np.stack([np.clip(base_img, 0, 255).astype(np.uint8)] * 3, axis=-1)
+        m = mask.astype(bool)
+        if m.any():
+            rgb[m] = (np.array(color) * opacity + rgb[m] * (1 - opacity)).astype(np.uint8)
+        return rgb
+
+    def _redraw_compare_overlay(self, cw, ch):
+        """Blended overlay of both masks on one canvas (Overlay toggle checked)."""
+        base = self.result.stage("input").image
+        pred = self.result.mask.astype(bool)
+        gt = self.result.gt.astype(bool)
+        h, w = base.shape
+
+        rgb = viz.overlay_result(base, pred, gt, self.opacity.get(), self.error_mode.get())
+        s = min(cw / w, ch / h) * self.zoom
+        iw, ih = max(1, int(w * s)), max(1, int(h * s))
+        img = Image.fromarray(rgb.astype(np.uint8)).resize((iw, ih), Image.NEAREST)
+        photo = ImageTk.PhotoImage(img)
+        self._compare_photos = [photo]
+        ox, oy = (cw - iw) / 2 + self.pan_x, (ch - ih) / 2 + self.pan_y
+        self.canvas.create_image(ox, oy, anchor=tk.NW, image=photo)
+        label = ("OVERLAY — TP green / FP red / FN orange" if self.error_mode.get()
+                 else "OVERLAY — ESRG prediction (red fill) vs ground truth (green outline)")
+        self.canvas.create_text(cw / 2, 14, text=label, fill=TEXT_FAINT, font=FONT_SM)
+
+    def _redraw_compare_split(self):
+        """Side-by-side ESRG prediction vs. ground truth, each on its own
+        canvas so a zoomed-in mask is hard-clipped to its own panel and can
+        never bleed into the other one."""
+        base = self.result.stage("input").image
+        pred = self.result.mask.astype(bool)
+        gt = self.result.gt.astype(bool)
+
+        left_rgb = self._mask_rgb(base, pred, viz.RED, self.opacity.get())
+        right_rgb = self._mask_rgb(base, gt, viz.GREEN, self.opacity.get())
+
+        self._compare_photos = []
+        for canvas, rgb in ((self.cmp_canvas_l, left_rgb), (self.cmp_canvas_r, right_rgb)):
+            canvas.delete("all")
+            g = self._geometry(canvas)
+            if not g:
+                continue
+            w, h, s, ox, oy = g
+            iw, ih = max(1, int(w * s)), max(1, int(h * s))
+            img = Image.fromarray(rgb.astype(np.uint8)).resize((iw, ih), Image.NEAREST)
+            photo = ImageTk.PhotoImage(img)
+            self._compare_photos.append(photo)
+            canvas.create_image(ox, oy, anchor=tk.NW, image=photo)
+
 
 if __name__ == "__main__":
     root = tk.Tk()
