@@ -104,10 +104,12 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None):
     # ── Stage 4–5: seed selection ────────────────────────────────────────────
     say("Selecting seed…")
     if cfg.seed_mode == "manual":
-        (core, s_info), dt = timed(lambda: seedmod.manual_seed(manual_points or [], img.shape, cfg))
+        (seed_labels, s_info), dt = timed(lambda: seedmod.manual_seed(manual_points or [], img.shape, cfg))
+        core = seed_labels == 1
         cand = core
     else:
         (core, s_info), dt = timed(lambda: seedmod.select_seed(img_masked, mask, depth, cfg))
+        seed_labels = core.astype(np.int32)
         try:
             from skimage import filters as _f
             th = s_info.get("thresholds")
@@ -123,6 +125,7 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None):
     stages.append(Stage("seed", "5 · Seed core", core, "mask",
                         {"status": s_info["status"], "chosen": s_info.get("chosen"),
                          "core area": s_info.get("core_area"),
+                         **({"seed types": s_info["types"]} if s_info.get("types") else {}),
                          "warnings": s_info.get("warnings", [])}, 0.0,
                         "FAIL" if s_info["status"] != "OK" else "OK"))
 
@@ -140,13 +143,27 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None):
     # ── Stage 6: region growing ──────────────────────────────────────────────
     say("Growing region…")
     if cfg.method == "srg":
-        (region, trace), dt = timed(lambda: growing.grow_srg(img_masked, mask, core, cfg))
+        # Whole image, unmasked: the published algorithm has no skull-stripping step
+        # and leaves no pixel unallocated. Every planted id grows under the same
+        # rule; grow_srg has no notion of "tumor" at all.
+        (label_map, trace), dt = timed(lambda: growing.grow_srg(img, seed_labels))
+        stages.append(Stage("tessellation", "6a · Full tessellation", label_map, "labels",
+                            {"seed regions": trace["n_seed_regions"],
+                             "region areas": trace["region_areas"],
+                             "region means": trace["region_means"]}, 0.0))
+        # Id 1 is a labeling convention decided outside grow_srg: whichever seed
+        # group the user planted on the structure of interest. The algorithm
+        # itself grew every id identically.
+        region = label_map == 1
+        growth_info = {"stop reason": trace["stop_reason"],
+                       "seed regions": trace["n_seed_regions"],
+                       "unlabeled px": trace["unlabeled"],
+                       **({"warning": trace["warning"]} if "warning" in trace else {})}
     else:
         (region, trace), dt = timed(lambda: growing.grow_esrg(L, mask, core, sigma_floor, cfg))
-    stages.append(Stage("growth", "6 · Region growing", region, "mask",
-                        {"stop reason": trace["stop_reason"], "passes": trace["passes"],
-                         **({"background seeds": trace["n_background_seeds"]}
-                            if "n_background_seeds" in trace else {})}, dt))
+        growth_info = {"stop reason": trace["stop_reason"], "passes": trace["passes"]}
+    stages.append(Stage("growth", "6 · Region growing", region, "mask", growth_info, dt,
+                        "WARN" if "warning" in trace else "OK"))
 
     # ── Stage 7: post-processing + final ─────────────────────────────────────
     say("Post-processing…")

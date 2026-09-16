@@ -121,13 +121,36 @@ def select_seed(img, mask, depth, cfg):
 
 
 def manual_seed(points, shape, cfg):
-    """Build a seed core from user clicks (baseline comparison / manual mode)."""
-    core = np.zeros(shape, bool)
-    for r, c in points:
+    """
+    Build the seed map from user clicks (baseline comparison / manual mode).
+
+    points are (r, c) or (r, c, type). Type 1 is the tumor; types 2..n are the
+    competing regions the classical SRG tessellates against. Returns (labels, info)
+    where labels == 1 is the tumor core.
+    """
+    labels = np.zeros(shape, np.int32)
+    clicks = {}
+    for p in points:
+        r, c = p[0], p[1]
+        t = int(p[2]) if len(p) > 2 else 1
         if 0 <= r < shape[0] and 0 <= c < shape[1]:
-            core[r, c] = True
-    if core.any() and cfg.manual_seed_radius > 0:
-        core = morphology.dilation(core, morphology.disk(cfg.manual_seed_radius))
-    return core, {"status": "OK" if core.any() else "NO SEED",
-                  "core_area": int(core.sum()), "n_clicks": len(points),
-                  "components": [], "warnings": []}
+            clicks.setdefault(t, []).append((r, c))
+
+    # Dilated per type, lowest type first, so a later type cannot eat an earlier
+    # one where two clicks sit within a disk of each other.
+    for t in sorted(clicks):
+        pts = np.zeros(shape, bool)
+        for r, c in clicks[t]:
+            pts[r, c] = True
+        if cfg.manual_seed_radius > 0:
+            pts = morphology.dilation(pts, morphology.disk(cfg.manual_seed_radius))
+        labels[pts & (labels == 0)] = t
+
+    warnings = []
+    if len(clicks) == 1 and 1 in clicks:
+        warnings.append("Only tumor seeds planted; SRG needs competing types to stop.")
+    return labels, {"status": "OK" if (labels == 1).any() else "NO SEED",
+                    "core_area": int((labels == 1).sum()),
+                    "n_clicks": len(points),
+                    "types": {f"type {t}": int((labels == t).sum()) for t in sorted(clicks)},
+                    "components": [], "warnings": warnings}

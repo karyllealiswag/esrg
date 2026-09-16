@@ -6,8 +6,8 @@ Purpose : Grow the seed into the tumor region under the enhanced rules, and prov
 Function : grow_esrg() uses a sequentially sorted list keyed by a local log-domain
           difference (Objective 2) and absorbs a pixel only if it passes a local
           confidence bound and a global drift guard (Objective 3), with statistics
-          frozen per pass. grow_srg() runs the classical tumor-vs-background
-          tessellation with unconditional absorption.
+          frozen per pass. grow_srg() runs the classical multi-region tessellation
+          with unconditional absorption over the seeds the user planted.
 Notes   : Statistics use Welford's method; per-pass freezing prevents the positive
           feedback that causes leakage. A per-image adaptive bound is available
           (adaptive_k) but did not beat the fixed bound and is off by default.
@@ -18,7 +18,6 @@ from scipy import ndimage as ndi
 from skimage import morphology
 
 NEIGH8 = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
-NEIGH4 = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
 
 class _LocalMean:
@@ -173,82 +172,64 @@ def grow_esrg(L, mask, core, sigma_floor, cfg):
     return region, trace
 
 
-def grow_srg(img, mask, core, cfg):
+def grow_srg(img, seed_labels):
     """
-    Control group: Adams & Bischof (1994) exactly as published.
+    Adams & Bischof (1994) seeded region growing, exactly as published.
 
-    Tumor seeds compete with a grid of background seeds, delta is the raw
-    distance to the region mean, and absorption is unconditional -- the
-    algorithm runs until every pixel in the mask is allocated.
+    seed_labels : integer seed map, one id per planted region (0 = unseeded).
+                  Every region grows under the identical rule below -- no id is
+                  special-cased in the loop. delta(x, region) = |img[x] -
+                  mean(region)|, fixed at the moment x enters the SSL; the SSL
+                  always pops the globally smallest delta next; absorption is
+                  unconditional. The loop ends only when the SSL is empty, i.e.
+                  every pixel has been allocated to some region.
+
+    Runs on the whole image, not the head mask: the original has no
+    skull-stripping step. Seed every distinct tissue you don't want merged
+    together (including background/scalp), or those pixels get divided up
+    among whichever regions happen to reach them first.
+
+    Returns (label, trace). label is the full partition of img. Which id is
+    "the structure of interest" is not decided here -- that is left to the
+    caller, since SRG itself has no concept of a privileged region.
     """
     H, W = img.shape
-    label = np.zeros((H, W), np.int32)     # 0 unlabeled, 1 tumor, >=2 background
-    label[core] = 1
+    label = seed_labels.astype(np.int32).copy()
 
-    sums = {1: float(img[core].sum())}
-    counts = {1: int(core.sum())}
+    ids = [int(i) for i in np.unique(label) if i > 0]
+    sums = {i: float(img[label == i].sum()) for i in ids}
+    counts = {i: int((label == i).sum()) for i in ids}
 
-    # Background seeds on a regular grid, skipping the tumor core and its margin
-    guard = ndi.binary_dilation(core, ndi.generate_binary_structure(2, 2), iterations=6)
-    nxt = 2
-    for r in range(0, H, cfg.bg_seed_step):
-        for c in range(0, W, cfg.bg_seed_step):
-            if mask[r, c] and not guard[r, c] and label[r, c] == 0:
-                label[r, c] = nxt
-                sums[nxt] = float(img[r, c])
-                counts[nxt] = 1
-                nxt += 1
+    ssl = []
 
-    ssl, queued = [], np.zeros((H, W), bool)
-
-    def enqueue(r, c):
-        if (0 <= r < H and 0 <= c < W and mask[r, c]
-                and label[r, c] == 0 and not queued[r, c]):
-            best = None
-            for dr, dc in NEIGH4:
-                nr, nc = r + dr, c + dc
-                if 0 <= nr < H and 0 <= nc < W and label[nr, nc] > 0:
-                    lid = label[nr, nc]
-                    d = abs(img[r, c] - sums[lid] / counts[lid])
-                    if best is None or d < best[0]:
-                        best = (d, lid)
-            if best:
-                heapq.heappush(ssl, (best[0], r, c, best[1]))
-                queued[r, c] = True
+    def enqueue(r, c, lid):
+        """delta is computed once, here, against the region mean of the moment."""
+        if 0 <= r < H and 0 <= c < W and label[r, c] == 0:
+            heapq.heappush(ssl, (abs(img[r, c] - sums[lid] / counts[lid]), r, c, lid))
 
     for r, c in zip(*np.nonzero(label)):
-        for dr, dc in NEIGH4:
-            enqueue(r + dr, c + dc)
+        for dr, dc in NEIGH8:
+            enqueue(r + dr, c + dc, int(label[r, c]))
 
     while ssl:
-        d, r, c, lid = heapq.heappop(ssl)
+        _, r, c, lid = heapq.heappop(ssl)
         if label[r, c] != 0:
-            continue
-        # Re-evaluate against the current neighbourhood before absorbing
-        best = None
-        for dr, dc in NEIGH4:
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < H and 0 <= nc < W and label[nr, nc] > 0:
-                l2 = label[nr, nc]
-                d2 = abs(img[r, c] - sums[l2] / counts[l2])
-                if best is None or d2 < best[0]:
-                    best = (d2, l2)
-        if best is None:
-            queued[r, c] = False
-            continue
-        lid = best[1]
-        label[r, c] = lid                       # unconditional: no stopping rule
+            continue                    # a better-fitting region reached it first
+        label[r, c] = lid               # unconditional: no stopping rule, no re-scoring
         sums[lid] += float(img[r, c])
         counts[lid] += 1
-        for dr, dc in NEIGH4:
-            enqueue(r + dr, c + dc)
+        for dr, dc in NEIGH8:
+            enqueue(r + dr, c + dc, lid)
 
-    region = label == 1
-    trace = {"passes": [{"pass": 1, "mu": round(sums[1] / counts[1], 2),
-                         "sigma": None, "T_L": None, "T_G": None,
-                         "added": int(region.sum() - core.sum()),
-                         "area": int(region.sum()),
-                         "stop": "all pixels allocated"}],
-             "stop_reason": "tessellation complete (no stopping criterion)",
-             "n_background_seeds": nxt - 2}
-    return region, trace
+    trace = {
+        "stop_reason": "tessellation complete (no stopping criterion)",
+        "n_seed_regions": len(ids),
+        "unlabeled": int((label == 0).sum()),
+        "region_areas": {i: int(counts[i]) for i in ids},
+        "region_means": {i: round(sums[i] / counts[i], 2) for i in ids},
+    }
+    if len(ids) < 2:
+        trace["warning"] = ("Only one seed region was planted. SRG has no stopping "
+                            "rule, so with nothing to compete against, that single "
+                            "region absorbs the entire image.")
+    return label, trace

@@ -18,6 +18,11 @@ ORANGE = (249, 115, 22)    # false negative
 BLUE = (59, 130, 246)      # candidates
 YELLOW = (234, 179, 8)     # mask outline
 
+# Manual seed / tessellation region ids: 1 is whichever region the caller treats
+# as the structure of interest, 2+ are competing regions. SRG itself does not
+# distinguish them -- this palette is display-only.
+SEED_COLORS = [RED, BLUE, GREEN, YELLOW, (168, 85, 247), (249, 115, 22)]
+
 
 def _gray_rgb(img):
     a = np.clip(img, 0, 255).astype(np.uint8)
@@ -68,6 +73,14 @@ def render_stage(stage, base_img, gt=None, opacity=0.55):
                 out[ndi.binary_dilation(m, iterations=1)] = RED
         else:                                          # growth
             out[m] = (np.array(RED) * opacity + out[m] * (1 - opacity)).astype(np.uint8)
+    elif stage.kind == "labels":
+        out = rgb.copy()
+        lab = stage.image
+        for i in [int(x) for x in np.unique(lab) if x > 0]:
+            color = SEED_COLORS[(i - 1) % len(SEED_COLORS)]
+            m = lab == i
+            out[m] = (np.array(color) * opacity + out[m] * (1 - opacity)).astype(np.uint8)
+            out[outline(m)] = color
     else:
         out = overlay_result(base_img, stage.image, gt, opacity)
 

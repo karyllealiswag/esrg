@@ -38,9 +38,14 @@ PRIMARY_HOV = "#0369a1"
 VIEWPORT_BG = "#090d16"  
 
 # Status Badges
-OK_CLR      = "#16a34a"  
-WARN_CLR    = "#d97706"  
-FAIL_CLR    = "#dc2626"  
+OK_CLR      = "#16a34a"
+WARN_CLR    = "#d97706"
+FAIL_CLR    = "#dc2626"
+
+# Manual seed types share the tessellation palette (esrg.visualize.SEED_COLORS):
+# type 1 is whichever region the user treats as the structure of interest,
+# type 2+ are the other competing regions. SRG itself does not distinguish them.
+SEED_RGB = viz.SEED_COLORS
 
 # Typography
 FONT_TITLE  = ("Segoe UI", 11, "bold")
@@ -110,6 +115,7 @@ class ESRGApp:
         self.error_mode = tk.BooleanVar(value=False)
         self.method = tk.StringVar(value="esrg")
         self.seed_mode = tk.StringVar(value="auto")
+        self.seed_type = tk.IntVar(value=1)
         self.use_local = tk.BooleanVar(value=True)
         self.use_stop = tk.BooleanVar(value=True)
         self.use_n4 = tk.BooleanVar(value=False)
@@ -234,6 +240,23 @@ class ESRGApp:
                            activebackground=PANEL_BG, font=FONT_UI, anchor="w",
                            highlightthickness=0).pack(fill=tk.X, pady=1)
 
+        # Seed type palette: clicks are planted as the selected type. The SRG
+        # baseline tessellates the head between all planted types, so types 2+
+        # are what stop the tumor region from swallowing the whole slice.
+        type_box = tk.Frame(scroll_content, bg=PANEL_BG)
+        type_box.pack(fill=tk.X, pady=(6, 2))
+        tk.Label(type_box, text="Seed type to plant", bg=PANEL_BG, fg=TEXT_MUTED,
+                 font=FONT_SM, anchor="w").pack(fill=tk.X)
+        for t in range(1, self.cfg.manual_seed_types + 1):
+            row = tk.Frame(type_box, bg=PANEL_BG)
+            row.pack(fill=tk.X)
+            tk.Radiobutton(row, text=f"Type {t}" + (" (tumor)" if t == 1 else ""),
+                           variable=self.seed_type, value=t, bg=PANEL_BG, fg=TEXT_MAIN,
+                           selectcolor=PANEL_ALT, activebackground=PANEL_BG,
+                           font=FONT_UI, anchor="w", highlightthickness=0).pack(side=tk.LEFT)
+            tk.Frame(row, bg="#%02x%02x%02x" % SEED_RGB[(t - 1) % len(SEED_RGB)],
+                     width=14, height=14).pack(side=tk.RIGHT, padx=6, pady=3)
+
         FlatButton(scroll_content, text="Clear Manual Seeds", command=self._clear_seeds,
                    bg=PANEL_BG, fg=TEXT_MUTED, hover_bg=PANEL_ALT, font=FONT_SM, pady=4).pack(fill=tk.X, pady=(6, 4))
 
@@ -349,8 +372,12 @@ class ESRGApp:
             return
         rc = self._canvas_to_image(event.x, event.y)
         if rc:
-            self.manual_points.append(rc)
-            self.status_lbl.config(text=f"{len(self.manual_points)} manual seed coordinate(s) placed.", fg=PRIMARY)
+            t = self.seed_type.get()
+            self.manual_points.append((rc[0], rc[1], t))
+            n_types = len({p[2] for p in self.manual_points})
+            self.status_lbl.config(
+                text=f"{len(self.manual_points)} seed(s) across {n_types} type(s) placed.",
+                fg=PRIMARY)
             self._redraw()
 
     def _current_config(self):
@@ -365,8 +392,9 @@ class ESRGApp:
         if not self.image_path:
             messagebox.showwarning("Input Required", "Please load an MRI slice before running.")
             return
-        if self.seed_mode.get() == "manual" and not self.manual_points:
-            messagebox.showwarning("Seed Required", "Click on the tumor region to place at least one seed.")
+        if self.seed_mode.get() == "manual" and not any(p[2] == 1 for p in self.manual_points):
+            messagebox.showwarning("Seed Required",
+                                   "Click on the tumor region to place at least one Type 1 seed.")
             return
 
         cfg = self._current_config()
@@ -515,8 +543,8 @@ class ESRGApp:
             rgb = viz.render_stage(st, base, self.result.gt, self.opacity.get())
 
         if self.seed_mode.get() == "manual" and self.manual_points:
-            for r, c in self.manual_points:
-                rgb[max(0, r - 2):r + 3, max(0, c - 2):c + 3] = viz.RED
+            for r, c, t in self.manual_points:
+                rgb[max(0, r - 2):r + 3, max(0, c - 2):c + 3] = SEED_RGB[(t - 1) % len(SEED_RGB)]
 
         w, h, s, ox, oy = self._geometry()
         img = Image.fromarray(rgb.astype(np.uint8)).resize(

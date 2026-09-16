@@ -41,7 +41,9 @@ class Config:
                                     # the max head depth (excludes scalp and skull)
     min_clearance: float = 8.0      # a candidate's core must sit this far inside the
                                     # head outline, beyond its own inscribed radius
-    manual_seed_radius: int = 3     # manual clicks are dilated into a small core
+    manual_seed_radius: int = 3     # manual clicks are dilated into a small region
+    manual_seed_types: int = 4      # number of seed types selectable in manual mode
+                                    # (type 1 = tumor, 2+ = competing regions for SRG)
 
     # ── Phase 1: contrast/shape-aware seed ranking (Improvement Masterplan) ───
     rank_use_contrast: bool = True  # rank by brightness relative to local surround
@@ -84,9 +86,6 @@ class Config:
     sigma_floor_min: float = 0.02   # lower clamp for the estimated noise floor (log units)
     lazy_tol: float = 1e-9          # re-queue tolerance for lazy re-evaluation
 
-    # ── Baseline SRG ──────────────────────────────────────────────────
-    bg_seed_step: int = 8           # grid step for automatic background seeds
-
     # ── Post-processing ───────────────────────────────────────────────
     post_open_radius: int = 1
 
@@ -102,6 +101,7 @@ class Config:
         assert 0 < self.seed_core_frac <= 1, "seed_core_frac must be in (0, 1]"
         assert self.k_global > self.k_local, "k_global must exceed k_local"
         assert self.local_radius >= 1 and self.max_passes >= 1
+        assert self.manual_seed_types >= 1, "manual_seed_types must be >= 1"
         return self
 
     def to_dict(self):
