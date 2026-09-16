@@ -250,7 +250,20 @@ class ESRGApp:
         canvas.configure(yscrollcommand=sb.set)
         p.bind("<Configure>", lambda e: canvas.itemconfig(cw, width=e.width - 16))
 
-        def _on_mousewheel(event):
+        # Widgets embedded in a Canvas via create_window (like scroll_content
+        # and everything in it) don't reliably receive real hardware
+        # <MouseWheel> events routed to descendant widgets on macOS/Aqua,
+        # even though per-widget bindings are technically present. Binding
+        # globally via bind_all and gating on cursor position sidesteps that
+        # routing entirely, so hovering anywhere over the sidebar scrolls it.
+        def _on_sidebar_wheel(event):
+            px, py = self.root.winfo_pointerx(), self.root.winfo_pointery()
+            bx, by = p.winfo_rootx(), p.winfo_rooty()
+            bw, bh = p.winfo_width(), p.winfo_height()
+            if bw <= 1 or bh <= 1:
+                return
+            if not (bx <= px < bx + bw and by <= py < by + bh):
+                return
             if event.num == 4:
                 canvas.yview_scroll(-1, "units")
             elif event.num == 5:
@@ -258,19 +271,9 @@ class ESRGApp:
             else:
                 canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
 
-        # scroll_content fully covers the canvas, so hovering anywhere over
-        # the panel actually targets one of its child widgets (a label,
-        # radiobutton, frame, ...), not the canvas itself. Bind the wheel
-        # directly to every one of them, walking the tree as it's built.
-        def _bind_wheel_tree(widget):
-            widget.bind("<MouseWheel>", _on_mousewheel, add="+")
-            widget.bind("<Button-4>", _on_mousewheel, add="+")
-            widget.bind("<Button-5>", _on_mousewheel, add="+")
-            for child in widget.winfo_children():
-                _bind_wheel_tree(child)
-
-        self._sidebar_bind_wheel = _bind_wheel_tree
-        _bind_wheel_tree(canvas)
+        self.root.bind_all("<MouseWheel>", _on_sidebar_wheel, add="+")
+        self.root.bind_all("<Button-4>", _on_sidebar_wheel, add="+")
+        self.root.bind_all("<Button-5>", _on_sidebar_wheel, add="+")
 
         # Input Source
         self._section_header(scroll_content, "Input Data")
@@ -292,7 +295,7 @@ class ESRGApp:
 
         # Seeding Protocol
         self._section_header(scroll_content, "Seeding Strategy")
-        for val, lab in (("auto", "Automated Candidate (Obj 1)"), ("manual", "Manual Landmark Seed")):
+        for val, lab in (("auto", "Automated Seeding"), ("manual", "Manual Seeding")):
             tk.Radiobutton(scroll_content, text=lab, variable=self.seed_mode, value=val,
                            command=self._update_seed_region_visibility,
                            bg=PANEL_BG, fg=TEXT_MAIN, selectcolor=PANEL_ALT,
@@ -346,8 +349,6 @@ class ESRGApp:
                        selectcolor=PANEL_ALT, activebackground=PANEL_BG,
                        font=FONT_UI, anchor="w", highlightthickness=0,
                        command=self._redraw).pack(fill=tk.X, pady=(2, 6))
-
-        self._sidebar_bind_wheel(scroll_content)
 
     def _update_seed_region_visibility(self):
         """The seed-region palette only matters for Manual Landmark seeding
