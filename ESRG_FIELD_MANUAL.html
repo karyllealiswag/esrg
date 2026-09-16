@@ -1,0 +1,1826 @@
+<title>ESRG Field Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --ground:#f4f6f9;
+  --panel:#ffffff;
+  --panel-2:#eef2f7;
+  --ink:#101a24;
+  --ink-2:#4a5b6e;
+  --ink-3:#7d8fa3;
+  --line:#dbe3ec;
+  --line-2:#c3cfdc;
+  --accent:#0b6ea8;
+  --accent-2:#075a8a;
+  --accent-soft:#e2eff8;
+  --ok:#156b3d;
+  --warn:#9a5808;
+  --bad:#a91d1d;
+  --ok-soft:#e3f3ea;
+  --warn-soft:#fbeedb;
+  --bad-soft:#fae4e4;
+  --r1:#c2371f;
+  --r2:#1f5fbf;
+  --r3:#1d7a45;
+  --r4:#96700c;
+  --shadow:0 1px 2px rgba(16,26,36,.06),0 8px 24px rgba(16,26,36,.05);
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,sans-serif;
+  --serif:"IBM Plex Serif",Georgia,"Times New Roman",serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0b1116;
+    --panel:#121b23;
+    --panel-2:#18242e;
+    --ink:#e4ecf3;
+    --ink-2:#a3b4c4;
+    --ink-3:#71869a;
+    --line:#233240;
+    --line-2:#31465a;
+    --accent:#4fb3e3;
+    --accent-2:#7ecbf0;
+    --accent-soft:#11303f;
+    --ok:#5cc98c;
+    --warn:#e0a458;
+    --bad:#ef8080;
+    --ok-soft:#12291d;
+    --warn-soft:#2e2313;
+    --bad-soft:#2e1818;
+    --r1:#ef6a52;
+    --r2:#6ba4ec;
+    --r3:#5cc98c;
+    --r4:#d9ab3c;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.28);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0b1116;
+  --panel:#121b23;
+  --panel-2:#18242e;
+  --ink:#e4ecf3;
+  --ink-2:#a3b4c4;
+  --ink-3:#71869a;
+  --line:#233240;
+  --line-2:#31465a;
+  --accent:#4fb3e3;
+  --accent-2:#7ecbf0;
+  --accent-soft:#11303f;
+  --ok:#5cc98c;
+  --warn:#e0a458;
+  --bad:#ef8080;
+  --ok-soft:#12291d;
+  --warn-soft:#2e2313;
+  --bad-soft:#2e1818;
+  --r1:#ef6a52;
+  --r2:#6ba4ec;
+  --r3:#5cc98c;
+  --r4:#d9ab3c;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.28);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--ground);color:var(--ink);
+  font-family:var(--serif);font-size:16px;line-height:1.68;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:20px;padding-block:0 72px;}
+
+/* ---------- masthead ---------- */
+.masthead{border-bottom:1px solid var(--line);padding-block:44px 30px;margin-bottom:34px}
+.eyebrow{
+  font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--accent);margin:0 0 14px
+}
+h1{
+  font-family:var(--sans);font-weight:700;font-size:clamp(30px,5.2vw,46px);
+  line-height:1.1;letter-spacing:-.02em;margin:0 0 16px;text-wrap:balance
+}
+.standfirst{font-size:clamp(16px,2.2vw,19px);color:var(--ink-2);max-width:66ch;margin:0 0 22px}
+.meta-row{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--sans)}
+.meta{
+  font-size:12px;border:1px solid var(--line-2);border-radius:2px;
+  padding:4px 9px;color:var(--ink-2);background:var(--panel)
+}
+.meta b{font-weight:600;color:var(--ink)}
+
+/* ---------- layout ---------- */
+.cols{display:grid;grid-template-columns:232px minmax(0,1fr);gap:48px;align-items:start}
+@media (max-width:920px){.cols{grid-template-columns:1fr;gap:26px}}
+
+nav.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 18px);font-family:var(--sans)}
+@media (max-width:920px){
+  nav.toc{position:static;border:1px solid var(--line);background:var(--panel);border-radius:3px;padding:14px 16px}
+}
+.toc-title{
+  font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);margin:0 0 12px
+}
+.toc ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
+.toc a{
+  display:flex;gap:9px;text-decoration:none;color:var(--ink-2);font-size:13.5px;
+  padding:4px 8px;border-radius:2px;border-left:2px solid transparent;line-height:1.35
+}
+.toc a:hover{color:var(--accent);background:var(--accent-soft);border-left-color:var(--accent)}
+.toc a .n{color:var(--ink-3);font-variant-numeric:tabular-nums;font-size:12px;min-width:15px}
+.toc a:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+main{min-width:0;max-width:78ch}
+
+/* ---------- sections ---------- */
+section{margin-bottom:56px;scroll-margin-top:24px}
+h2{
+  font-family:var(--sans);font-weight:600;font-size:clamp(21px,3vw,27px);letter-spacing:-.015em;
+  line-height:1.22;margin:0 0 6px;text-wrap:balance;
+  padding-bottom:10px;border-bottom:2px solid var(--ink);display:flex;gap:12px;align-items:baseline
+}
+h2 .sn{
+  font-family:var(--mono);font-size:14px;color:var(--accent);font-weight:500;
+  font-variant-numeric:tabular-nums
+}
+.lede{color:var(--ink-2);margin:14px 0 24px;max-width:66ch}
+h3{
+  font-family:var(--sans);font-weight:600;font-size:17.5px;letter-spacing:-.005em;
+  margin:32px 0 8px;text-wrap:balance
+}
+h4{font-family:var(--sans);font-weight:600;font-size:14.5px;margin:22px 0 6px;color:var(--ink)}
+p{margin:0 0 14px;max-width:66ch}
+ul,ol.body{margin:0 0 14px;padding-left:22px;max-width:66ch}
+li{margin-bottom:7px}
+strong{font-weight:600}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2px}
+
+/* ---------- inline bits ---------- */
+code{
+  font-family:var(--mono);font-size:.855em;background:var(--panel-2);
+  padding:1px 5px;border-radius:2px;color:var(--ink);white-space:nowrap
+}
+.path{font-family:var(--mono);font-size:.855em;color:var(--accent-2);white-space:nowrap}
+pre{
+  font-family:var(--mono);font-size:13px;line-height:1.6;background:var(--panel);
+  border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:2px;
+  padding:14px 16px;overflow-x:auto;margin:0 0 16px
+}
+pre code{background:none;padding:0;white-space:pre;font-size:inherit}
+.cap{font-family:var(--sans);font-size:11.5px;color:var(--ink-3);margin:-10px 0 18px;display:block}
+
+/* ---------- chips ---------- */
+.chip{
+  font-family:var(--sans);font-size:10.5px;font-weight:600;letter-spacing:.07em;
+  text-transform:uppercase;padding:2px 7px;border-radius:2px;white-space:nowrap;
+  display:inline-block;vertical-align:middle
+}
+.c-esrg{background:var(--accent-soft);color:var(--accent-2)}
+.c-srg{background:var(--panel-2);color:var(--ink-2);border:1px solid var(--line-2)}
+.c-both{background:var(--ok-soft);color:var(--ok)}
+.c-off{background:var(--warn-soft);color:var(--warn)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+
+/* ---------- tables ---------- */
+.tw{overflow-x:auto;margin:0 0 18px;border:1px solid var(--line);border-radius:3px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-family:var(--sans);font-size:13.5px;min-width:520px}
+th{
+  text-align:left;font-weight:600;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3);padding:10px 14px;border-bottom:1px solid var(--line-2);white-space:nowrap
+}
+td{padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink-2)}
+tr:last-child td{border-bottom:none}
+td:first-child{color:var(--ink);font-weight:500}
+td code,th code{font-size:12px;white-space:nowrap}
+.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+
+/* ---------- formula ---------- */
+.formula{
+  background:var(--panel);border:1px solid var(--line);border-radius:3px;
+  padding:18px 20px;margin:0 0 18px;box-shadow:var(--shadow)
+}
+.formula .fname{
+  font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink-3);margin:0 0 10px
+}
+.eq{
+  font-family:var(--mono);font-size:15px;line-height:1.9;color:var(--ink);
+  padding:10px 0;overflow-x:auto;white-space:nowrap
+}
+.eq .hl{color:var(--accent);font-weight:600}
+.sub{
+  font-family:var(--mono);font-size:12.5px;line-height:1.85;color:var(--ink-2);
+  border-top:1px dashed var(--line-2);padding-top:11px;margin-top:6px;overflow-x:auto
+}
+.sub .arrow{color:var(--accent);font-weight:600}
+.sub b{color:var(--ink);font-weight:600}
+
+/* ---------- callouts ---------- */
+.note{
+  border-left:3px solid var(--line-2);background:var(--panel);padding:13px 16px;
+  margin:0 0 18px;border-radius:0 3px 3px 0;font-size:15px
+}
+.note.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.note.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.note.ok{border-left-color:var(--ok);background:var(--ok-soft)}
+.note .nt{
+  font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.1em;
+  text-transform:uppercase;display:block;margin-bottom:5px;color:var(--ink-3)
+}
+.note.warn .nt{color:var(--warn)}
+.note.bad .nt{color:var(--bad)}
+.note.ok .nt{color:var(--ok)}
+.note p:last-child{margin-bottom:0}
+
+/* ---------- file cards ---------- */
+.filecard{
+  background:var(--panel);border:1px solid var(--line);border-radius:3px;
+  padding:18px 20px;margin:0 0 14px
+}
+.filecard h3{margin:0 0 4px;font-family:var(--mono);font-size:15px;color:var(--accent-2);font-weight:600}
+.filecard .role{font-family:var(--sans);font-size:12px;color:var(--ink-3);margin:0 0 12px}
+.io{display:grid;grid-template-columns:78px minmax(0,1fr);gap:4px 14px;font-size:14px;margin-bottom:12px}
+@media (max-width:520px){.io{grid-template-columns:1fr;gap:2px 0}.io dt{margin-top:8px}}
+.io dt{
+  font-family:var(--sans);font-size:10.5px;font-weight:600;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-3);padding-top:4px
+}
+.io dd{margin:0;color:var(--ink-2)}
+.modify{
+  font-size:13.5px;color:var(--ink-2);border-top:1px solid var(--line);
+  padding-top:11px;margin-top:4px
+}
+.modify b{font-family:var(--sans);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);display:block;margin-bottom:4px}
+
+/* ---------- stage strip ---------- */
+.stage{
+  display:grid;grid-template-columns:50px minmax(0,1fr);gap:18px;
+  padding:18px 0;border-bottom:1px solid var(--line)
+}
+@media (max-width:520px){.stage{grid-template-columns:1fr;gap:6px}}
+.stage:last-child{border-bottom:none}
+.stage .snum{
+  font-family:var(--mono);font-size:19px;font-weight:600;color:var(--accent);
+  font-variant-numeric:tabular-nums;line-height:1.3
+}
+.stage h3{margin:0 0 4px}
+.stage p{margin-bottom:9px;font-size:15px}
+.stage .io{font-size:13.5px;grid-template-columns:70px minmax(0,1fr)}
+@media (max-width:520px){.stage .io{grid-template-columns:1fr}}
+
+/* ---------- swatch ---------- */
+.sw{display:inline-block;width:11px;height:11px;border-radius:2px;vertical-align:-1px;margin-right:5px}
+
+.kbd{
+  font-family:var(--sans);font-size:12px;font-weight:600;background:var(--panel-2);
+  border:1px solid var(--line-2);border-bottom-width:2px;border-radius:3px;padding:1px 6px;white-space:nowrap
+}
+
+.glossary dt{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--ink);margin-top:14px}
+.glossary dd{margin:3px 0 0;color:var(--ink-2);font-size:15px;max-width:66ch}
+
+hr.rule{border:none;border-top:1px solid var(--line);margin:30px 0}
+
+footer{
+  border-top:1px solid var(--line);margin-top:20px;padding-top:22px;
+  font-family:var(--sans);font-size:12.5px;color:var(--ink-3)
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Seeded Region Growing · Brain MRI · Technical Reference</p>
+  <h1>ESRG Field Manual</h1>
+  <p class="standfirst">
+    A complete, ground-up explanation of the Enhanced Seeded Region Growing system — what every
+    file does, what every screen control changes, what every equation computes, and how the
+    1994 baseline algorithm sits inside it unmodified. Written for a reader with no prior
+    background in medical imaging or region growing.
+  </p>
+  <div class="meta-row">
+    <span class="meta"><b>Package</b> esrg v1.0.0</span>
+    <span class="meta"><b>Baseline</b> Adams &amp; Bischof (1994)</span>
+    <span class="meta"><b>Data</b> BRISC2025, T1-weighted MRI</span>
+    <span class="meta"><b>Entry point</b> <code>python -m gui.app</code></span>
+  </div>
+</header>
+
+<div class="cols">
+
+<nav class="toc" aria-label="Contents">
+  <p class="toc-title">Contents</p>
+  <ol>
+    <li><a href="#s1"><span class="n">1</span><span>What the system does</span></a></li>
+    <li><a href="#s2"><span class="n">2</span><span>Vocabulary first</span></a></li>
+    <li><a href="#s3"><span class="n">3</span><span>Region growing, from top to core</span></a></li>
+    <li><a href="#s4"><span class="n">4</span><span>The two algorithms</span></a></li>
+    <li><a href="#s5"><span class="n">5</span><span>The pipeline, stage by stage</span></a></li>
+    <li><a href="#s6"><span class="n">6</span><span>Equations, with real numbers</span></a></li>
+    <li><a href="#s7"><span class="n">7</span><span>File-by-file reference</span></a></li>
+    <li><a href="#s8"><span class="n">8</span><span>Every control on screen</span></a></li>
+    <li><a href="#s9"><span class="n">9</span><span>Parameters and what they do</span></a></li>
+    <li><a href="#s10"><span class="n">10</span><span>Ablation &amp; research switches</span></a></li>
+    <li><a href="#s11"><span class="n">11</span><span>Ground truth and its accuracy</span></a></li>
+    <li><a href="#s12"><span class="n">12</span><span>The Stage Telemetry panel</span></a></li>
+    <li><a href="#s13"><span class="n">13</span><span>Glossary of every symbol</span></a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- ============================================================ 1 -->
+<section id="s1">
+  <h2><span class="sn">01</span> What the system does</h2>
+  <p class="lede">
+    One sentence: it takes a single grayscale MRI photograph of a head, finds the brain tumor in
+    it, and draws the tumor's outline automatically.
+  </p>
+
+  <p>
+    An <strong>MRI slice</strong> is a single 2D cross-section image through a patient's head, the
+    way one slice of bread is a cross-section of a loaf. This system works on
+    <strong>T1-weighted contrast-enhanced</strong> slices, meaning the patient was given a contrast
+    dye before scanning that makes many tumors light up brighter than the tissue around them. That
+    brightness difference is the entire physical basis for everything this software does.
+  </p>
+
+  <p>
+    <strong>Segmentation</strong> means deciding, for every single pixel in the image, whether it
+    is tumor or not tumor. The output is a <strong>mask</strong>: an image the same size as the
+    input where each pixel is simply true (tumor) or false (not tumor). Compare that mask against
+    a mask a human expert drew by hand — the <strong>ground truth</strong> — and you can score how
+    well the software did.
+  </p>
+
+  <p>
+    The specific method used is <strong>Seeded Region Growing (SRG)</strong>. You place a
+    <strong>seed</strong> — one or a few starting pixels known to be inside the thing you want —
+    and the algorithm repeatedly absorbs neighbouring pixels that look similar enough, spreading
+    outward like ink soaking into paper until it reaches the object's edge.
+  </p>
+
+  <p>
+    The project has two halves that must be kept mentally separate:
+  </p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Half</th><th>What it is</th><th>Why it exists</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="chip c-srg">SRG</span></td>
+          <td>The original 1994 published algorithm, implemented faithfully and left alone.</td>
+          <td>The <strong>control</strong>. It is the yardstick the enhanced version must beat. Its
+              value comes entirely from being unmodified.</td>
+        </tr>
+        <tr>
+          <td><span class="chip c-esrg">ESRG</span></td>
+          <td>The enhanced version: automatic seeding, a bias-resistant difference measure, and a
+              stopping rule.</td>
+          <td>The <strong>contribution</strong>. Three named objectives, each a specific fix for a
+              specific documented failure of the original.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>The three enhancements, which recur throughout this manual as "Objective 1/2/3":</p>
+  <ol class="body">
+    <li><strong>Objective 1 — automatic seeding.</strong> The original requires a human to click
+        the seed. ESRG finds it by itself, or refuses and reports "no tumor candidate" rather than
+        guessing.</li>
+    <li><strong>Objective 2 — a local log-domain difference measure.</strong> MRI scanners impose a
+        smooth brightness gradient across the image (the <em>bias field</em>). This makes the same
+        tissue look brighter on one side of the image than the other, which confuses a naive
+        comparison. Working in the logarithm and comparing only against <em>nearby</em> absorbed
+        pixels cancels it.</li>
+    <li><strong>Objective 3 — an adaptive stopping criterion.</strong> The original never stops
+        until every pixel is consumed. ESRG computes a statistical boundary from the region's own
+        variability and halts there, so the tumor region does not bleed into healthy brain.</li>
+  </ol>
+</section>
+
+<!-- ============================================================ 2 -->
+<section id="s2">
+  <h2><span class="sn">02</span> Vocabulary first</h2>
+  <p class="lede">
+    Every term below appears later without re-explanation. None of them require prior knowledge;
+    read this once and the rest of the manual becomes plain.
+  </p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Term</th><th>Plain meaning</th></tr></thead>
+      <tbody>
+        <tr><td>Pixel</td><td>One dot of the image. Addressed as <code>(r, c)</code> — row, column. Row 0 is the top.</td></tr>
+        <tr><td>Intensity</td><td>How bright a pixel is. After normalization this system uses a 0–255 scale: 0 is black, 255 is white.</td></tr>
+        <tr><td>Mask</td><td>A true/false image the same size as the input. True marks the pixels belonging to something (the tumor, the head, the seed).</td></tr>
+        <tr><td>Connected component</td><td>A blob: a group of true pixels all touching each other. Two separate blobs in one mask are two components.</td></tr>
+        <tr><td>4-connectivity</td><td>A pixel's neighbours are the 4 sharing an edge: up, down, left, right.</td></tr>
+        <tr><td>8-connectivity</td><td>All 8 surrounding pixels, diagonals included. <strong>This system uses 8.</strong></td></tr>
+        <tr><td>Region</td><td>A set of pixels the algorithm has claimed as one object.</td></tr>
+        <tr><td>Seed</td><td>The starting pixels of a region, given before growing begins.</td></tr>
+        <tr><td>Seed core</td><td>The seed after it has been thickened into a small solid patch, so statistics computed from it are stable rather than resting on one pixel.</td></tr>
+        <tr><td>δ (delta)</td><td>The <em>difference measure</em>. A number saying how badly a candidate pixel fits a region. Small δ = good fit. This is the heart of the algorithm.</td></tr>
+        <tr><td>SSL</td><td><em>Sequential Sorted List.</em> The queue of candidate pixels waiting to be absorbed, permanently sorted so the smallest δ is always next. Implemented as a heap.</td></tr>
+        <tr><td>Heap</td><td>A data structure that always hands you its smallest item first, cheaply. Python's <code>heapq</code>.</td></tr>
+        <tr><td>Bias field</td><td>The scanner's smooth, slowly-varying brightness distortion across the image. Multiplies the true intensity.</td></tr>
+        <tr><td>Log domain</td><td>Working with <code>ln(intensity)</code> instead of intensity. Turns multiplication into addition — the key trick of Objective 2.</td></tr>
+        <tr><td>μ (mu)</td><td>The mean (average) intensity of a region.</td></tr>
+        <tr><td>σ (sigma)</td><td>The standard deviation — how spread out the region's intensities are. Small σ = uniform region.</td></tr>
+        <tr><td>Otsu's method</td><td>An automatic way to pick a brightness cutoff that best splits an image into dark and bright groups. Multi-Otsu picks several cutoffs for several groups.</td></tr>
+        <tr><td>Distance transform</td><td>For each true pixel, how far it is from the nearest false pixel. Used to find the deep centre of a blob.</td></tr>
+        <tr><td>Morphological opening</td><td>Erode then dilate. Deletes thin wisps and isolated specks while leaving solid shapes intact.</td></tr>
+        <tr><td>Leakage</td><td>The failure mode of region growing: the region escapes through a weak boundary and floods surrounding healthy tissue.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ 3 -->
+<section id="s3">
+  <h2><span class="sn">03</span> Region growing, from top to core</h2>
+  <p class="lede">
+    Four descents, each one level simpler than the last, ending at the single line of arithmetic
+    the whole system rests on.
+  </p>
+
+  <h3>Level 1 — the goal</h3>
+  <p>
+    Given an MRI slice, produce a mask marking the tumor. Score it against a human-drawn mask.
+  </p>
+
+  <h3>Level 2 — the strategy</h3>
+  <p>
+    Rather than classify each pixel independently (which ignores that tumors are contiguous blobs),
+    start from a point known to be tumor and expand outward, only accepting pixels that resemble
+    what has been accepted so far. This guarantees the output is one connected blob, which matches
+    what a tumor physically is.
+  </p>
+
+  <h3>Level 3 — the mechanism</h3>
+  <p>The loop, in five steps:</p>
+  <ol class="body">
+    <li>Mark the seed pixels as belonging to the region. Compute the region's mean intensity μ.</li>
+    <li>Look at every unclaimed pixel touching the region. For each, compute δ — how far its
+        intensity is from μ.</li>
+    <li>Put them all in the SSL, sorted by δ.</li>
+    <li>Take the smallest δ. Absorb that pixel into the region. Update μ to include it. Add that
+        pixel's newly-exposed neighbours to the SSL.</li>
+    <li>Repeat from step 4.</li>
+  </ol>
+  <p>
+    The <strong>only</strong> difference between the original algorithm and the enhanced one is
+    <em>when this loop stops</em> and <em>what exactly δ measures</em>. Everything else is shared.
+  </p>
+
+  <h3>Level 4 — the core arithmetic</h3>
+  <p>Strip away all structure and one subtraction remains:</p>
+
+  <div class="formula">
+    <p class="fname">The difference measure, classical form</p>
+    <div class="eq">δ(x) = <span class="hl">| I(x) − μ<sub>region</sub> |</span></div>
+    <div class="sub">
+      I(x) = intensity of candidate pixel x<br>
+      μ<sub>region</sub> = mean intensity of the region considering it<br>
+      | · | = absolute value, so δ is never negative<br>
+      <span class="arrow">→</span> <b>δ is small when the pixel looks like the region already does.</b>
+    </div>
+  </div>
+
+  <p>
+    That is it. Sorting by this number, absorbing the winner, and updating μ is Seeded Region
+    Growing. The 1994 paper's contribution was the <em>ordering</em> — always taking the globally
+    best-fitting pixel next, rather than sweeping outward blindly — because that ordering makes the
+    result insensitive to which direction you happen to grow first.
+  </p>
+</section>
+
+<!-- ============================================================ 4 -->
+<section id="s4">
+  <h2><span class="sn">04</span> The two algorithms</h2>
+  <p class="lede">
+    Both live in <span class="path">esrg/growing.py</span>. They share the neighbourhood definition
+    and the SSL, and differ in everything that decides membership.
+  </p>
+
+  <h3>The published baseline — <code>grow_srg</code></h3>
+  <div class="chips">
+    <span class="chip c-srg">Control group</span>
+    <span class="chip c-srg">No stopping rule</span>
+    <span class="chip c-srg">Whole image</span>
+  </div>
+  <p>
+    <span class="path">esrg/growing.py:175</span>. Signature:
+    <code>grow_srg(img, seed_labels)</code>. It receives the raw normalized intensity image and an
+    integer <strong>seed map</strong> — an array where each planted seed pixel carries a number
+    identifying which region it belongs to (1, 2, 3, …) and 0 means unseeded.
+  </p>
+
+  <p>The five properties that make it faithful to the paper:</p>
+  <ol class="body">
+    <li><strong>Every region grows at once, under one identical rule.</strong> No region id is
+        special-cased anywhere in the loop. Relabelling which number sits on the tumor produces
+        pixel-for-pixel identical output.</li>
+    <li><strong>δ is the raw distance to the region mean</strong>, computed on plain intensities —
+        no logarithm, no local window.</li>
+    <li><strong>δ is fixed when the pixel enters the SSL</strong> and never recomputed. The
+        original has no re-scoring step; a pixel is absorbed into the region it was queued for.</li>
+    <li><strong>Absorption is unconditional.</strong> There is no threshold and no rejection. The
+        winner of each round is always absorbed.</li>
+    <li><strong>It runs to complete tessellation.</strong> The loop ends only when the SSL is
+        empty, which can only happen once every pixel in the image belongs to some region. It
+        operates on the whole image, not a masked subregion, because the published algorithm has
+        no skull-stripping step.</li>
+  </ol>
+
+  <pre><code>while ssl:
+    _, r, c, lid = heapq.heappop(ssl)
+    if label[r, c] != 0:
+        continue                    # a better-fitting region reached it first
+    label[r, c] = lid               # unconditional: no stopping rule, no re-scoring
+    sums[lid] += float(img[r, c])
+    counts[lid] += 1
+    for dr, dc in NEIGH8:
+        enqueue(r + dr, c + dc, lid)</code></pre>
+  <span class="cap">esrg/growing.py — the entire absorption loop. Nine lines.</span>
+
+  <p>
+    It returns the <strong>full label map</strong>, not a tumor mask. Which region is "the tumor"
+    is not decided inside the algorithm — the caller reads out whichever id the user planted on the
+    tumor. This matters: SRG has no concept of a privileged region, and the code reflects that.
+  </p>
+
+  <div class="note warn">
+    <span class="nt">Consequence of having no stopping rule</span>
+    <p>
+      If you plant only one seed type, that region has nothing to compete against and absorbs the
+      entire image — correctly, per the algorithm. The code detects this and raises a warning
+      rather than silently returning a full-image mask. <strong>You must seed every distinct
+      tissue you don't want merged</strong>, including the dark background outside the head.
+    </p>
+  </div>
+
+  <h3>The enhanced version — <code>grow_esrg</code></h3>
+  <div class="chips">
+    <span class="chip c-esrg">Objective 2</span>
+    <span class="chip c-esrg">Objective 3</span>
+    <span class="chip c-esrg">Head mask only</span>
+  </div>
+  <p>
+    <span class="path">esrg/growing.py:65</span>. Signature:
+    <code>grow_esrg(L, mask, core, sigma_floor, cfg)</code>, where <code>L</code> is the
+    log-domain image. Four structural differences from the baseline:
+  </p>
+
+  <h4>1. δ is local and logarithmic (Objective 2)</h4>
+  <p>
+    Instead of comparing to the whole region's mean, it compares to the mean of absorbed pixels
+    within a small window around the candidate — a <code>(2r+1)×(2r+1)</code> box, 7×7 by default.
+    The class <code>_LocalMean</code> maintains this. If no absorbed pixel is nearby yet, it falls
+    back to the global region mean.
+  </p>
+
+  <h4>2. Growth runs in passes, with statistics frozen</h4>
+  <p>
+    Rather than one continuous loop, growth proceeds in up to <code>max_passes</code> (default 4)
+    sweeps. At the start of each pass, μ and σ are read once and held constant for the whole pass.
+    This is deliberate:
+  </p>
+  <div class="note">
+    <span class="nt">Why freezing matters</span>
+    <p>
+      If σ updated after every pixel, each marginally-accepted pixel would widen σ slightly,
+      which loosens the threshold, which admits the next marginal pixel, which widens σ again.
+      That positive feedback is exactly how leakage happens. Freezing per pass breaks the loop.
+    </p>
+  </div>
+
+  <h4>3. Two thresholds gate every absorption (Objective 3)</h4>
+  <p>
+    A <strong>local bound</strong> <code>T_L</code> stops the pass entirely when the best remaining
+    candidate fails it — valid because the SSL is sorted, so if the best fails, all the rest fail
+    too. A <strong>global drift guard</strong> <code>T_G</code> rejects individual pixels that have
+    wandered too far from the original region mean, which blocks slow chaining across a soft
+    boundary.
+  </p>
+
+  <h4>4. It keeps lazy re-evaluation</h4>
+  <p>
+    Because the local mean genuinely moves as neighbours get absorbed, ESRG rechecks δ when a pixel
+    is popped and re-queues it if it has grown stale (tolerance <code>lazy_tol</code>). This is an
+    intentional enhancement, and is precisely the behaviour that was <em>removed</em> from the
+    baseline to keep the baseline faithful.
+  </p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Property</th><th>grow_srg (baseline)</th><th>grow_esrg (enhanced)</th></tr></thead>
+      <tbody>
+        <tr><td>Operates on</td><td>Raw intensity, whole image</td><td>Log domain, inside head mask</td></tr>
+        <tr><td>δ reference</td><td>Whole-region mean</td><td>Local 7×7 mean of absorbed pixels</td></tr>
+        <tr><td>δ recomputed?</td><td>Never — fixed at insertion</td><td>Yes, lazily at pop</td></tr>
+        <tr><td>Acceptance</td><td>Unconditional</td><td>Must pass T_L and T_G</td></tr>
+        <tr><td>Stops when</td><td>Every pixel allocated</td><td>Threshold fails, or no pixel added, or P_max</td></tr>
+        <tr><td>Neighbourhood</td><td>8-connected</td><td>8-connected</td></tr>
+        <tr><td>Seeds needed</td><td>One per distinct region</td><td>One, on the tumor</td></tr>
+        <tr><td>Returns</td><td>Full integer label map</td><td>Boolean tumor mask</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ 5 -->
+<section id="s5">
+  <h2><span class="sn">05</span> The pipeline, stage by stage</h2>
+  <p class="lede">
+    <span class="path">esrg/pipeline.py</span> runs these in fixed order and keeps every
+    intermediate result, so a bad final mask can always be traced back to the stage that caused it.
+    Each stage becomes a clickable button in the app.
+  </p>
+
+  <p>
+    A <code>Stage</code> (<span class="path">esrg/pipeline.py:26</span>) records: a short key, a
+    display name, the image to show, how to draw it, a dictionary of diagnostics, elapsed seconds,
+    and a status of OK / WARN / FAIL. A <code>Result</code> holds the list of stages plus the final
+    mask, the ground truth, the scores, and metadata.
+  </p>
+
+  <div class="stage">
+    <div class="snum">1</div>
+    <div>
+      <h3>Input</h3>
+      <p>Load the image as grayscale and rescale brightness to a predictable 0–255 range. Large
+         images are downscaled so the longest side is at most <code>max_side</code> (512), which
+         bounds how long growing takes.</p>
+      <dl class="io">
+        <dt>In</dt><dd>File path</dd>
+        <dt>Out</dt><dd><code>img</code> — float array, 0–255; <code>scale</code> factor</dd>
+        <dt>Calls</dt><dd><code>load_image</code>, <code>normalize</code></dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="snum">2</div>
+    <div>
+      <h3>Head mask</h3>
+      <p>Isolate the head from the black air around it, and compute a <strong>depth map</strong> —
+         each pixel's distance from the head's outline. Note this isolates the <em>head</em>, not
+         the brain: on 2D slices the face and neck connect to the brain through the skull base, so
+         no erosion cleanly separates them. Telling interior tissue from scalp is deferred to seed
+         selection, which uses the depth map.</p>
+      <dl class="io">
+        <dt>In</dt><dd><code>img</code>, config</dd>
+        <dt>Out</dt><dd><code>mask</code>, <code>depth</code>, granulometry diagnostics</dd>
+        <dt>Status</dt><dd>WARN when no distinct skull ring is found</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="snum">2b</div>
+    <div>
+      <h3>N4 bias correction <span class="chip c-off">off by default</span></h3>
+      <p>An optional, industry-standard algorithm that estimates and divides out the scanner's
+         bias field directly. It exists purely as an <em>ablation arm</em> — a comparison point to
+         demonstrate that ESRG's log-domain approach already handles the bias field without this
+         heavy extra step. It is never part of ESRG proper.</p>
+      <dl class="io">
+        <dt>Needs</dt><dd>SimpleITK installed; fails gracefully with status FAIL if not</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="snum">3</div>
+    <div>
+      <h3>Log domain</h3>
+      <p>Compute <code>L = ln(img + eps)</code> and estimate the image's <strong>noise floor</strong> —
+         a robust lower bound on σ, so that a perfectly uniform seed can't produce a σ of zero and
+         a threshold of zero.</p>
+      <dl class="io">
+        <dt>In</dt><dd>Masked image</dd>
+        <dt>Out</dt><dd><code>L</code>, <code>sigma_floor</code></dd>
+        <dt>Used by</dt><dd>ESRG only. The SRG baseline ignores this stage entirely.</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="snum">4</div>
+    <div>
+      <h3>Candidates</h3>
+      <p>Multi-Otsu splits interior tissue into <code>K</code> brightness classes; the brightest
+         class becomes the candidate pool. Blobs are then filtered by area and by
+         <strong>clearance</strong> — how far a blob's deep centre sits inside the head beyond its
+         own radius. Scalp fat is the brightest tissue on T1 and forms a ring hugging the outline;
+         clearance near zero identifies and rejects it, while a real tumor sits well inside.</p>
+      <dl class="io">
+        <dt>In</dt><dd>Masked image, head mask, depth map</dd>
+        <dt>Out</dt><dd>Candidate blobs with measurements</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="snum">5</div>
+    <div>
+      <h3>Seed core</h3>
+      <p>Surviving candidates are ranked (contrast, interiority, shape) and the winner's deepest
+         interior pixels become the seed core — specifically pixels at least
+         <code>seed_core_frac</code> of the way to the blob's deepest point, keeping the seed away
+         from blurry partial-volume edge pixels. In manual mode this stage instead builds the seed
+         map from your clicks.</p>
+      <dl class="io">
+        <dt>Out</dt><dd><code>core</code> (boolean) and <code>seed_labels</code> (integer map)</dd>
+        <dt>Status</dt><dd>FAIL and a hard stop if nothing survives — the system reports
+            "NO TUMOR CANDIDATE" rather than seeding arbitrarily</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="snum">6</div>
+    <div>
+      <h3>Region growing</h3>
+      <p>Dispatches to <code>grow_srg</code> or <code>grow_esrg</code> depending on the method
+         setting. For SRG an extra stage <strong>6a · Full tessellation</strong> is inserted,
+         showing every grown region in its own colour so you can confirm that all regions grew and
+         that no pixel was left unallocated.</p>
+      <dl class="io">
+        <dt>Out</dt><dd>Boolean region mask + a trace of what happened</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="snum">7</div>
+    <div>
+      <h3>Final</h3>
+      <p>Cleanup, then scoring. Interior holes are filled (ring-enhancing tumors have dark necrotic
+         centres that belong inside the mask), a light opening shaves thin protrusions, and only
+         the connected component containing the seed is kept. If the result covers more than
+         <code>leak_warn_frac</code> of the head, the stage is flagged WARN for probable leakage.</p>
+      <dl class="io">
+        <dt>Out</dt><dd><code>result.mask</code>, plus all scores if ground truth was found</dd>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 6 -->
+<section id="s6">
+  <h2><span class="sn">06</span> Equations, with real numbers</h2>
+  <p class="lede">
+    Every formula the system uses, where it lives, and a worked substitution showing what it does
+    to the output. Numbers below are computed from a realistic bright-tumor seed.
+  </p>
+
+  <h3>6.1 Normalization</h3>
+  <div class="formula">
+    <p class="fname">preprocessing.normalize</p>
+    <div class="eq">I′ = clip( (I − p<sub>0.5</sub>) / (p<sub>99.5</sub> − p<sub>0.5</sub>), 0, 1 ) × <span class="hl">255</span></div>
+    <div class="sub">
+      p<sub>0.5</sub>, p<sub>99.5</sub> = the 0.5th and 99.5th percentile intensities<br>
+      <b>Why percentiles, not min/max:</b> a single blown-out hot pixel would otherwise compress the
+      entire image into a narrow band.<br>
+      <span class="arrow">→</span> with p<sub>0.5</sub>=12, p<sub>99.5</sub>=228, a raw pixel of 120 becomes
+      (120−12)/216 × 255 = <b>127.5</b>
+    </div>
+  </div>
+
+  <h3>6.2 The log transform — why it defeats the bias field</h3>
+  <div class="formula">
+    <p class="fname">preprocessing.log_transform &nbsp;·&nbsp; L(x) for every pixel</p>
+    <div class="eq">L(x) = <span class="hl">ln( I(x) + ε )</span> &nbsp;&nbsp; ε = 1.0</div>
+    <div class="sub">
+      ε prevents ln(0), which is undefined. 1.0 is negligible against a 0–255 range.<br>
+      <b>The bias field multiplies:</b> observed = true × b, where b varies smoothly across the image.<br>
+      In logs that becomes ln(true × b) = ln(true) + ln(b) — a <b>constant added offset</b>.
+    </div>
+  </div>
+
+  <p>Substituting real values proves it. Take two very different tissues, both under a 1.2× bias:</p>
+
+  <div class="tw">
+    <table>
+      <thead>
+        <tr><th>Tissue</th><th class="num">True I</th><th class="num">L</th><th class="num">Biased I (×1.2)</th><th class="num">L</th><th class="num">Shift in L</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Bright tumor</td><td class="num">200</td><td class="num">5.3033</td><td class="num">240</td><td class="num">5.4848</td><td class="num">+0.1815</td></tr>
+        <tr><td>Mid grey matter</td><td class="num">100</td><td class="num">4.6151</td><td class="num">120</td><td class="num">4.7958</td><td class="num">+0.1807</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note ok">
+    <span class="nt">Read the last column</span>
+    <p>
+      In raw intensity the bias shifted the bright pixel by <strong>+40</strong> and the dark pixel
+      by <strong>+20</strong> — completely different distortions. In the log domain both shifted by
+      <strong>≈ +0.181</strong> (which is ln 1.2 = 0.1823). The distortion became one shared
+      constant. And because ESRG's δ compares a pixel against its <em>local</em> neighbours, who
+      carry the same constant, it cancels in the subtraction entirely. That is Objective 2 in two
+      numbers.
+    </p>
+  </div>
+
+  <h3>6.3 Welford's online variance</h3>
+  <div class="formula">
+    <p class="fname">growing._Welford — updates μ and σ one pixel at a time without re-reading the region</p>
+    <div class="eq">d = x − μ &nbsp;;&nbsp; μ ← μ + d/n &nbsp;;&nbsp; M₂ ← M₂ + d·(x − μ<sub>new</sub>) &nbsp;;&nbsp; σ = <span class="hl">√( M₂ / (n−1) )</span></div>
+    <div class="sub">
+      n = count so far, M₂ = running sum of squared deviations.<br>
+      <b>Why not just recompute?</b> Re-averaging thousands of pixels after every absorption would
+      dominate runtime. Welford is exact and O(1) per update.<br>
+      <span class="arrow">→</span> for L values 5.3033, 5.3279, 5.2781 (intensities 200, 205, 195):
+      μ = <b>5.3031</b>, M₂ = 0.001239, σ = √(0.001239/2) = <b>0.0249</b>
+    </div>
+  </div>
+
+  <h3>6.4 The noise floor</h3>
+  <div class="formula">
+    <p class="fname">preprocessing.noise_floor — a σ that can't collapse to zero</p>
+    <div class="eq">σ<sub>floor</sub> = max( <span class="hl">1.4826 × MAD</span>( L − median<sub>3×3</sub>(L) ), 0.02 )</div>
+    <div class="sub">
+      MAD = median absolute deviation = median( |v − median(v)| ).<br>
+      <b>The 1.4826:</b> for normally-distributed data, σ ≈ 1.4826 × MAD. It converts a robust
+      spread measure into a standard-deviation equivalent.<br>
+      <b>Why subtract a median filter first:</b> that removes real anatomy and leaves only
+      pixel-to-pixel noise, which is what we want to measure.<br>
+      <span class="arrow">→</span> guards against a perfectly uniform seed giving σ = 0, which would
+      make every threshold zero and freeze growth instantly.
+    </div>
+  </div>
+
+  <h3>6.5 The ESRG difference measure and its two bounds</h3>
+  <div class="formula">
+    <p class="fname">growing.grow_esrg — Objectives 2 and 3 together</p>
+    <div class="eq">δ(x) = <span class="hl">| L(x) − m<sub>local</sub>(x) |</span></div>
+    <div class="eq">T<sub>L</sub> = k<sub>L</sub> · σ<sub>A</sub> &nbsp;&nbsp;&nbsp; T<sub>G</sub> = k<sub>G</sub> · σ<sub>A</sub> &nbsp;&nbsp;&nbsp; σ<sub>A</sub> = max(σ<sub>region</sub>, σ<sub>floor</sub>)</div>
+    <div class="sub">
+      m<sub>local</sub>(x) = mean L of absorbed pixels in the (2r+1)×(2r+1) window around x<br>
+      <b>Absorb x only if</b> δ(x) ≤ T<sub>L</sub> <b>and</b> |L(x) − μ<sub>A</sub>| ≤ T<sub>G</sub><br>
+      δ &gt; T<sub>L</sub> <b>ends the pass</b> (the SSL is sorted — if the best fails, all fail)<br>
+      Failing only T<sub>G</sub> rejects <b>that pixel alone</b> and continues
+    </div>
+  </div>
+
+  <p>
+    With the seed above (σ<sub>A</sub> = 0.0249) and defaults k<sub>L</sub> = 1.5, k<sub>G</sub> = 3.0:
+    T<sub>L</sub> = 0.0373, T<sub>G</sub> = 0.0747. Testing candidates against a local mean of 5.3031:
+  </p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Candidate I</th><th class="num">L</th><th class="num">δ</th><th>vs T<sub>L</sub> = 0.0373</th><th>Outcome</th></tr></thead>
+      <tbody>
+        <tr><td>198</td><td class="num">5.2933</td><td class="num">0.0098</td><td>pass</td><td style="color:var(--ok)">Absorbed</td></tr>
+        <tr><td>206</td><td class="num">5.3279</td><td class="num">0.0248</td><td>pass</td><td style="color:var(--ok)">Absorbed</td></tr>
+        <tr><td>190</td><td class="num">5.2523</td><td class="num">0.0508</td><td>fail</td><td style="color:var(--warn)">Pass ends here</td></tr>
+        <tr><td>150</td><td class="num">5.0173</td><td class="num">0.2858</td><td>fail</td><td style="color:var(--bad)">Far outside</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>How k<sub>L</sub> translates into an accepted brightness band</h4>
+  <p>
+    Because δ is measured in logs, a threshold T<sub>L</sub> corresponds to a <em>multiplicative</em>
+    tolerance of e<sup>T<sub>L</sub></sup> around the local mean. Around intensity 200 with
+    σ<sub>A</sub> = 0.0249:
+  </p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>k<sub>L</sub></th><th class="num">T<sub>L</sub></th><th class="num">e<sup>T<sub>L</sub></sup></th><th class="num">Accepted intensities</th><th>Behaviour</th></tr></thead>
+      <tbody>
+        <tr><td class="num">0.5</td><td class="num">0.0124</td><td class="num">1.013</td><td class="num">197.5 – 202.5</td><td>Barely grows; misses the tumor's own texture</td></tr>
+        <tr><td class="num">1.5 <span class="chip c-both">default</span></td><td class="num">0.0373</td><td class="num">1.038</td><td class="num">192.7 – 207.6</td><td>Tuned balance</td></tr>
+        <tr><td class="num">2.5</td><td class="num">0.0623</td><td class="num">1.064</td><td class="num">187.9 – 212.8</td><td>Tolerant; risks crossing soft edges</td></tr>
+        <tr><td class="num">4.0</td><td class="num">0.0996</td><td class="num">1.105</td><td class="num">181.0 – 220.9</td><td>Leakage likely on infiltrative tumors</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <span class="nt">The band widens on its own</span>
+    <p>
+      Those figures are for pass 1, when the region is just the uniform seed. By pass 3 the region
+      contains varied tumor tissue and σ might be 0.08, so with the same k<sub>L</sub> = 1.5,
+      T<sub>L</sub> becomes 0.12 and the band opens to roughly 177–226. The threshold adapts to the
+      tumor's own heterogeneity — that is what makes it <em>adaptive</em> stopping rather than a
+      fixed cutoff.
+    </p>
+  </div>
+
+  <h3>6.6 The SRG difference measure</h3>
+  <div class="formula">
+    <p class="fname">growing.grow_srg — plain intensities, best-fitting neighbour wins</p>
+    <div class="eq">δ(x, R) = <span class="hl">| I(x) − μ<sub>R</sub> |</span> &nbsp;&nbsp; where μ<sub>R</sub> = sums[R] / counts[R]</div>
+    <div class="sub">
+      Each candidate is queued once per region that reaches it; the SSL pops the global minimum.<br>
+      <span class="arrow">→</span> tumor region μ = 200, background region μ = 40:<br>
+      &nbsp;&nbsp;candidate I = 198 → δ<sub>tumor</sub> = <b>2</b>, δ<sub>bg</sub> = 158 → <b>tumor wins</b><br>
+      &nbsp;&nbsp;candidate I = 44 &nbsp;→ δ<sub>tumor</sub> = 156, δ<sub>bg</sub> = <b>4</b> → <b>background wins</b><br>
+      After absorbing 198: sums 200→398, counts 1→2, μ<sub>tumor</sub> = <b>199.0</b>
+    </div>
+  </div>
+
+  <h3>6.7 Candidate ranking</h3>
+  <div class="formula">
+    <p class="fname">seed_ranking.score_candidates</p>
+    <div class="eq">score = w<sub>c</sub>·ĉ + w<sub>r</sub>·r̂ + w<sub>s</sub>·<span class="hl">½(compactness + solidity)</span></div>
+    <div class="sub">
+      ĉ, r̂ = contrast and inscribed radius, each rescaled to 0–1 across the candidates<br>
+      contrast = mean(blob) − mean(ring just outside it)<br>
+      compactness = 4π·area / perimeter² &nbsp;(exactly 1.0 for a perfect disk)<br>
+      solidity = area / area of its convex hull &nbsp;(1.0 = no concavities)<br>
+      defaults w<sub>c</sub> = 0.5, w<sub>r</sub> = 1.0, w<sub>s</sub> = 0.2
+    </div>
+  </div>
+
+  <p>Two candidates, to show the weights deciding an outcome:</p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Blob</th><th class="num">radius</th><th class="num">contrast</th><th class="num">r̂</th><th class="num">ĉ</th><th class="num">shape</th><th class="num">score</th></tr></thead>
+      <tbody>
+        <tr><td>A — small, very bright</td><td class="num">12</td><td class="num">115</td><td class="num">0.0</td><td class="num">1.0</td><td class="num">0.90</td><td class="num">0.680</td></tr>
+        <tr><td>B — larger, dull</td><td class="num">14</td><td class="num">20</td><td class="num">1.0</td><td class="num">0.0</td><td class="num">0.63</td><td class="num"><b>1.125</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    B wins because interiority carries twice the weight of contrast. Raise
+    <code>rank_w_contrast</code> to 2.0 and A scores 2.18 against B's 1.125 — the ranking flips.
+    This single knob decides which blob gets seeded on ambiguous slices.
+  </p>
+
+  <h3>6.8 Clearance — how scalp is told apart from tumor</h3>
+  <div class="formula">
+    <p class="fname">seeds.select_seed</p>
+    <div class="eq">clearance = <span class="hl">depth(centre) − radius</span></div>
+    <div class="sub">
+      depth(centre) = distance from the blob's deepest pixel to the head outline<br>
+      radius = that blob's own inscribed radius<br>
+      <span class="arrow">→</span> tumor: depth 25, radius 12 → clearance <b>13</b> ≥ 8 → <b>kept</b><br>
+      <span class="arrow">→</span> scalp strip: depth 6, radius 5 → clearance <b>1</b> &lt; 8 → <b>rejected</b><br>
+      A blob riding the outline has its deepest point at roughly its own radius, so clearance ≈ 0.
+    </div>
+  </div>
+
+  <h3>6.9 The accuracy scores</h3>
+  <div class="formula">
+    <p class="fname">metrics.evaluate — TP / FP / FN are pixel counts against ground truth</p>
+    <div class="eq">DSC = <span class="hl">2·TP / (2·TP + FP + FN)</span> &nbsp;&nbsp;&nbsp; IoU = TP / (TP + FP + FN)</div>
+    <div class="eq">Precision = TP / (TP + FP) &nbsp;&nbsp;&nbsp; Recall = TP / (TP + FN)</div>
+    <div class="sub">
+      TP = predicted tumor that really is tumor &nbsp;·&nbsp; FP = predicted tumor that isn't &nbsp;·&nbsp;
+      FN = real tumor that was missed<br>
+      <span class="arrow">→</span> TP = 1500, FP = 200, FN = 300:<br>
+      &nbsp;&nbsp;DSC = 3000/3500 = <b>0.857</b> &nbsp; IoU = 1500/2000 = <b>0.750</b><br>
+      &nbsp;&nbsp;Precision = 1500/1700 = <b>0.882</b> &nbsp; Recall = 1500/1800 = <b>0.833</b>
+    </div>
+  </div>
+
+  <p>
+    <strong>DSC</strong> (Dice Similarity Coefficient) is the headline number in this field: 0 is no
+    overlap, 1 is perfect. It weights agreement double, which makes it more forgiving than IoU for
+    the same masks — the two always relate as DSC = 2·IoU / (1 + IoU). Precision falling while
+    recall stays high is the signature of leakage; the reverse means the region stopped too early.
+  </p>
+
+  <div class="formula">
+    <p class="fname">metrics.surface_distances — boundary accuracy, not area accuracy</p>
+    <div class="eq">HD95 = <span class="hl">95th percentile</span> of all boundary-to-boundary distances &nbsp;&nbsp; ASSD = their mean</div>
+    <div class="sub">
+      Distances are measured both ways (predicted edge → true edge, and true edge → predicted edge),
+      then pooled.<br>
+      <b>Why the 95th percentile</b> rather than the maximum: one stray pixel would otherwise
+      dominate the entire score.<br>
+      <b>Units are pixels at the working resolution</b>, not millimetres — see §11 for why that
+      matters.
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 7 -->
+<section id="s7">
+  <h2><span class="sn">07</span> File-by-file reference</h2>
+  <p class="lede">
+    What each file contains, what flows in and out, what it connects to, and the realistic reasons
+    you would open it.
+  </p>
+
+  <div class="filecard">
+    <h3>esrg/config.py</h3>
+    <p class="role">Single source of truth for every tunable number</p>
+    <dl class="io">
+      <dt>Contains</dt><dd>The <code>Config</code> dataclass — ~45 parameters, each with its tuned default and a comment explaining it. Plus <code>validate()</code>, <code>save()</code>, <code>load()</code>, <code>replace()</code>.</dd>
+      <dt>In</dt><dd>Nothing, or keyword overrides via <code>replace()</code></dd>
+      <dt>Out</dt><dd>A validated config object passed to every other module</dd>
+      <dt>Connects</dt><dd>Everything. Every function takes <code>cfg</code>.</dd>
+    </dl>
+    <div class="modify"><b>When to modify</b>
+      Adding a new tunable, or changing a default. <code>replace()</code> returns a validated copy
+      rather than mutating, so experiments never contaminate each other. Add an assertion to
+      <code>validate()</code> whenever a new parameter has an impossible range — failing at startup
+      beats failing mysteriously mid-run.
+    </div>
+  </div>
+
+  <div class="filecard">
+    <h3>esrg/io_utils.py</h3>
+    <p class="role">Reading images and masks; decoding dataset filenames</p>
+    <dl class="io">
+      <dt>Contains</dt><dd><code>load_image</code>, <code>load_mask</code>, <code>find_mask_for</code>, <code>parse_brisc_name</code>, <code>list_pairs</code>, <code>save_png</code></dd>
+      <dt>In</dt><dd>File paths</dd>
+      <dt>Out</dt><dd>Grayscale float arrays, boolean masks, metadata dictionaries</dd>
+      <dt>Connects</dt><dd>Feeds the pipeline's stage 1 and the ground-truth lookup; used by the batch scripts to enumerate a dataset</dd>
+    </dl>
+    <div class="modify"><b>When to modify</b>
+      Supporting a different dataset. <code>find_mask_for</code> hardcodes the naming convention
+      (<code>../masks/&lt;stem&gt;.png</code> and two fallbacks) and <code>parse_brisc_name</code>
+      hardcodes a BRISC-specific regex. Both must change together for a new corpus. If your masks
+      aren't near-binary PNGs, revisit the <code>&gt; 127</code> threshold.
+    </div>
+  </div>
+
+  <div class="filecard">
+    <h3>esrg/preprocessing.py</h3>
+    <p class="role">Normalize · head mask · N4 · log transform · noise floor</p>
+    <dl class="io">
+      <dt>Contains</dt><dd><code>normalize</code>, <code>head_mask</code>, <code>n4_correct</code>, <code>log_transform</code>, <code>noise_floor</code></dd>
+      <dt>In</dt><dd>Raw image array + config</dd>
+      <dt>Out</dt><dd>Normalized image, head mask, depth map, log image, σ floor</dd>
+      <dt>Connects</dt><dd>Stages 1–3. The depth map it produces is what lets seed selection distinguish scalp from tumor.</dd>
+    </dl>
+    <div class="modify"><b>When to modify</b>
+      If the head mask is wrong on your images, this is the file. The granulometry block inside
+      <code>head_mask</code> is <em>diagnostic only</em> — it fills the info dictionary and does not
+      alter the returned mask, so changing <code>ss_max_radius</code> changes reported numbers, not
+      results. A common real change is tightening <code>frame_open_radius</code> when scans carry
+      burned-in text or arrows.
+    </div>
+  </div>
+
+  <div class="filecard">
+    <h3>esrg/seeds.py</h3>
+    <p class="role">Objective 1 — automatic seeding, or manual seed maps</p>
+    <dl class="io">
+      <dt>Contains</dt><dd><code>select_seed</code> (automatic) and <code>manual_seed</code> (from clicks)</dd>
+      <dt>In</dt><dd>Masked image, head mask, depth map, config — or a list of click points</dd>
+      <dt>Out</dt><dd>Automatic: boolean seed core + a rich info dictionary. Manual: an <strong>integer label map</strong> where 1 is the structure of interest and 2+ are other regions.</dd>
+      <dt>Connects</dt><dd>Calls <code>anatomy_exclusion</code> and <code>seed_ranking</code>; its output feeds both growers</dd>
+    </dl>
+    <div class="modify"><b>When to modify</b>
+      Seeding is the most common source of total failure, and this file has the most levers. If
+      automatic seeding lands on the wrong structure, work down the chain: Otsu classes → area and
+      clearance filters → the ranking weights. The deliberate hard-fail (returning an empty core
+      rather than a guess) is a design decision — removing it would fabricate detections.
+    </div>
+  </div>
+
+  <div class="filecard">
+    <h3>esrg/seed_ranking.py</h3>
+    <p class="role">Phase 1 — choosing among surviving candidates</p>
+    <dl class="io">
+      <dt>Contains</dt><dd><code>score_candidates</code>, <code>vesselness_map</code>, plus contrast and shape helpers</dd>
+      <dt>In</dt><dd>Candidate list from <code>seeds.py</code>, the image, config</dd>
+      <dt>Out</dt><dd>The same list re-sorted best-first, each record annotated with its feature values and final score</dd>
+      <dt>Connects</dt><dd>Called only by <code>seeds.select_seed</code></dd>
+    </dl>
+    <div class="modify"><b>When to modify</b>
+      Tuning which blob wins. It is purely additive — records gain keys, never lose them — so its
+      reasoning is fully visible in the telemetry panel. Frangi vesselness acts as a veto
+      (−10 to the score), not a weight, and is off by default because it gave no aggregate gain on
+      2D slices at roughly double the runtime.
+    </div>
+  </div>
+
+  <div class="filecard">
+    <h3>esrg/anatomy_exclusion.py</h3>
+    <p class="role">Phase 2a — forbidding bright non-tumor anatomy <span class="chip c-off">off by default</span></p>
+    <dl class="io">
+      <dt>Contains</dt><dd><code>orbit_mask</code>, <code>skull_base_band</code>, <code>forbidden_region</code></dd>
+      <dt>In</dt><dd>Image, head mask, depth map, config</dd>
+      <dt>Out</dt><dd>A boolean mask of regions barred from candidacy</dd>
+      <dt>Connects</dt><dd>Applied inside <code>seeds.select_seed</code> before blobs are labelled</dd>
+    </dl>
+    <div class="modify"><b>When to modify</b>
+      Only if a specific bright structure repeatedly steals the seed on your data. Detection is by
+      measured anatomical signature — brightness percentile, circularity, relative position — never
+      by hardcoded coordinates, so the logic survives differently-framed scans.
+    </div>
+  </div>
+
+  <div class="filecard">
+    <h3>esrg/growing.py</h3>
+    <p class="role">Objectives 2 &amp; 3, and the untouched 1994 control</p>
+    <dl class="io">
+      <dt>Contains</dt><dd><code>grow_esrg</code>, <code>grow_srg</code>, and the helper classes <code>_LocalMean</code> and <code>_Welford</code></dd>
+      <dt>In</dt><dd>ESRG: log image, head mask, seed core, σ floor, config. SRG: raw image, integer seed map.</dd>
+      <dt>Out</dt><dd>ESRG: boolean mask + pass-by-pass trace. SRG: full integer label map + trace.</dd>
+      <dt>Connects</dt><dd>Called by <code>pipeline.run</code>; output goes to <code>postprocess</code></dd>
+    </dl>
+    <div class="modify"><b>When to modify</b>
+      This is the scientific core. <strong>Treat <code>grow_srg</code> as frozen</strong> — its
+      entire value is that it is the published algorithm unmodified, and any "improvement" to it
+      invalidates the comparison. <code>grow_esrg</code> is where enhancements belong. The
+      <code>NEIGH8</code> constant at the top is shared by both.
+    </div>
+  </div>
+
+  <div class="filecard">
+    <h3>esrg/postprocess.py</h3>
+    <p class="role">Phase D — cleaning the grown region into a final mask</p>
+    <dl class="io">
+      <dt>Contains</dt><dd>A single function, <code>postprocess</code></dd>
+      <dt>In</dt><dd>Grown region, seed core, config</dd>
+      <dt>Out</dt><dd>Cleaned mask + before/after areas for every step</dd>
+      <dt>Connects</dt><dd>Stage 7, between growing and scoring</dd>
+    </dl>
+    <div class="modify"><b>When to modify</b>
+      Rarely. Note two protective details: the opening is skipped if it would empty the mask
+      entirely, and hole-filling runs <em>before</em> the opening so necrotic tumor centres are
+      sealed in rather than shaved away.
+    </div>
+  </div>
+
+  <div class="filecard">
+    <h3>esrg/metrics.py</h3>
+    <p class="role">All accuracy scoring</p>
+    <dl class="io">
+      <dt>Contains</dt><dd><code>evaluate</code>, <code>confusion</code>, <code>surface_distances</code>, <code>seed_hit</code>, <code>summarize</code></dd>
+      <dt>In</dt><dd>Predicted mask, ground-truth mask, config</dd>
+      <dt>Out</dt><dd>Dictionary of DSC, IoU, precision, recall, HD95, ASSD, areas, leakage flag</dd>
+      <dt>Connects</dt><dd><code>pipeline._attach_scores</code> and the batch scripts</dd>
+    </dl>
+    <div class="modify"><b>When to modify</b>
+      Adding a metric. Undefined values return <code>NaN</code> rather than 0 — a critical
+      distinction, because <code>summarize</code> drops NaN instead of averaging in a fake zero
+      that would silently depress reported performance.
+    </div>
+  </div>
+
+  <div class="filecard">
+    <h3>esrg/visualize.py</h3>
+    <p class="role">Turning arrays into pictures</p>
+    <dl class="io">
+      <dt>Contains</dt><dd><code>render_stage</code>, <code>overlay_result</code>, <code>outline</code>, <code>score_line</code>, and the colour constants including <code>SEED_COLORS</code></dd>
+      <dt>In</dt><dd>A stage plus the base image, optional ground truth, opacity</dd>
+      <dt>Out</dt><dd>RGB arrays ready for display or saving</dd>
+      <dt>Connects</dt><dd>Used by the GUI for the viewport and by the export function</dd>
+    </dl>
+    <div class="modify"><b>When to modify</b>
+      Changing how a stage looks. <code>render_stage</code> branches on <code>stage.kind</code>
+      (<code>gray</code>, <code>heat</code>, <code>mask</code>, <code>labels</code>, overlay) and then
+      on <code>stage.key</code> for per-stage treatment. A new stage kind needs a branch here or it
+      falls through to the overlay renderer, which expects a boolean mask.
+    </div>
+  </div>
+
+  <div class="filecard">
+    <h3>esrg/pipeline.py</h3>
+    <p class="role">Orchestration — runs the stages and keeps everything</p>
+    <dl class="io">
+      <dt>Contains</dt><dd>The <code>Stage</code> and <code>Result</code> dataclasses, <code>run()</code>, <code>_attach_scores()</code></dd>
+      <dt>In</dt><dd>Image path, config, optional mask path, optional manual points, optional progress callback</dd>
+      <dt>Out</dt><dd>A <code>Result</code> holding every stage, the final mask, ground truth, scores, metadata</dd>
+      <dt>Connects</dt><dd>The single entry point. GUI and every experiment script call <code>run()</code>.</dd>
+    </dl>
+    <div class="modify"><b>When to modify</b>
+      Adding or reordering a stage. Each stage is wrapped in a timer and given a status, so adding
+      one means appending a <code>Stage</code> — the GUI builds its buttons by iterating
+      <code>result.stages</code>, so new stages appear in the interface automatically with no GUI
+      changes.
+    </div>
+  </div>
+
+  <div class="filecard">
+    <h3>gui/app.py</h3>
+    <p class="role">The desktop application</p>
+    <dl class="io">
+      <dt>Contains</dt><dd><code>ESRGApp</code> (the whole interface), <code>FlatButton</code>, and the theme constants</dd>
+      <dt>In</dt><dd>User actions</dd>
+      <dt>Out</dt><dd>Rendered views, telemetry text, exported PNGs and a config JSON</dd>
+      <dt>Connects</dt><dd>Calls <code>pipeline.run</code> on a background thread so the window never freezes</dd>
+    </dl>
+    <div class="modify"><b>When to modify</b>
+      Exposing a config parameter as a control. The pattern is three steps: add a Tk variable in
+      <code>__init__</code>, add the widget in <code>_build_sidebar</code>, and pass it through in
+      <code>_current_config</code>. Miss the third and the control will appear but do nothing.
+    </div>
+  </div>
+
+  <div class="filecard">
+    <h3>experiments/</h3>
+    <p class="role">Batch evaluation and analysis</p>
+    <dl class="io">
+      <dt>Contains</dt><dd><code>run_batch.py</code> (score a whole split to CSV), <code>ablation.py</code> (five arms comparing the enhancements), <code>attribution.py</code> and <code>run_attribution.py</code> (which stage caused each failure)</dd>
+      <dt>In</dt><dd>CLI arguments — <code>--root &lt;split&gt; --method esrg|srg [--limit N]</code></dd>
+      <dt>Out</dt><dd>CSV files and printed summary tables</dd>
+    </dl>
+    <div class="modify"><b>When to modify</b>
+      Adding an ablation arm means one entry in the <code>ARMS</code> list. Subsetting is stratified
+      by tumor type × plane so a limited run stays representative rather than accidentally sampling
+      one class.
+    </div>
+    <div class="note warn" style="margin-top:12px;margin-bottom:0">
+      <span class="nt">Current caveat</span>
+      <p>
+        These scripts run with <code>seed_mode="auto"</code>, which supplies only one seed region.
+        Since the faithful SRG baseline no longer auto-generates competing background seeds, the
+        <code>--method srg</code> arm will grow one region across the whole image and report a
+        warning. Batch SRG numbers require manually seeded competing regions to be meaningful.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 8 -->
+<section id="s8">
+  <h2><span class="sn">08</span> Every control on screen</h2>
+  <p class="lede">
+    Left sidebar top to bottom, then the viewport and the panels. Line numbers are the widget's
+    definition in <span class="path">gui/app.py</span>.
+  </p>
+
+  <h3>Input Data</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Control</th><th>Code</th><th>What it does &amp; what changing it implies</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Open MRI Slice…</td>
+          <td><code>_load</code> · line 220</td>
+          <td>Opens a file dialog, resets any previous result and clears manual seeds, then checks for a paired ground-truth mask and reports whether one was found. Changing the <code>filetypes</code> list only changes the dialog filter, not what can actually be loaded.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Pipeline Method</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Control</th><th>Code</th><th>What it does &amp; what changing it implies</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>ESRG (Enhanced Model)<br>SRG Baseline (1994)</td>
+          <td><code>self.method</code> · line 230</td>
+          <td>Sets <code>cfg.method</code>, which decides the branch taken at stage 6. Choosing SRG also changes what the pipeline feeds the grower: the unmasked image rather than the head-masked one, and the integer seed map rather than the boolean core. Selecting SRG adds the <strong>6a · Full tessellation</strong> stage.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Seeding Strategy</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Control</th><th>Code</th><th>What it does &amp; what changing it implies</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Automated Candidate (Obj 1)</td>
+          <td><code>self.seed_mode</code> · line 238</td>
+          <td>Runs the full automatic detection chain. This is the mode that demonstrates Objective 1, and the only mode that can report "NO TUMOR CANDIDATE".</td>
+        </tr>
+        <tr>
+          <td>Manual Landmark Seed</td>
+          <td>same</td>
+          <td>Enables clicking on the viewport. Each click plants a seed of the currently selected type. Automatic detection is bypassed entirely.</td>
+        </tr>
+        <tr>
+          <td>Seed type to plant<br>(Type 1 … Type 4)</td>
+          <td><code>self.seed_type</code> · line 250</td>
+          <td>Which region id your next click belongs to, with a colour swatch matching how it will be drawn. <strong>Type 1 is read out as the reported tumor mask</strong>; types 2+ are competing regions that give SRG something to stop against. The count comes from <code>cfg.manual_seed_types</code> (4) — raising it adds radio buttons, and colours cycle after six.</td>
+        </tr>
+        <tr>
+          <td>Clear Manual Seeds</td>
+          <td><code>_clear_seeds</code> · line 260</td>
+          <td>Empties the click list and redraws. Does not re-run anything.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <span class="nt">Practical seeding recipe for the SRG baseline</span>
+    <p>
+      Plant Type 1 inside the tumor, several Type 2 across normal brain, and several Type 3 in the
+      black background outside the head. Without that third group the background has no region of
+      its own and gets divided among the tissue regions.
+    </p>
+  </div>
+
+  <h3>Ablation Controls</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Control</th><th>Config flag</th><th>Effect when unchecked</th></tr></thead>
+      <tbody>
+        <tr><td>Local Log Measure (Obj 2)</td><td><code>use_log_local</code></td><td>δ reverts to comparing against the whole-region mean instead of the local window — bias-field sensitivity returns</td></tr>
+        <tr><td>Adaptive Termination (Obj 3)</td><td><code>use_stopping</code></td><td>Both thresholds are skipped; ESRG absorbs unconditionally within the head mask</td></tr>
+        <tr><td>N4 Bias Correction</td><td><code>use_n4</code></td><td>Off by default; checking it inserts stage 2b</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>All three are defined at line 265 and read in <code>_current_config</code> at line 383.</p>
+
+  <h3>Hyperparameters</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Slider</th><th>Range · code</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>k_L — Local Stopping Factor</td><td>0.5 – 4.0 step 0.1 · line 274</td><td>How many standard deviations of tolerance the local bound allows. See the band table in §6.5.</td></tr>
+        <tr><td>r — Neighborhood Radius</td><td>1 – 8 step 1 · line 275</td><td>Half-width of the local-mean window. r = 3 gives a 7×7 box.</td></tr>
+        <tr><td>K — Otsu Threshold Classes</td><td>2 – 5 step 1 · line 276</td><td>How many brightness classes the seed stage splits tissue into; the brightest becomes the candidate pool.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note warn">
+    <span class="nt">Hidden coupling — read before tuning k_L</span>
+    <p>
+      The global drift multiplier is not exposed as a control. It is <em>derived</em> from k_L at
+      <span class="path">gui/app.py:388</span>:
+    </p>
+    <pre style="margin:10px 0 8px"><code>k_global=max(float(self.k_local.get()) + 1.0, 3.0)</code></pre>
+    <p>
+      So moving the k_L slider silently moves k_G too. At k_L ≤ 2.0, k_G stays pinned at 3.0; above
+      that it tracks k_L + 1.0. This guarantees the <code>k_global &gt; k_local</code> assertion in
+      <code>validate()</code> can never fail from the GUI. If you need the two set independently,
+      you must edit <code>_current_config</code>.
+    </p>
+  </div>
+
+  <h3>Display Settings</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Control</th><th>Code</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td>Overlay Opacity</td><td>0.0 – 1.0 step 0.05 · line 280</td><td>Blend strength of coloured overlays against the grayscale slice. Purely visual — redraws immediately without re-running. 0 shows the bare MRI, 1 hides it completely.</td></tr>
+        <tr><td>Show Error Heatmap (TP/FP/FN)</td><td><code>error_mode</code> · line 281</td><td>Switches the final view from "prediction filled red, truth outlined green" to a three-colour error map: <span class="sw" style="background:var(--r3)"></span>green = correct, <span class="sw" style="background:var(--r1)"></span>red = false positive, <span class="sw" style="background:var(--r4)"></span>orange = missed. The fastest way to read <em>how</em> a result is wrong.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Actions, viewport and strips</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Element</th><th>Code</th><th>Behaviour</th></tr></thead>
+      <tbody>
+        <tr><td>RUN PIPELINE</td><td>line 188 → <code>_run</code></td><td>Validates that an image is loaded and, in manual mode, that at least one Type 1 seed exists. Runs on a worker thread; the button disables and shows live progress text.</td></tr>
+        <tr><td>Export All Stages…</td><td>line 193 → <code>_save</code></td><td>Writes the final mask PNG, the overlay PNG, one PNG per stage, and the exact config as JSON. The config export is what makes a run reproducible later.</td></tr>
+        <tr><td>Viewport (click)</td><td><code>_on_click</code> · line 370</td><td>Converts canvas coordinates to image coordinates and plants a seed. Ignored outside manual mode.</td></tr>
+        <tr><td>STAGE strip</td><td><code>_build_stage_buttons</code></td><td>One button per stage, built by iterating <code>result.stages</code>. The dot is colour-coded by status: <span style="color:var(--ok)">OK</span> / <span style="color:var(--warn)">WARN</span> / <span style="color:var(--bad)">FAIL</span>.</td></tr>
+        <tr><td>Metrics bar (bottom)</td><td><code>score_line</code></td><td>One-line DSC / IoU / precision / recall / HD95 / runtime summary, or a notice when no ground truth was found.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ 9 -->
+<section id="s9">
+  <h2><span class="sn">09</span> Parameters and what they do</h2>
+  <p class="lede">
+    The four on-screen parameters in depth, then the full config table for everything not exposed
+    in the interface.
+  </p>
+
+  <h3>k<sub>L</sub> — the local stopping factor <span class="chip c-esrg">ESRG only</span></h3>
+  <p>
+    Default <strong>1.5</strong>. Multiplies σ to produce the acceptance threshold. This is the
+    single most consequential dial in the system: it directly trades completeness against leakage.
+  </p>
+  <ul>
+    <li><strong>Lower it</strong> when the mask floods into healthy brain. The region becomes
+        conservative and stops at the first hint of an edge.</li>
+    <li><strong>Raise it</strong> when the mask captures only the tumor's brightest core and misses
+        its dimmer rim.</li>
+    <li><strong>Above roughly 2.5</strong>, infiltrative tumors (gliomas especially) tend to leak,
+        because their boundary genuinely is within that statistical band — no threshold can
+        separate what is not separable by intensity alone.</li>
+    <li>Remember it also drags k_G upward past 2.0.</li>
+  </ul>
+
+  <h3>r — neighbourhood radius <span class="chip c-esrg">ESRG only</span></h3>
+  <p>
+    Default <strong>3</strong>, giving a 7×7 window. Controls how <em>local</em> Objective 2's
+    comparison is.
+  </p>
+  <ul>
+    <li><strong>Smaller (1–2)</strong> tracks the bias field very closely, but the mean rests on few
+        pixels and becomes noisy — the measure starts chasing individual pixel noise.</li>
+    <li><strong>Larger (6–8)</strong> gives a stable mean but begins to average across the bias
+        gradient itself, gradually surrendering the advantage over a global mean.</li>
+    <li>Cost is negligible: the window is summed from an array, so runtime barely moves.</li>
+  </ul>
+
+  <h3>K — Otsu classes <span class="chip c-both">affects seeding</span></h3>
+  <p>
+    Default <strong>3</strong>. How many brightness groups interior tissue is divided into; the
+    top group becomes the candidate pool.
+  </p>
+  <ul>
+    <li><strong>K = 2</strong> is plain Otsu — one cut, a broad bright class that often swallows
+        normal enhancing structures alongside the tumor.</li>
+    <li><strong>K = 3</strong> separates dark / mid / bright, which matches T1-CE anatomy well.</li>
+    <li><strong>K = 4–5</strong> makes the top class very selective. This can help on a brilliantly
+        enhancing tumor and can equally cause total failure — if the tumor lands in the second class
+        it never becomes a candidate and the run reports NO TUMOR CANDIDATE.</li>
+  </ul>
+
+  <h3>Overlay opacity <span class="chip c-srg">display only</span></h3>
+  <p>
+    Has no effect on results whatsoever. Note it <em>is</em> used during export, so it changes what
+    saved overlay PNGs look like.
+  </p>
+
+  <h3>The rest of the configuration</h3>
+  <p>Not on screen; edit <span class="path">esrg/config.py</span> or pass via <code>replace()</code>.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Parameter</th><th class="num">Default</th><th>Effect of changing it</th></tr></thead>
+      <tbody>
+        <tr><td><code>max_side</code></td><td class="num">512</td><td>Working resolution. Lower is faster but coarsens boundaries and changes pixel-unit distance metrics.</td></tr>
+        <tr><td><code>frame_open_radius</code></td><td class="num">2</td><td>Removes thin burned-in frames, text and arrows before head detection. Raise if annotations survive into the mask.</td></tr>
+        <tr><td><code>ss_max_radius</code></td><td class="num">12</td><td>Granulometry search bound. Diagnostic only — does not change the mask.</td></tr>
+        <tr><td><code>ss_min_brain_frac</code></td><td class="num">0.25</td><td>Granulometry stops if the surviving component drops below this share of head area.</td></tr>
+        <tr><td><code>otsu_classes</code></td><td class="num">3</td><td>Exposed as the K slider.</td></tr>
+        <tr><td><code>seed_core_frac</code></td><td class="num">0.7</td><td>How deep inside the winning blob the seed core sits. Lower widens the core toward blurry edges; higher shrinks it toward a single point.</td></tr>
+        <tr><td><code>min_cand_area</code></td><td class="num">40</td><td>Blobs smaller than this many pixels are discarded as noise. Raise to suppress speckle; risks rejecting genuinely small tumors.</td></tr>
+        <tr><td><code>interior_frac</code></td><td class="num">0.12</td><td>Histogram uses only pixels deeper than this share of maximum head depth — this is what keeps scalp fat out of the Otsu computation.</td></tr>
+        <tr><td><code>min_clearance</code></td><td class="num">8.0</td><td>Required distance inside the head outline beyond a blob's own radius. The primary scalp rejector; lowering it lets scalp back in.</td></tr>
+        <tr><td><code>manual_seed_radius</code></td><td class="num">3</td><td>Each click is dilated into a disk of this radius. Larger gives more stable seed statistics but less precise placement.</td></tr>
+        <tr><td><code>manual_seed_types</code></td><td class="num">4</td><td>How many seed-type radio buttons appear.</td></tr>
+        <tr><td><code>log_eps</code></td><td class="num">1.0</td><td>The ε inside the logarithm. Only matters for near-black pixels; larger values compress dark-end contrast.</td></tr>
+        <tr><td><code>local_radius</code></td><td class="num">3</td><td>Exposed as the r slider.</td></tr>
+        <tr><td><code>k_local</code></td><td class="num">1.5</td><td>Exposed as the k_L slider.</td></tr>
+        <tr><td><code>k_global</code></td><td class="num">3.0</td><td>Drift guard multiplier. Must exceed k_local (asserted). Overridden by the GUI formula.</td></tr>
+        <tr><td><code>max_passes</code></td><td class="num">4</td><td>Maximum growth sweeps. More passes let σ re-widen repeatedly and can gradually leak; fewer may stop short.</td></tr>
+        <tr><td><code>sigma_floor_min</code></td><td class="num">0.02</td><td>Hard lower clamp on σ in log units, so a uniform seed can't zero the thresholds.</td></tr>
+        <tr><td><code>lazy_tol</code></td><td class="num">1e-9</td><td>Tolerance before a stale queued δ forces re-queueing. ESRG only.</td></tr>
+        <tr><td><code>post_open_radius</code></td><td class="num">1</td><td>Final cleanup opening. 0 disables; larger erodes genuine detail.</td></tr>
+        <tr><td><code>leak_warn_frac</code></td><td class="num">0.40</td><td>Mask covering more than this share of the head triggers the WARN badge.</td></tr>
+        <tr><td><code>leak_ratio</code></td><td class="num">2.0</td><td>Predicted area exceeding this multiple of true area sets the <code>leaked</code> flag in the scores.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ 10 -->
+<section id="s10">
+  <h2><span class="sn">10</span> Ablation &amp; research switches</h2>
+  <p class="lede">
+    An <strong>ablation</strong> is an experiment that removes one component to measure what it was
+    contributing. If performance drops when you disable a feature, that drop <em>is</em> the
+    feature's measured value — this is how the thesis proves each objective earns its place rather
+    than merely asserting it.
+  </p>
+
+  <h3>The two objective switches</h3>
+  <p>
+    <code>use_log_local</code> and <code>use_stopping</code> are the scientific heart of the
+    evaluation. Together they define four combinations, which
+    <span class="path">experiments/ablation.py</span> runs as five arms alongside the SRG baseline:
+  </p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Arm</th><th>use_log_local</th><th>use_stopping</th><th>What it isolates</th></tr></thead>
+      <tbody>
+        <tr><td>SRG baseline</td><td>—</td><td>—</td><td>The 1994 floor. Everything must be measured against this.</td></tr>
+        <tr><td>Global δ, no stop</td><td>off</td><td>off</td><td>Region growing with neither enhancement — the weakest ESRG-shaped arm.</td></tr>
+        <tr><td>Global δ + stop</td><td>off</td><td>on</td><td>The value of Objective 3 <em>alone</em>.</td></tr>
+        <tr><td>Local log δ, no stop</td><td>on</td><td>off</td><td>The value of Objective 2 <em>alone</em>.</td></tr>
+        <tr><td>ESRG (full)</td><td>on</td><td>on</td><td>Both together — reveals whether they interact or merely add.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>Turning off <code>use_stopping</code></h4>
+  <p>
+    The threshold checks are skipped entirely and absorption becomes unconditional. Growth is then
+    bounded only by the head mask and <code>max_passes</code>. Expect recall to rise toward 1.0
+    while precision collapses — the region swallows the brain. This is the clearest demonstration
+    of why Objective 3 exists.
+  </p>
+
+  <h4>Turning off <code>use_log_local</code></h4>
+  <p>
+    δ reverts to <code>abs(L[r,c] - stats.mean)</code> — still logarithmic, but anchored to the
+    whole region. The failure it reintroduces is specific and worth understanding: where the bias
+    field has brightened one side of the tumor, that side's pixels now sit far from the global mean
+    and are rejected, so the mask becomes lopsided — truncated on the bright side, or leaking on the
+    dim side. It is a subtler degradation than the stopping ablation, and it is exactly the
+    degradation the numbers in §6.2 predict.
+  </p>
+
+  <h4><code>use_n4</code></h4>
+  <p>
+    Inserts a full N4ITK bias-field correction before the log transform. Its purpose in the study is
+    a fairness argument: if ESRG with its cheap log-domain trick performs comparably to ESRG with
+    heavyweight explicit correction, then Objective 2 is doing real work at a fraction of the cost.
+    Requires SimpleITK; the stage fails gracefully with a FAIL badge if unavailable.
+  </p>
+
+  <h3>The Phase 1 / 2a / 3 research switches</h3>
+  <p>
+    These were implemented, evaluated on the full test set, and found <strong>not to beat the tuned
+    baseline</strong>. They ship disabled but intact. That is a deliberate and honest choice: a
+    negative result that is reproducible is a finding, and keeping the code switchable lets a
+    reader verify it rather than take it on trust.
+  </p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Switch</th><th class="num">Default</th><th>Intent · measured outcome</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>rank_use_contrast</code></td><td class="num">on</td>
+          <td>Rank candidates by brightness against their surround. <strong>Kept on</strong> at weight 0.5 — useful, but secondary to interiority at 1.0.</td>
+        </tr>
+        <tr>
+          <td><code>rank_use_shape</code></td><td class="num">on</td>
+          <td>Mild compactness and solidity tie-break at weight 0.2. Kept deliberately mild because gliomas are genuinely irregular and a strong shape prior would penalise real tumors.</td>
+        </tr>
+        <tr>
+          <td><code>rank_use_vesselness</code></td><td class="num">off</td>
+          <td>Frangi filter to veto tubular candidates (vessels). No aggregate gain on 2D slices and roughly 2× slower — vessels rarely survive the area and clearance filters anyway.</td>
+        </tr>
+        <tr>
+          <td><code>exclude_orbits</code></td><td class="num">off</td>
+          <td>Forbid bright round structures in the upper head (eyeballs). No aggregate gain: orbits are dark on most T1 slices and Otsu already drops them.</td>
+        </tr>
+        <tr>
+          <td><code>exclude_skull_base</code></td><td class="num">off</td>
+          <td>Forbid a thin band of bright skull-base marrow. Helped a small minority of slices, not enough to justify the risk of clipping genuinely low-sitting tumors.</td>
+        </tr>
+        <tr>
+          <td><code>adaptive_k</code></td><td class="num">off</td>
+          <td>Set k_L per image from the seed's contrast against its surrounding ring — loose for high-contrast tumors, tight for low-contrast ones. Sound reasoning, but it did not beat a well-chosen fixed k_L on meningioma.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <span class="nt">How adaptive_k works if you enable it</span>
+    <p>
+      It measures contrast between the seed's mean and a ring around it, maps that onto 0–1 against
+      <code>adaptive_ref_contrast</code>, and interpolates k_L between
+      <code>adaptive_k_lo</code> (1.3) and <code>adaptive_k_hi</code> (2.0). The chosen value is
+      reported in the growth stage telemetry as <code>adaptive_k_local</code>, so you can always see
+      what it picked. k_G stays fixed.
+    </p>
+  </div>
+</section>
+
+<!-- ============================================================ 11 -->
+<section id="s11">
+  <h2><span class="sn">11</span> Ground truth and its accuracy</h2>
+  <p class="lede">
+    The green outline is not produced by the algorithm. It is a separate human-drawn image the
+    system locates, loads, and draws on top — the reference the prediction is judged against.
+  </p>
+
+  <h3>Step 1 — finding the file</h3>
+  <p>
+    <code>find_mask_for</code> in <span class="path">esrg/io_utils.py</span> takes the image path,
+    strips the extension to get the stem, and tries three locations in order:
+  </p>
+  <pre><code>&lt;parent&gt;/masks/&lt;stem&gt;.png     ← the BRISC dataset layout
+&lt;folder&gt;/&lt;stem&gt;.png           ← mask beside the image
+&lt;folder&gt;/&lt;stem&gt;_mask.png      ← common alternative naming</code></pre>
+  <p>
+    The first existing file wins, with a guard preventing it from matching the input image itself.
+    If none exist, <code>result.gt</code> stays <code>None</code>, no scores are computed, and the
+    metrics bar says so rather than reporting zeros.
+  </p>
+
+  <h3>Step 2 — loading it as a boolean mask</h3>
+  <div class="formula">
+    <p class="fname">io_utils.load_mask</p>
+    <div class="eq">gt = ( resize<sub>NEAREST</sub>( grayscale(file) ) <span class="hl">&gt; 127</span> )</div>
+    <div class="sub">
+      Converted to grayscale, resized to match the working image, thresholded at the midpoint of
+      0–255.<br>
+      <b>Nearest-neighbour</b> resizing is required — any smoothing interpolation would invent
+      intermediate grey values along the boundary and blur a crisp mask.
+    </div>
+  </div>
+
+  <h3>Step 3 — drawing the outline</h3>
+  <div class="formula">
+    <p class="fname">visualize.outline — a one-pixel inner border</p>
+    <div class="eq">outline(m) = <span class="hl">m AND NOT erode(m)</span></div>
+    <div class="sub">
+      Erosion shrinks the mask by one pixel; subtracting it from the original leaves exactly the rim.<br>
+      <span class="arrow">→</span> painted in <span class="sw" style="background:var(--r3)"></span><b>green (34, 197, 94)</b>,
+      at full strength rather than blended, so it stays legible at any opacity setting.
+    </div>
+  </div>
+  <p>
+    In the default final view the prediction is filled red with a red outline, and the ground truth
+    is drawn as a green contour on top. With <strong>Show Error Heatmap</strong> enabled, the view
+    switches to a direct comparison: green where both agree, red where the prediction is wrong,
+    orange where real tumor was missed.
+  </p>
+
+  <h3>How accurate is the ground truth itself?</h3>
+  <p>
+    Four honest caveats, in decreasing order of practical impact:
+  </p>
+
+  <div class="note warn">
+    <span class="nt">1 · It is a human annotation, not physical truth</span>
+    <p>
+      "Ground truth" is the field's term for the <em>reference standard</em>: one or more experts'
+      hand-drawn opinion. Two radiologists tracing the same glioma routinely disagree at the
+      infiltrative edge. A DSC of 0.85 against such a mask may be within the range that two humans
+      would differ from each other — which is why DSC around 0.85 is treated as strong performance
+      rather than a mediocre 85%.
+    </p>
+  </div>
+
+  <div class="note warn">
+    <span class="nt">2 · Metrics are measured in pixels, not millimetres</span>
+    <p>
+      Because <code>max_side</code> downscales large inputs, HD95 and ASSD are expressed in pixels
+      at the working resolution. Two images downscaled by different factors produce distance
+      numbers that are not directly comparable, and none of them convert to physical millimetres
+      without the scan's pixel spacing, which these JPEG inputs do not carry. Overlap metrics
+      (DSC, IoU, precision, recall) are ratios and are unaffected.
+    </p>
+  </div>
+
+  <div class="note">
+    <span class="nt">3 · Resizing can shift the boundary by about a pixel</span>
+    <p>
+      When the image is downscaled, the mask is resized by nearest-neighbour to match. That is the
+      correct choice, but it can move the boundary by up to one pixel in either direction. On a
+      small tumor of, say, 300 pixels, a one-pixel rim is a meaningful share of the area.
+    </p>
+  </div>
+
+  <div class="note">
+    <span class="nt">4 · The threshold assumes near-binary masks</span>
+    <p>
+      BRISC masks are effectively binary with a thin anti-aliased fringe, so <code>&gt; 127</code> is
+      stable. A mask saved as a lossy JPEG, or one using a different label value convention, would
+      need this reconsidered.
+    </p>
+  </div>
+
+  <p>
+    One further check, separate from the overlap scores: <code>seed_hit</code> reports whether the
+    entire seed core landed inside the ground truth. This isolates Objective 1's performance from
+    the growing stage — a run can have a perfect seed and a poor mask (growing failed) or a missed
+    seed and a meaningless mask (seeding failed), and the two failures call for entirely different
+    fixes.
+  </p>
+</section>
+
+<!-- ============================================================ 12 -->
+<section id="s12">
+  <h2><span class="sn">12</span> The Stage Telemetry panel</h2>
+  <p class="lede">
+    The right-hand panel. Its purpose is to make the pipeline auditable: when the mask is wrong,
+    this panel tells you <em>which stage</em> went wrong and <em>why</em>, so you tune the right
+    parameter instead of guessing.
+  </p>
+
+  <p>
+    Built by <code>_show_diagnostics</code> at <span class="path">gui/app.py:478</span>. It rebuilds
+    whenever you select a stage button and prints, in order:
+  </p>
+  <ol class="body">
+    <li>A header — stage name, status (OK / WARN / FAIL), and duration in milliseconds.</li>
+    <li>Every key in that stage's <code>info</code> dictionary, one per line.</li>
+    <li>Any value that is a list of dictionaries gets a bulleted sub-block — this is how the
+        per-pass growth trace is rendered.</li>
+    <li>On the Final stage only, a <strong>SEGMENTATION ACCURACY</strong> section with every score.</li>
+  </ol>
+
+  <p>
+    The renderer is fully generic: it simply iterates whatever the stage put in <code>info</code>.
+    Adding a diagnostic anywhere in the pipeline makes it appear here with no GUI change.
+  </p>
+
+  <h3>Timing</h3>
+  <p>
+    Every stage is wrapped by a timer in <code>pipeline.run</code>, so the duration is that stage
+    alone. Region growing normally dominates; if a different stage is unexpectedly slow, that is
+    itself a diagnostic.
+  </p>
+
+  <h3>Reading the growth trace</h3>
+  <p>
+    For ESRG, the <code>passes</code> block is the most informative output in the entire
+    application. Each pass reports:
+  </p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Field</th><th>Meaning</th><th>What it tells you</th></tr></thead>
+      <tbody>
+        <tr><td><code>mu</code></td><td>Frozen region mean (log units)</td><td>Drifting upward across passes means the region is moving into brighter tissue.</td></tr>
+        <tr><td><code>sigma</code></td><td>Frozen region σ</td><td>Growing rapidly means the region is absorbing varied tissue — the early warning of leakage.</td></tr>
+        <tr><td><code>T_L</code></td><td>Local bound for the pass</td><td>Equals k_L × sigma. Watch it widen pass to pass.</td></tr>
+        <tr><td><code>T_G</code></td><td>Global drift bound</td><td>Equals k_G × sigma.</td></tr>
+        <tr><td><code>added</code></td><td>Pixels absorbed this pass</td><td>A late pass adding thousands is leakage in progress.</td></tr>
+        <tr><td><code>area</code></td><td>Total region size after the pass</td><td>Should plateau. Continued climbing is the problem signature.</td></tr>
+        <tr><td><code>stop</code></td><td>Why the pass ended</td><td>Either <code>queue exhausted</code> or the exact δ and threshold that halted it, e.g. <code>delta 0.184 &gt; T_L 0.056</code>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>
+    A healthy run looks like a large first pass, progressively smaller additions, and then a pass
+    adding zero — reported as <code>converged after pass N</code>. Hitting
+    <code>reached P_max</code> means growth was still going when it ran out of passes, so the result
+    is truncated rather than converged.
+  </p>
+
+  <h3>SRG telemetry</h3>
+  <p>
+    The baseline has no passes. It reports <code>stop reason</code> (always tessellation complete),
+    <code>seed regions</code>, and <code>unlabeled px</code> — which should always read
+    <strong>0</strong>, since that is the defining property of the algorithm. The separate
+    <strong>6a · Full tessellation</strong> stage lists <code>region areas</code> and
+    <code>region means</code> for every planted region; those areas summing to the total pixel count
+    is the direct proof that every pixel was allocated.
+  </p>
+
+  <h3>Diagnostics worth knowing by stage</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Stage</th><th>Key fields</th></tr></thead>
+      <tbody>
+        <tr><td>2 · Head mask</td><td><code>radius</code>, <code>area_drop</code>, <code>ring_found</code>, <code>head_frac_of_image</code>. A false <code>ring_found</code> is normal on non-axial slices and only warns.</td></tr>
+        <tr><td>3 · Log domain</td><td>Value range and the computed noise floor σ.</td></tr>
+        <tr><td>4 · Candidates</td><td>The Otsu thresholds, how many blobs were found versus kept, and a per-blob detail list including each rejection reason (<code>touches head outline</code>).</td></tr>
+        <tr><td>5 · Seed core</td><td>Which candidate won with its full feature record and score, core area, and in manual mode the pixel count planted per seed type.</td></tr>
+        <tr><td>7 · Final</td><td>Areas before and after each cleanup step, components dropped, plus every accuracy score.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ 13 -->
+<section id="s13">
+  <h2><span class="sn">13</span> Glossary of every symbol</h2>
+  <p class="lede">Every symbol, variable and term used above, in one place.</p>
+
+  <dl class="glossary">
+    <dt>I(x)</dt><dd>Intensity of pixel x, on the normalized 0–255 scale.</dd>
+    <dt>L(x)</dt><dd>Log-domain value of pixel x: <code>ln(I(x) + ε)</code>.</dd>
+    <dt>ε (log_eps)</dt><dd>Small constant inside the logarithm preventing <code>ln(0)</code>. Default 1.0.</dd>
+    <dt>δ (delta)</dt><dd>The difference measure — how poorly a candidate pixel fits a region. Small is good.</dd>
+    <dt>μ (mu), μ<sub>A</sub></dt><dd>Mean of the region. In ESRG, frozen at the start of each pass.</dd>
+    <dt>σ (sigma), σ<sub>A</sub></dt><dd>Standard deviation of the region, clamped below by the noise floor.</dd>
+    <dt>σ<sub>floor</sub></dt><dd>Robust noise estimate from the image, preventing σ from reaching zero.</dd>
+    <dt>M₂</dt><dd>Welford's running sum of squared deviations; σ = √(M₂/(n−1)).</dd>
+    <dt>MAD</dt><dd>Median Absolute Deviation — a robust spread measure, converted to σ-equivalent by ×1.4826.</dd>
+    <dt>m<sub>local</sub></dt><dd>Mean of absorbed pixels inside the local window around a candidate. The core of Objective 2.</dd>
+    <dt>r (local_radius)</dt><dd>Half-width of that window; the window is (2r+1)×(2r+1).</dd>
+    <dt>k<sub>L</sub> (k_local)</dt><dd>Multiplier producing the local acceptance bound.</dd>
+    <dt>k<sub>G</sub> (k_global)</dt><dd>Multiplier producing the global drift bound. Must exceed k<sub>L</sub>.</dd>
+    <dt>T<sub>L</sub></dt><dd>Local bound, k<sub>L</sub>·σ<sub>A</sub>. Exceeding it ends the pass.</dd>
+    <dt>T<sub>G</sub></dt><dd>Global drift bound, k<sub>G</sub>·σ<sub>A</sub>. Exceeding it rejects that pixel only.</dd>
+    <dt>P<sub>max</sub> (max_passes)</dt><dd>Maximum number of growth sweeps in ESRG. Default 4.</dd>
+    <dt>K (otsu_classes)</dt><dd>Number of brightness classes multi-Otsu splits tissue into.</dd>
+    <dt>α (seed_core_frac)</dt><dd>Fraction of maximum blob depth a pixel must reach to join the seed core.</dd>
+    <dt>SSL</dt><dd>Sequential Sorted List — the δ-ordered queue of candidates.</dd>
+    <dt>NEIGH8</dt><dd>The eight neighbour offsets, diagonals included. Used by both growers.</dd>
+    <dt>Seed map / label map</dt><dd>Integer array where each value identifies which region a pixel belongs to; 0 means unassigned.</dd>
+    <dt>Tessellation</dt><dd>A complete partition — every pixel assigned to exactly one region, none left over.</dd>
+    <dt>Depth map</dt><dd>Distance of each pixel from the head outline, from the distance transform.</dd>
+    <dt>Clearance</dt><dd><code>depth(centre) − radius</code>. Near zero for scalp, large for interior tumors.</dd>
+    <dt>Compactness</dt><dd><code>4π·area / perimeter²</code>. 1.0 for a perfect disk.</dd>
+    <dt>Solidity</dt><dd>Area divided by convex-hull area. 1.0 means no concavities.</dd>
+    <dt>Vesselness</dt><dd>Frangi filter response, high on tubular structures like vessels.</dd>
+    <dt>TP / FP / FN</dt><dd>True positive, false positive, false negative — pixel counts against ground truth.</dd>
+    <dt>DSC</dt><dd>Dice Similarity Coefficient, <code>2TP/(2TP+FP+FN)</code>. The headline accuracy score.</dd>
+    <dt>IoU</dt><dd>Intersection over Union, <code>TP/(TP+FP+FN)</code>. Always ≤ DSC.</dd>
+    <dt>HD95</dt><dd>95th percentile of symmetric boundary distances, in pixels.</dd>
+    <dt>ASSD</dt><dd>Average Symmetric Surface Distance — mean of those same distances.</dd>
+    <dt>Leakage</dt><dd>The region escaping through a weak boundary into healthy tissue.</dd>
+    <dt>Bias field</dt><dd>The scanner's smooth multiplicative brightness distortion.</dd>
+    <dt>N4 / N4ITK</dt><dd>Standard algorithm that estimates and removes the bias field explicitly. Ablation arm only.</dd>
+    <dt>Ablation</dt><dd>Disabling one component to measure its contribution.</dd>
+    <dt>Ground truth</dt><dd>The expert-drawn reference mask used for scoring.</dd>
+    <dt>seed_hit</dt><dd>True when the entire seed core lies inside the ground truth — isolates Objective 1's success from growing.</dd>
+  </dl>
+</section>
+
+<footer>
+  ESRG v1.0.0 · Enhanced Seeded Region Growing for MRI brain tumor segmentation ·
+  baseline after Adams &amp; Bischof, <i>Seeded Region Growing</i>, IEEE TPAMI 16(6), 1994.
+  Line references point to the working tree at the time of writing.
+</footer>
+
+</main>
+</div>
+</div>
