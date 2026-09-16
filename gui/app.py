@@ -42,9 +42,9 @@ OK_CLR      = "#16a34a"
 WARN_CLR    = "#d97706"
 FAIL_CLR    = "#dc2626"
 
-# Manual seed types share the tessellation palette (esrg.visualize.SEED_COLORS):
-# type 1 is whichever region the user treats as the structure of interest,
-# type 2+ are the other competing regions. SRG itself does not distinguish them.
+# Manual seed regions share the tessellation palette (esrg.visualize.SEED_COLORS):
+# region 1 is whichever region the user treats as the structure of interest,
+# region 2+ are the other competing regions. SRG itself does not distinguish them.
 SEED_RGB = viz.SEED_COLORS
 
 ZOOM_MIN = 0.25
@@ -285,6 +285,7 @@ class ESRGApp:
         self._section_header(scroll_content, "Pipeline Method")
         for val, lab in (("esrg", "ESRG (Enhanced Model)"), ("srg", "SRG Baseline (1994)")):
             tk.Radiobutton(scroll_content, text=lab, variable=self.method, value=val,
+                           command=self._update_seed_region_visibility,
                            bg=PANEL_BG, fg=TEXT_MAIN, selectcolor=PANEL_ALT,
                            activebackground=PANEL_BG, font=FONT_UI, anchor="w",
                            highlightthickness=0).pack(fill=tk.X, pady=1)
@@ -293,29 +294,34 @@ class ESRGApp:
         self._section_header(scroll_content, "Seeding Strategy")
         for val, lab in (("auto", "Automated Candidate (Obj 1)"), ("manual", "Manual Landmark Seed")):
             tk.Radiobutton(scroll_content, text=lab, variable=self.seed_mode, value=val,
+                           command=self._update_seed_region_visibility,
                            bg=PANEL_BG, fg=TEXT_MAIN, selectcolor=PANEL_ALT,
                            activebackground=PANEL_BG, font=FONT_UI, anchor="w",
                            highlightthickness=0).pack(fill=tk.X, pady=1)
 
-        # Seed type palette: clicks are planted as the selected type. The SRG
-        # baseline tessellates the head between all planted types, so types 2+
-        # are what stop the tumor region from swallowing the whole slice.
-        type_box = tk.Frame(scroll_content, bg=PANEL_BG)
-        type_box.pack(fill=tk.X, pady=(6, 2))
-        tk.Label(type_box, text="Seed type to plant", bg=PANEL_BG, fg=TEXT_MUTED,
+        # Seed region palette: clicks are planted as the selected region. It
+        # only matters for Manual Landmark seeding and/or the SRG baseline,
+        # which tessellates the head between all planted regions (region 2+
+        # is what stops the tumor region from swallowing the whole slice) —
+        # hidden otherwise by _update_seed_region_visibility.
+        self.region_box = tk.Frame(scroll_content, bg=PANEL_BG)
+        tk.Label(self.region_box, text="Seed region to plant", bg=PANEL_BG, fg=TEXT_MUTED,
                  font=FONT_SM, anchor="w").pack(fill=tk.X)
         for t in range(1, self.cfg.manual_seed_types + 1):
-            row = tk.Frame(type_box, bg=PANEL_BG)
+            row = tk.Frame(self.region_box, bg=PANEL_BG)
             row.pack(fill=tk.X)
-            tk.Radiobutton(row, text=f"Type {t}" + (" (tumor)" if t == 1 else ""),
+            tk.Radiobutton(row, text=f"Region {t}" + (" (tumor)" if t == 1 else ""),
                            variable=self.seed_type, value=t, bg=PANEL_BG, fg=TEXT_MAIN,
                            selectcolor=PANEL_ALT, activebackground=PANEL_BG,
                            font=FONT_UI, anchor="w", highlightthickness=0).pack(side=tk.LEFT)
             tk.Frame(row, bg="#%02x%02x%02x" % SEED_RGB[(t - 1) % len(SEED_RGB)],
                      width=14, height=14).pack(side=tk.RIGHT, padx=6, pady=3)
 
-        FlatButton(scroll_content, text="Clear Manual Seeds", command=self._clear_seeds,
-                   bg=PANEL_BG, fg=TEXT_MUTED, hover_bg=PANEL_ALT, font=FONT_SM, pady=4).pack(fill=tk.X, pady=(6, 4))
+        self._clear_seeds_btn = FlatButton(
+            scroll_content, text="Clear Manual Seeds", command=self._clear_seeds,
+            bg=PANEL_BG, fg=TEXT_MUTED, hover_bg=PANEL_ALT, font=FONT_SM, pady=4)
+        self._clear_seeds_btn.pack(fill=tk.X, pady=(6, 4))
+        self._update_seed_region_visibility()
 
         # Ablation Switches
         self._section_header(scroll_content, "Ablation Controls")
@@ -342,6 +348,17 @@ class ESRGApp:
                        command=self._redraw).pack(fill=tk.X, pady=(2, 6))
 
         self._sidebar_bind_wheel(scroll_content)
+
+    def _update_seed_region_visibility(self):
+        """The seed-region palette only matters for Manual Landmark seeding
+        and/or the SRG baseline (which tessellates the head between every
+        planted region) — hide it otherwise to keep the sidebar focused."""
+        show = self.seed_mode.get() == "manual" or self.method.get() == "srg"
+        if show:
+            if not self.region_box.winfo_ismapped():
+                self.region_box.pack(fill=tk.X, pady=(6, 2), before=self._clear_seeds_btn)
+        else:
+            self.region_box.pack_forget()
 
     def _slider(self, p, label, var, lo, hi, res, cmd=None):
         box = tk.Frame(p, bg=PANEL_BG)
@@ -556,9 +573,9 @@ class ESRGApp:
         if rc:
             t = self.seed_type.get()
             self.manual_points.append((rc[0], rc[1], t))
-            n_types = len({p[2] for p in self.manual_points})
+            n_regions = len({p[2] for p in self.manual_points})
             self.status_lbl.config(
-                text=f"{len(self.manual_points)} seed(s) across {n_types} type(s) placed.",
+                text=f"{len(self.manual_points)} seed(s) across {n_regions} region(s) placed.",
                 fg=PRIMARY)
             self._redraw()
 
@@ -576,7 +593,7 @@ class ESRGApp:
             return
         if self.seed_mode.get() == "manual" and not any(p[2] == 1 for p in self.manual_points):
             messagebox.showwarning("Seed Required",
-                                   "Click on the tumor region to place at least one Type 1 seed.")
+                                   "Click on the tumor region to place at least one Region 1 seed.")
             return
 
         cfg = self._current_config()
