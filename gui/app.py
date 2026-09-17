@@ -132,6 +132,7 @@ class ESRGApp:
         self.use_local = tk.BooleanVar(value=True)
         self.use_stop = tk.BooleanVar(value=True)
         self.use_n4 = tk.BooleanVar(value=False)
+        self.purify_manual_seed = tk.BooleanVar(value=self.cfg.purify_manual_seed)
         self.k_local = tk.DoubleVar(value=self.cfg.k_local)
         self.radius = tk.IntVar(value=self.cfg.local_radius)
         self.classes = tk.IntVar(value=self.cfg.otsu_classes)
@@ -330,7 +331,8 @@ class ESRGApp:
         self._section_header(scroll_content, "Ablation Controls")
         for var, lab in ((self.use_local, "Local Log Measure (Obj 2)"),
                          (self.use_stop, "Adaptive Termination (Obj 3)"),
-                         (self.use_n4, "N4 Bias Correction")):
+                         (self.use_n4, "N4 Bias Correction"),
+                         (self.purify_manual_seed, "Purify Manual Seed (ESRG only)")):
             tk.Checkbutton(scroll_content, text=lab, variable=var, bg=PANEL_BG,
                            fg=TEXT_MAIN, selectcolor=PANEL_ALT, activebackground=PANEL_BG,
                            font=FONT_UI, anchor="w", highlightthickness=0).pack(fill=tk.X, pady=1)
@@ -351,10 +353,9 @@ class ESRGApp:
                        command=self._redraw).pack(fill=tk.X, pady=(2, 6))
 
     def _update_seed_region_visibility(self):
-        """The seed-region palette only matters for Manual Landmark seeding
-        and/or the SRG baseline (which tessellates the head between every
-        planted region) — hide it otherwise to keep the sidebar focused."""
-        show = self.seed_mode.get() == "manual" or self.method.get() == "srg"
+        """The seed-region palette only matters for Manual Landmark seeding;
+        automatic SRG plants its own background seeds."""
+        show = self.seed_mode.get() == "manual"
         if show:
             if not self.region_box.winfo_ismapped():
                 self.region_box.pack(fill=tk.X, pady=(6, 2), before=self._clear_seeds_btn)
@@ -584,7 +585,8 @@ class ESRGApp:
         return self.cfg.replace(
             method=self.method.get(), seed_mode=self.seed_mode.get(),
             use_log_local=self.use_local.get(), use_stopping=self.use_stop.get(),
-            use_n4=self.use_n4.get(), k_local=float(self.k_local.get()),
+            use_n4=self.use_n4.get(), purify_manual_seed=self.purify_manual_seed.get(),
+            k_local=float(self.k_local.get()),
             k_global=max(float(self.k_local.get()) + 1.0, 3.0),
             local_radius=int(self.radius.get()), otsu_classes=int(self.classes.get()))
 

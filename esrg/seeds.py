@@ -120,6 +120,22 @@ def select_seed(img, mask, depth, cfg):
     return core, info
 
 
+def purify_core(core, cfg):
+    """
+    Erode a seed core to its own medial pixels (mirrors the dt >= seed_core_frac *
+    dt.max() clip select_seed() already applies to the auto core), so growth's
+    initial Welford stats aren't seeded from partial-volume boundary pixels.
+
+    Used to bring a raw manual click disk up to the same purity guarantee the
+    auto core gets for free from its shape-aware distance transform.
+    """
+    if not core.any():
+        return core
+    dt = ndi.distance_transform_edt(core)
+    clipped = core & (dt >= cfg.seed_core_frac * dt.max())
+    return clipped if clipped.any() else (core & (dt >= dt.max()))
+
+
 def manual_seed(points, shape, cfg):
     """
     Build the seed map from user clicks (baseline comparison / manual mode).

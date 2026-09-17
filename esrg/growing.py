@@ -7,7 +7,9 @@ Function : grow_esrg() uses a sequentially sorted list keyed by a local log-doma
           difference (Objective 2) and absorbs a pixel only if it passes a local
           confidence bound and a global drift guard (Objective 3), with statistics
           frozen per pass. grow_srg() runs the classical multi-region tessellation
-          with unconditional absorption over the seeds the user planted.
+          with unconditional absorption over the seeds the user planted (manual
+          seeding); grow_srg_auto() pits the auto tumor core against a grid of
+          background seeds (automatic seeding). Both SRG variants are 4-connected.
 Notes   : Statistics use Welford's method; per-pass freezing prevents the positive
           feedback that causes leakage. A per-image adaptive bound is available
           (adaptive_k) but did not beat the fixed bound and is off by default.
@@ -18,6 +20,7 @@ from scipy import ndimage as ndi
 from skimage import morphology
 
 NEIGH8 = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+NEIGH4 = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
 
 class _LocalMean:
@@ -208,7 +211,7 @@ def grow_srg(img, seed_labels):
             heapq.heappush(ssl, (abs(img[r, c] - sums[lid] / counts[lid]), r, c, lid))
 
     for r, c in zip(*np.nonzero(label)):
-        for dr, dc in NEIGH8:
+        for dr, dc in NEIGH4:
             enqueue(r + dr, c + dc, int(label[r, c]))
 
     while ssl:
@@ -218,7 +221,7 @@ def grow_srg(img, seed_labels):
         label[r, c] = lid               # unconditional: no stopping rule, no re-scoring
         sums[lid] += float(img[r, c])
         counts[lid] += 1
-        for dr, dc in NEIGH8:
+        for dr, dc in NEIGH4:
             enqueue(r + dr, c + dc, lid)
 
     trace = {
@@ -233,3 +236,86 @@ def grow_srg(img, seed_labels):
                             "rule, so with nothing to compete against, that single "
                             "region absorbs the entire image.")
     return label, trace
+
+
+def grow_srg_auto(img, mask, core, cfg):
+    """
+    Adams & Bischof (1994) under the automatic seeding protocol.
+
+    The auto-selected tumor core competes with a grid of background seeds
+    (cfg.bg_seed_step) planted inside the head mask, so no manual competing
+    regions are needed. delta is the raw distance to the region mean, and
+    absorption is unconditional -- the algorithm runs until every pixel in
+    the mask is allocated.
+    """
+    H, W = img.shape
+    label = np.zeros((H, W), np.int32)     # 0 unlabeled, 1 tumor, >=2 background
+    label[core] = 1
+
+    sums = {1: float(img[core].sum())}
+    counts = {1: int(core.sum())}
+
+    # Background seeds on a regular grid, skipping the tumor core and its margin
+    guard = ndi.binary_dilation(core, ndi.generate_binary_structure(2, 2), iterations=6)
+    nxt = 2
+    for r in range(0, H, cfg.bg_seed_step):
+        for c in range(0, W, cfg.bg_seed_step):
+            if mask[r, c] and not guard[r, c] and label[r, c] == 0:
+                label[r, c] = nxt
+                sums[nxt] = float(img[r, c])
+                counts[nxt] = 1
+                nxt += 1
+
+    ssl, queued = [], np.zeros((H, W), bool)
+
+    def enqueue(r, c):
+        if (0 <= r < H and 0 <= c < W and mask[r, c]
+                and label[r, c] == 0 and not queued[r, c]):
+            best = None
+            for dr, dc in NEIGH4:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < H and 0 <= nc < W and label[nr, nc] > 0:
+                    lid = label[nr, nc]
+                    d = abs(img[r, c] - sums[lid] / counts[lid])
+                    if best is None or d < best[0]:
+                        best = (d, lid)
+            if best:
+                heapq.heappush(ssl, (best[0], r, c, best[1]))
+                queued[r, c] = True
+
+    for r, c in zip(*np.nonzero(label)):
+        for dr, dc in NEIGH4:
+            enqueue(r + dr, c + dc)
+
+    while ssl:
+        d, r, c, lid = heapq.heappop(ssl)
+        if label[r, c] != 0:
+            continue
+        # Re-evaluate against the current neighbourhood before absorbing
+        best = None
+        for dr, dc in NEIGH4:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < H and 0 <= nc < W and label[nr, nc] > 0:
+                l2 = label[nr, nc]
+                d2 = abs(img[r, c] - sums[l2] / counts[l2])
+                if best is None or d2 < best[0]:
+                    best = (d2, l2)
+        if best is None:
+            queued[r, c] = False
+            continue
+        lid = best[1]
+        label[r, c] = lid                       # unconditional: no stopping rule
+        sums[lid] += float(img[r, c])
+        counts[lid] += 1
+        for dr, dc in NEIGH4:
+            enqueue(r + dr, c + dc)
+
+    region = label == 1
+    trace = {"passes": [{"pass": 1, "mu": round(sums[1] / counts[1], 2),
+                         "sigma": None, "T_L": None, "T_G": None,
+                         "added": int(region.sum() - core.sum()),
+                         "area": int(region.sum()),
+                         "stop": "all pixels allocated"}],
+             "stop_reason": "tessellation complete (no stopping criterion)",
+             "n_background_seeds": nxt - 2}
+    return region, trace

@@ -106,10 +106,14 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None):
     if cfg.seed_mode == "manual":
         (seed_labels, s_info), dt = timed(lambda: seedmod.manual_seed(manual_points or [], img.shape, cfg))
         core = seed_labels == 1
+        if cfg.method == "esrg" and cfg.purify_manual_seed:
+            # SRG's seed_labels (used verbatim by grow_srg) is left untouched --
+            # this only reshapes the ESRG growth core.
+            core = seedmod.purify_core(core, cfg)
+            s_info["core_area"] = int(core.sum())
         cand = core
     else:
         (core, s_info), dt = timed(lambda: seedmod.select_seed(img_masked, mask, depth, cfg))
-        seed_labels = core.astype(np.int32)
         try:
             from skimage import filters as _f
             th = s_info.get("thresholds")
@@ -142,7 +146,13 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None):
 
     # ── Stage 6: region growing ──────────────────────────────────────────────
     say("Growing region…")
-    if cfg.method == "srg":
+    if cfg.method == "srg" and cfg.seed_mode == "auto":
+        # No planted competitors: the auto core competes with a grid of
+        # background seeds inside the head mask.
+        (region, trace), dt = timed(lambda: growing.grow_srg_auto(img_masked, mask, core, cfg))
+        growth_info = {"stop reason": trace["stop_reason"], "passes": trace["passes"],
+                       "background seeds": trace["n_background_seeds"]}
+    elif cfg.method == "srg":
         # Whole image, unmasked: the published algorithm has no skull-stripping step
         # and leaves no pixel unallocated. Every planted id grows under the same
         # rule; grow_srg has no notion of "tumor" at all.

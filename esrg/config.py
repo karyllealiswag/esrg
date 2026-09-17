@@ -44,6 +44,12 @@ class Config:
     manual_seed_radius: int = 3     # manual clicks are dilated into a small region
     manual_seed_types: int = 4      # number of seed types selectable in manual mode
                                     # (type 1 = tumor, 2+ = competing regions for SRG)
+    purify_manual_seed: bool = True # ESRG + manual seeding only: erode the click disk to
+                                    # its medial pixels (same seed_core_frac test as the
+                                    # auto core) before growing, so a boundary/partial-
+                                    # volume pixel the disk happened to catch can't inflate
+                                    # the initial sigma_A the stopping bound is based on.
+                                    # No effect on seed_mode="auto" or on method="srg".
 
     # ── Phase 1: contrast/shape-aware seed ranking (Improvement Masterplan) ───
     rank_use_contrast: bool = True  # rank by brightness relative to local surround
@@ -85,6 +91,10 @@ class Config:
     max_passes: int = 4             # P_max
     sigma_floor_min: float = 0.02   # lower clamp for the estimated noise floor (log units)
     lazy_tol: float = 1e-9          # re-queue tolerance for lazy re-evaluation
+
+    # ── Baseline SRG ──────────────────────────────────────────────────
+    bg_seed_step: int = 8           # grid step for automatic background seeds
+                                    # (SRG + automatic seeding only)
 
     # ── Post-processing ───────────────────────────────────────────────
     post_open_radius: int = 1
