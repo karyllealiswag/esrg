@@ -68,7 +68,7 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None):
     (raw, scale), dt = timed(lambda: load_image(image_path, cfg.max_side))
     img = pre.normalize(raw)
     meta = {"path": image_path, "shape": img.shape, "scale": round(scale, 3),
-            "method": cfg.method, **parse_brisc_name(image_path)}
+            "method": cfg.method, "seed_mode": cfg.seed_mode, **parse_brisc_name(image_path)}
     stages.append(Stage("input", "1 · Input", img, "gray",
                         {"size": f"{img.shape[1]} × {img.shape[0]} px",
                          "scale factor": round(scale, 3), "file": image_path}, dt))

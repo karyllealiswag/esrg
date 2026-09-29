@@ -19,6 +19,8 @@ from PIL import Image, ImageTk
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from esrg import Config, run
+from esrg import pixel_report
+from esrg import preprocessing as pre
 from esrg import visualize as viz
 from esrg.io_utils import find_mask_for, load_image
 
@@ -56,7 +58,7 @@ FONT_SUB    = ("Segoe UI", 9)
 FONT_BOLD   = ("Segoe UI", 8, "bold")
 FONT_UI     = ("Segoe UI", 9)
 FONT_SM     = ("Segoe UI", 8)
-FONT_MONO   = ("Menlo", 8)
+FONT_MONO   = ("Consolas", 9) if sys.platform == "win32" else ("Menlo", 8)
 
 
 # ── Custom Cross-Platform Flat Button ────────────────────────────────────────
@@ -114,6 +116,7 @@ class ESRGApp:
         self.manual_points = []
         self._photo = None
         self.raw_image = None  # grayscale float64 preview shown before the pipeline runs
+        self.norm_image = None  # pre.normalize(raw_image): what the pipeline grows on
         self.zoom = 1.0
         self.pan_x = 0.0
         self.pan_y = 0.0
@@ -298,7 +301,7 @@ class ESRGApp:
         self._section_header(scroll_content, "Seeding Strategy")
         for val, lab in (("auto", "Automated Seeding"), ("manual", "Manual Seeding")):
             tk.Radiobutton(scroll_content, text=lab, variable=self.seed_mode, value=val,
-                           command=self._update_seed_region_visibility,
+                           command=self._on_seed_mode_change,
                            bg=PANEL_BG, fg=TEXT_MAIN, selectcolor=PANEL_ALT,
                            activebackground=PANEL_BG, font=FONT_UI, anchor="w",
                            highlightthickness=0).pack(fill=tk.X, pady=1)
@@ -351,6 +354,10 @@ class ESRGApp:
                        selectcolor=PANEL_ALT, activebackground=PANEL_BG,
                        font=FONT_UI, anchor="w", highlightthickness=0,
                        command=self._redraw).pack(fill=tk.X, pady=(2, 6))
+
+    def _on_seed_mode_change(self):
+        self._update_seed_region_visibility()
+        self._refresh_telemetry()
 
     def _update_seed_region_visibility(self):
         """The seed-region palette only matters for Manual Landmark seeding;
@@ -504,7 +511,7 @@ class ESRGApp:
     def _build_diagnostics(self, p):
         head = tk.Frame(p, bg=PANEL_BG, padx=10, pady=8)
         head.pack(fill=tk.X)
-        tk.Label(head, text="STAGE TELEMETRY", bg=PANEL_BG, fg=PRIMARY,
+        tk.Label(head, text="SEED TELEMETRY", bg=PANEL_BG, fg=PRIMARY,
                  font=FONT_BOLD).pack(side=tk.LEFT)
 
         container = tk.Frame(p, bg=PANEL_BG, padx=8)
@@ -519,8 +526,59 @@ class ESRGApp:
         self.diag.pack(fill=tk.BOTH, expand=True)
         sb.config(command=self.diag.yview)
 
-        self.diag.insert("1.0", "Execute the segmentation pipeline to inspect per-stage metrics and parameters.\n")
-        self.diag.config(state=tk.DISABLED)
+        self.diag.tag_config("head", foreground=PRIMARY, font=FONT_MONO + ("bold",))
+        self.diag.tag_config("muted", foreground=TEXT_MUTED)
+        self.diag.tag_config("avg", foreground=TEXT_MAIN, font=FONT_MONO + ("bold",))
+        self._refresh_telemetry()
+
+    def _telemetry_groups(self):
+        """(groups, None) when there are seed pixels to list, else (None, message)."""
+        if self.raw_image is None:
+            return None, "Load an MRI slice to inspect its seed pixels."
+        if self.seed_mode.get() == "manual":
+            groups = pixel_report.manual_groups(self.manual_points)
+            if not groups:
+                return None, "Click on the image to select seed pixels."
+            return groups, None
+        # The last run may have been made in Manual mode; its core is not a
+        # system selection, so only an auto run is shown here.
+        if not self.result or self.result.meta.get("seed_mode") != "auto":
+            return None, "Run the pipeline in Automated mode to see the pixels the system selects."
+        groups = pixel_report.auto_groups(self.result.stage("seed").image)
+        if not groups:
+            return None, "No tumor candidate — the system selected no seed pixels."
+        return groups, None
+
+    def _refresh_telemetry(self):
+        """Lists the coordinate and grayscale value of every seed pixel, with the
+        mean of each region when it holds more than one pixel."""
+        groups, msg = self._telemetry_groups()
+        d = self.diag
+        top = d.yview()[0]
+        d.config(state=tk.NORMAL)
+        d.delete("1.0", tk.END)
+
+        if msg:
+            d.insert(tk.END, msg + "\n", "muted")
+        else:
+            h, w = self.raw_image.shape
+            mode = "Manual" if self.seed_mode.get() == "manual" else "Automated"
+            d.insert(tk.END, f"{w} × {h} px · {mode} seeding\n", "head")
+            d.insert(tk.END, "row = y, col = x (0-based)\n"
+                             "RAW = file value\n"
+                             "NORM = value the algorithm uses (0–255)\n", "muted")
+            for g in pixel_report.describe(groups, self.raw_image, self.norm_image):
+                d.insert(tk.END, "\n" + "─" * 34 + "\n")
+                d.insert(tk.END, f"{g['label']} — {g['n']} px\n", "head")
+                rows = [f"{'row':>5}{'col':>6}{'raw':>7}{'norm':>9}"]
+                rows += [f"{p['row']:>5}{p['col']:>6}{p['raw']:>7.0f}{p['norm']:>9.2f}"
+                         for p in g["pixels"]]
+                d.insert(tk.END, "\n".join(rows) + "\n")
+                if g["n"] > 1:
+                    d.insert(tk.END, f"Average  raw {g['mean_raw']:.2f}  norm {g['mean_norm']:.2f}\n", "avg")
+
+        d.yview_moveto(top)
+        d.config(state=tk.DISABLED)
 
     def _toggle_diagnostics(self):
         self.diag_visible.set(not self.diag_visible.get())
@@ -549,12 +607,16 @@ class ESRGApp:
 
         try:
             self.raw_image, _ = load_image(path, self.cfg.max_side)
+            self.norm_image = pre.normalize(self.raw_image)
         except Exception as e:
             self.raw_image = None
+            self.norm_image = None
+            self._refresh_telemetry()
             messagebox.showerror("Load Failed", f"Could not read this image:\n{e}")
             return
 
         self._zoom_reset()
+        self._refresh_telemetry()
 
         gt = find_mask_for(path)
         gt_status = "Ground truth detected" if gt else "No ground truth found"
@@ -566,6 +628,7 @@ class ESRGApp:
     def _clear_seeds(self):
         self.manual_points = []
         self.status_lbl.config(text="Manual seed coordinates cleared.", fg=TEXT_MUTED)
+        self._refresh_telemetry()
         self._redraw()
 
     def _on_click(self, event):
@@ -579,6 +642,7 @@ class ESRGApp:
             self.status_lbl.config(
                 text=f"{len(self.manual_points)} seed(s) across {n_regions} region(s) placed.",
                 fg=PRIMARY)
+            self._refresh_telemetry()
             self._redraw()
 
     def _current_config(self):
@@ -628,6 +692,7 @@ class ESRGApp:
         self._build_stage_buttons()
         self.current = "final"
         self._select("final")
+        self._refresh_telemetry()
 
         if res.status != "NO TUMOR CANDIDATE":
             self.score_lbl.config(text=viz.score_line(res.scores), fg=TEXT_MAIN)
@@ -695,49 +760,7 @@ class ESRGApp:
                 color = status_colors.get(st.status, TEXT_MUTED) if st else TEXT_MUTED
                 b.set_style(bg=PANEL_ALT, fg=color, border=BORDER_CLR)
 
-        self._show_diagnostics(key)
         self._redraw()
-
-    def _show_diagnostics(self, key):
-        self.diag.config(state=tk.NORMAL)
-        self.diag.delete("1.0", tk.END)
-
-        if key == "compare":
-            self.diag.insert(tk.END, "SIDE-BY-SIDE COMPARISON\n" + "-" * 34 + "\n")
-            self.diag.insert(tk.END,
-                "Left  : ESRG segmentation mask (red)\n"
-                "Right : Ground truth mask (green)\n\n"
-                "Toggle \"Overlay\" above the viewer to blend\n"
-                "both masks onto a single image instead.\n")
-            if self.result.scores:
-                self.diag.insert(tk.END, "\n" + "=" * 34 + "\nSEGMENTATION ACCURACY:\n")
-                for k, v in self.result.scores.items():
-                    self.diag.insert(tk.END, f"  {k:<16}: {v}\n")
-            self.diag.see("1.0")
-            self.diag.config(state=tk.DISABLED)
-            return
-
-        st = self.result.stage(key)
-        if st:
-            header_str = f"STAGE: {st.name.upper()}\nStatus   : {st.status}\nDuration : {st.seconds * 1000:.1f} ms\n"
-            self.diag.insert(tk.END, header_str)
-            self.diag.insert(tk.END, "-" * 34 + "\n")
-
-            for k, v in st.info.items():
-                if isinstance(v, list) and v and isinstance(v[0], dict):
-                    self.diag.insert(tk.END, f"\n[{k}]\n")
-                    for item in v:
-                        self.diag.insert(tk.END, "  • " + ", ".join(f"{a}: {b}" for a, b in item.items()) + "\n")
-                else:
-                    self.diag.insert(tk.END, f"{k:<18}: {v}\n")
-
-            if key == "final" and self.result.scores:
-                self.diag.insert(tk.END, "\n" + "=" * 34 + "\nSEGMENTATION ACCURACY:\n")
-                for k, v in self.result.scores.items():
-                    self.diag.insert(tk.END, f"  {k:<16}: {v}\n")
-
-        self.diag.see("1.0")
-        self.diag.config(state=tk.DISABLED)
 
     # ── Zoom & Pan ────────────────────────────────────────────────────────────
     def _has_image(self):
