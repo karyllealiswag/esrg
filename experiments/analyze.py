@@ -343,10 +343,33 @@ def analyze(d):
     R["friedman"] = {"arms": arms, "chi2": float(fr.statistic), "p": float(fr.pvalue), "n": int(len(mat)),
                      "mean_rank": {k: float(v) for k, v in mat.rank(axis=1, ascending=False).mean().items()}}
 
+    # Pairwise follow-up to Friedman: full ESRG vs each ablated arm (DSC), Holm over 3
+    pw = {k: wilcoxon(mat[k], mat["P_ESRG"]) for k in arms[1:]}
+    for k, pa in zip(pw, holm([pw[k]["p"] for k in pw])):
+        pw[k]["p_holm"] = pa
+    R["friedman"]["pairwise"] = pw
+
+    # Supporting facts cited in the discussion
+    ae = df[df.config == "A_ESRG"]
+    leak = ae[ae.leaked == True]
+    gt = df[df.config == "P_ESRG"].gt_area
+    diam = 2 * np.sqrt(gt / np.pi)
+    R["extra"] = {
+        "auto_leak_n": int(len(leak)), "auto_leak_seed_miss": int((leak.seed_hit != True).sum()),
+        "auto_dsc0_srg": 100 * float((df[df.config == "A_SRG"].dsc == 0).mean()),
+        "auto_dsc0_esrg": 100 * float((ae.dsc == 0).mean()),
+        "gt_area_median": float(gt.median()), "gt_diam_median": float(diam.median()),
+        # A linear field changes by INU over the image diagonal (~sqrt(2) * 512 px at most)
+        "bias_change_over_median_tumor_pct": float(100 * INU * diam.median() / (math.sqrt(2) * 512)),
+        "stop_reasons_P_ESRG": df[df.config == "P_ESRG"].stop_reason.str.replace(r"[0-9.]+", "#", regex=True)
+                               .value_counts().to_dict(),
+    }
+
     # E6 processing time — sequential pass
     tp = os.path.join(d, "timing_sequential.csv")
-    if os.path.isfile(tp):
-        t = pd.read_csv(tp)
+    t = pd.read_csv(tp) if os.path.isfile(tp) else df[df.config.isin(["A_SRG", "A_ESRG"])]
+    R["timing_source"] = "sequential" if os.path.isfile(tp) else "parallel run (10 worker processes)"
+    if True:
         tt = {}
         for lv in CLASSES + ["all"]:
             s = t if lv == "all" else t[t.tumor == lv]
