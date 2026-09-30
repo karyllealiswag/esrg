@@ -134,7 +134,7 @@ class ESRGApp:
         self.seed_type = tk.IntVar(value=1)
         self.use_local = tk.BooleanVar(value=True)
         self.use_stop = tk.BooleanVar(value=True)
-        self.use_n4 = tk.BooleanVar(value=False)
+        self.use_log = tk.BooleanVar(value=self.cfg.use_log)
         self.purify_manual_seed = tk.BooleanVar(value=self.cfg.purify_manual_seed)
         self.k_local = tk.DoubleVar(value=self.cfg.k_local)
         self.radius = tk.IntVar(value=self.cfg.local_radius)
@@ -332,9 +332,9 @@ class ESRGApp:
 
         # Ablation Switches
         self._section_header(scroll_content, "Ablation Controls")
-        for var, lab in ((self.use_local, "Local Log Measure (Obj 2)"),
+        for var, lab in ((self.use_log, "Log-Domain Transform (Obj 2)"),
+                         (self.use_local, "Local Log Measure (Obj 2)"),
                          (self.use_stop, "Adaptive Termination (Obj 3)"),
-                         (self.use_n4, "N4 Bias Correction"),
                          (self.purify_manual_seed, "Purify Manual Seed (ESRG only)")):
             tk.Checkbutton(scroll_content, text=lab, variable=var, bg=PANEL_BG,
                            fg=TEXT_MAIN, selectcolor=PANEL_ALT, activebackground=PANEL_BG,
@@ -560,6 +560,8 @@ class ESRGApp:
 
         if msg:
             d.insert(tk.END, msg + "\n", "muted")
+        elif self.result and self.current == "log":
+            self._write_log_telemetry(groups)
         else:
             h, w = self.raw_image.shape
             mode = "Manual" if self.seed_mode.get() == "manual" else "Automated"
@@ -579,6 +581,51 @@ class ESRGApp:
 
         d.yview_moveto(top)
         d.config(state=tk.DISABLED)
+
+    def _write_log_telemetry(self, groups):
+        """Stage 3 view: L(x) of every seed pixel with its arithmetic, and the
+        noise floor's intermediates, all read from the arrays the run used."""
+        d = self.diag
+        st = self.result.stage("log")
+        mask = self.result.stage("mask").image
+        I = np.where(mask, self.result.stage("input").image, 0.0)
+        use_log, eps = st.info["_use_log"], st.info["_eps"]
+        nf = st.info["_noise_floor"]
+
+        d.insert(tk.END, "3 · Log domain\n", "head")
+        if use_log:
+            d.insert(tk.END, f"L(x) = ln(I(x) + ε),  ε = {eps:g}\n", "avg")
+            d.insert(tk.END, "ln = natural log (base e)\n"
+                             "I = NORM value inside head mask H\n"
+                             "    (0 outside H)\n", "muted")
+        else:
+            d.insert(tk.END, "Log transform OFF: L(x) = I(x)\n", "avg")
+            d.insert(tk.END, "I = NORM value inside head mask H\n"
+                             "Pixels pass through unchanged.\n", "muted")
+
+        for g in pixel_report.log_domain(groups, I, st.image, mask, eps, use_log):
+            d.insert(tk.END, "\n" + "─" * 34 + "\n")
+            d.insert(tk.END, f"{g['label']} — {g['n']} px\n", "head")
+            d.insert(tk.END, f"{'row':>5}{'col':>6}{'I(x)':>12}{'L(x)':>11}\n")
+            for p in g["pixels"]:
+                d.insert(tk.END, f"{p['row']:>5}{p['col']:>6}{p['I']:>12.6f}{p['L']:>11.6f}\n")
+                if not p["in_head"]:
+                    d.insert(tk.END, "  outside H, so I(x) = 0\n", "muted")
+                if use_log:
+                    d.insert(tk.END, f"  ln({p['I']:.6f} + {eps:g}) = {p['L']:.6f}\n", "muted")
+            if g["n"] > 1:
+                d.insert(tk.END, f"Average  L {g['mean_L']:.6f}\n", "avg")
+
+        d.insert(tk.END, "\n" + "─" * 34 + "\n")
+        d.insert(tk.END, "Noise floor σ_floor\n", "head")
+        d.insert(tk.END, f"over all {nf['n']} px of H\n"
+                         "r(x) = L(x) − median3×3(L)(x)\n"
+                         "MAD  = median|r − median(r)|\n", "muted")
+        d.insert(tk.END, f"median(r)     = {nf['median_resid']:.6f}\n"
+                         f"MAD           = {nf['mad']:.6f}\n"
+                         f"1.4826 × MAD  = {nf['raw_sigma']:.6f}\n")
+        d.insert(tk.END, f"σ_floor = max({nf['raw_sigma']:.6f}, {nf['min_value']:g})\n"
+                         f"        = {nf['sigma_floor']:.6f}\n", "avg")
 
     def _toggle_diagnostics(self):
         self.diag_visible.set(not self.diag_visible.get())
@@ -649,7 +696,7 @@ class ESRGApp:
         return self.cfg.replace(
             method=self.method.get(), seed_mode=self.seed_mode.get(),
             use_log_local=self.use_local.get(), use_stopping=self.use_stop.get(),
-            use_n4=self.use_n4.get(), purify_manual_seed=self.purify_manual_seed.get(),
+            use_log=self.use_log.get(), purify_manual_seed=self.purify_manual_seed.get(),
             k_local=float(self.k_local.get()),
             k_global=max(float(self.k_local.get()) + 1.0, 3.0),
             local_radius=int(self.radius.get()), otsu_classes=int(self.classes.get()))
@@ -760,6 +807,7 @@ class ESRGApp:
                 color = status_colors.get(st.status, TEXT_MUTED) if st else TEXT_MUTED
                 b.set_style(bg=PANEL_ALT, fg=color, border=BORDER_CLR)
 
+        self._refresh_telemetry()
         self._redraw()
 
     # ── Zoom & Pan ────────────────────────────────────────────────────────────

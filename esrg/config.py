@@ -20,6 +20,7 @@ class Config:
     seed_mode: str = "auto"         # "auto" (Objective 1) | "manual" (user clicks)
 
     # ── Ablation switches (Chapter 3, Experiment E4) ──────────────────
+    use_log: bool = True            # Objective 2: L(x) = ln(I(x) + eps); off -> L(x) = I(x)
     use_log_local: bool = True      # Objective 2: local log-domain difference measure
     use_stopping: bool = True       # Objective 3: adaptive stopping criterion
     use_n4: bool = False            # N4 bias correction (ablation arm only, never part of ESRG)

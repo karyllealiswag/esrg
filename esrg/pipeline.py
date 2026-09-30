@@ -46,10 +46,18 @@ class Result:
         return next((s for s in self.stages if s.key == key), None)
 
 
-def run(image_path, cfg, mask_path=None, manual_points=None, progress=None):
+def run(image_path, cfg, mask_path=None, manual_points=None, progress=None,
+        planted_core=None, raw_hook=None):
     """
     Full pipeline on one slice. manual_points overrides seed selection when
     cfg.seed_mode == 'manual'. progress(str) is an optional GUI callback.
+
+    Evaluation-only hooks (experiments/evaluate.py):
+      planted_core : boolean seed map that replaces seed selection. ESRG purifies
+                     it exactly as a manual click (cfg.purify_manual_seed); SRG
+                     grows it against the automatic background-seed grid.
+      raw_hook     : function applied to the loaded slice before normalization,
+                     e.g. to multiply in a synthetic bias field.
     """
     cfg.validate()
     stages, t_total = [], time.perf_counter()
@@ -66,9 +74,13 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None):
     # ── Stage 1: input ───────────────────────────────────────────────────────
     say("Loading image…")
     (raw, scale), dt = timed(lambda: load_image(image_path, cfg.max_side))
+    if raw_hook is not None:
+        raw = raw_hook(raw)
     img = pre.normalize(raw)
     meta = {"path": image_path, "shape": img.shape, "scale": round(scale, 3),
-            "method": cfg.method, "seed_mode": cfg.seed_mode, **parse_brisc_name(image_path)}
+            "method": cfg.method,
+            "seed_mode": "planted" if planted_core is not None else cfg.seed_mode,
+            **parse_brisc_name(image_path)}
     stages.append(Stage("input", "1 · Input", img, "gray",
                         {"size": f"{img.shape[1]} × {img.shape[0]} px",
                          "scale factor": round(scale, 3), "file": image_path}, dt))
@@ -93,17 +105,37 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None):
                                 {"error": str(e)}, 0.0, "FAIL"))
 
     # ── Stage 3: log domain ──────────────────────────────────────────────────
-    say("Log transform…")
-    L, dt = timed(lambda: pre.log_transform(img_masked, cfg.log_eps))
-    sigma_floor = pre.noise_floor(L, mask, cfg.sigma_floor_min)
-    stages.append(Stage("log", "3 · Log domain", L, "heat",
-                        {"range": f"{L[mask].min():.2f}–{L[mask].max():.2f}",
+    if cfg.use_log:
+        say("Log transform…")
+        L, dt = timed(lambda: pre.log_transform(img_masked, cfg.log_eps))
+    else:
+        # Ablation: growth and the noise floor run on the normalized intensity itself.
+        L, dt = img_masked.copy(), 0.0
+    nf = pre.noise_floor_details(L, mask, cfg.sigma_floor_min)
+    sigma_floor = nf["sigma_floor"]
+    stages.append(Stage("log", "3 · Log domain" if cfg.use_log else "3 · Log domain (off)",
+                        L, "heat",
+                        {"transform": f"L = ln(I + {cfg.log_eps:g})" if cfg.use_log
+                                      else "off — L = I (no log transform)",
+                         "range": f"{L[mask].min():.2f}–{L[mask].max():.2f}",
                          "noise floor σ": round(sigma_floor, 4),
-                         "note": "multiplicative bias becomes additive"}, dt))
+                         "note": "multiplicative bias becomes additive" if cfg.use_log
+                                 else "multiplicative bias stays multiplicative",
+                         "_use_log": cfg.use_log, "_eps": cfg.log_eps,
+                         "_noise_floor": nf}, dt))
 
     # ── Stage 4–5: seed selection ────────────────────────────────────────────
     say("Selecting seed…")
-    if cfg.seed_mode == "manual":
+    if planted_core is not None:
+        core = planted_core.astype(bool).copy()
+        s_info = {"status": "OK" if core.any() else "NO SEED", "core_area": int(core.sum()),
+                  "components": [], "warnings": []}
+        if cfg.method == "esrg" and cfg.purify_manual_seed:
+            core = seedmod.purify_core(core, cfg)
+            s_info["core_area"] = int(core.sum())
+        seed_labels = core.astype(np.int32)
+        cand, dt = core, 0.0
+    elif cfg.seed_mode == "manual":
         (seed_labels, s_info), dt = timed(lambda: seedmod.manual_seed(manual_points or [], img.shape, cfg))
         core = seed_labels == 1
         if cfg.method == "esrg" and cfg.purify_manual_seed:
@@ -146,7 +178,7 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None):
 
     # ── Stage 6: region growing ──────────────────────────────────────────────
     say("Growing region…")
-    if cfg.method == "srg" and cfg.seed_mode == "auto":
+    if cfg.method == "srg" and (cfg.seed_mode == "auto" or planted_core is not None):
         # No planted competitors: the auto core competes with a grid of
         # background seeds inside the head mask.
         (region, trace), dt = timed(lambda: growing.grow_srg_auto(img_masked, mask, core, cfg))

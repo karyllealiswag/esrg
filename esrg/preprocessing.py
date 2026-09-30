@@ -131,10 +131,25 @@ def log_transform(img, eps=1.0):
     return np.log(img + eps)
 
 
-def noise_floor(L, mask, min_value=0.02):
-    """Robust noise sigma of L in the brain: 1.4826 * MAD of (L - median3x3(L))."""
+def noise_floor_details(L, mask, min_value=0.02):
+    """
+    Every intermediate of the noise floor, so it can be checked by hand:
+      r(x)    = L(x) - median3x3(L)(x)            for x in the head mask H
+      MAD     = median(|r - median(r)|)
+      sigma   = max(1.4826 * MAD, min_value)
+    1.4826 = 1 / Phi^-1(0.75) makes the MAD a consistent estimate of a Gaussian sigma.
+    """
     resid = (L - ndi.median_filter(L, size=3))[mask]
     if resid.size == 0:
-        return float(min_value)
-    mad = np.median(np.abs(resid - np.median(resid)))
-    return float(max(1.4826 * mad, min_value))
+        return {"n": 0, "median_resid": 0.0, "mad": 0.0, "raw_sigma": 0.0,
+                "min_value": float(min_value), "sigma_floor": float(min_value)}
+    med = float(np.median(resid))
+    mad = float(np.median(np.abs(resid - med)))
+    return {"n": int(resid.size), "median_resid": med, "mad": mad,
+            "raw_sigma": 1.4826 * mad, "min_value": float(min_value),
+            "sigma_floor": float(max(1.4826 * mad, min_value))}
+
+
+def noise_floor(L, mask, min_value=0.02):
+    """Robust noise sigma of L in the brain: 1.4826 * MAD of (L - median3x3(L))."""
+    return noise_floor_details(L, mask, min_value)["sigma_floor"]

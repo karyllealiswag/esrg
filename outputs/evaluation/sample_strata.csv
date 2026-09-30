@@ -1,0 +1,10 @@
+tumor,plane,N_h,n_h
+glioma,axial,85,50
+glioma,coronal,81,47
+glioma,sagittal,88,51
+meningioma,axial,137,80
+meningioma,coronal,86,50
+meningioma,sagittal,83,48
+pituitary,axial,124,72
+pituitary,coronal,90,52
+pituitary,sagittal,86,50
