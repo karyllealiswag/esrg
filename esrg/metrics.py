@@ -4,9 +4,13 @@ metrics.py — Segmentation scores (Chapter 3, Section 3.4.4).
 Purpose : Quantify a predicted mask against ground truth.
 Function : evaluate() returns DSC, IoU, precision, recall (overlap) plus HD95 and
           ASSD (boundary) and a leakage flag; seed_hit() checks the seed core lies
-          inside the tumor; summarize() aggregates per-metric mean/SD/median/IQR.
+          inside the tumor; seed_distance() measures how far the seed core lies from
+          the tumor; summarize() aggregates per-metric mean/SD/median/IQR.
 Notes   : NaN where a metric is undefined (empty mask). Boundary distances use the
           symmetric surface distance; HD95 is the 95th percentile to resist outliers.
+          hd95_wc / assd_wc replace an undefined distance (empty prediction) with the
+          worst possible value, the image diagonal, so failed slices are penalized
+          rather than dropped (Maier-Hein et al., 2024).
 """
 import numpy as np
 from scipy import ndimage as ndi
@@ -49,6 +53,12 @@ def evaluate(pred, gt, cfg=None):
     d = surface_distances(pred, gt)
     m["hd95"] = float(np.percentile(d, 95)) if d.size else np.nan
     m["assd"] = float(d.mean()) if d.size else np.nan
+    diag = float(np.hypot(*gt.shape))
+    m["diag"] = diag
+    m["hd95_wc"] = m["hd95"] if d.size else (diag if gt.any() else np.nan)
+    m["assd_wc"] = m["assd"] if d.size else (diag if gt.any() else np.nan)
+    m["n_boundary_pred"] = int(_boundary(pred).sum())
+    m["n_boundary_gt"] = int(_boundary(gt).sum())
 
     ratio = m["pred_area"] / m["gt_area"] if m["gt_area"] else np.nan
     m["area_ratio"] = ratio
@@ -61,6 +71,15 @@ def seed_hit(core, gt):
     if not core.any():
         return None
     return bool((core & ~gt.astype(bool)).sum() == 0)
+
+
+def seed_distance(core, gt):
+    """Objective 1: distance (px) from the seed-core centroid to the nearest tumor pixel; 0 inside."""
+    core, gt = core.astype(bool), gt.astype(bool)
+    if not core.any() or not gt.any():
+        return None
+    r, c = (int(round(v)) for v in np.argwhere(core).mean(axis=0))
+    return float(ndi.distance_transform_edt(~gt)[r, c])
 
 
 def summarize(rows, keys=("dsc", "iou", "precision", "recall", "hd95", "seconds")):

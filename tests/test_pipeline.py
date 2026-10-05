@@ -4,8 +4,10 @@ test_pipeline.py — Smoke and correctness tests.
 Purpose : Guard the metric math, normalization, growth stopping, and config rules.
 Function : Small synthetic cases with known answers — perfect/disjoint DSC, output
           range, a bright square the grower must fill without leaking, seed-hit
-          logic, rejection of an invalid k_global <= k_local, and the seed-pixel
-          report (per-region grouping, averages, click de-duplication).
+          logic, rejection of an invalid k_global <= k_local, the seed-pixel
+          report (per-region grouping, averages, click de-duplication), the
+          evaluation pipeline (Cochran sample size, equal allocation, the
+          statistics, worst-case distances) and the GUI's metric explanations.
 Notes   : Run with pytest, or directly: python tests/test_pipeline.py
 """
 import os, sys, numpy as np
@@ -94,6 +96,63 @@ def test_pixel_report_auto_core_is_row_major_and_empty_is_none():
     assert [(p["row"], p["col"]) for p in g["pixels"]] == [(1, 2), (1, 4), (3, 1)]
     assert g["mean_raw"] == (70.0 + 90.0 + 160.0) / 3
     assert auto_groups(np.zeros((5, 5), bool)) == [] and manual_groups([]) == []
+
+
+def test_cochran_sample_size_matches_hand_computation():
+    from experiments.sampling import cochran, margin
+    r = cochran(1757)                         # pituitary population of the pooled splits
+    assert abs(r["n0"] - 384.1459) < 1e-3     # 1.959964^2 * 0.25 / 0.05^2
+    assert r["n_min"] == 316                  # 384.146 / (1 + 383.146 / 1757) = 315.37
+    assert abs(margin(318, 1757) - 0.04975) < 1e-4
+
+
+def test_equal_allocation_gives_every_stratum_the_same_size():
+    from experiments.sampling import plan
+    cells = {(t, p): [(f"{t}{p}{i}.jpg", f"{t}{p}{i}.png") for i in range(400 + 7 * k)]
+             for k, (t, p) in enumerate([(t, p) for t in ("glioma", "meningioma", "pituitary")
+                                         for p in ("axial", "coronal", "sagittal")])}
+    pl = plan(cells)
+    assert pl["n"] == 9 * pl["n_h"]
+    assert pl["n_h"] * 3 >= pl["n_class_required"]
+
+
+def test_wilcoxon_matches_scipy_and_holm_is_monotone():
+    from scipy import stats as st
+    from experiments.stats import wilcoxon, holm
+    rng = np.random.RandomState(1)
+    x = rng.rand(80); y = x + rng.normal(0.05, 0.1, 80)
+    w = wilcoxon(x, y)
+    ref = st.wilcoxon(y - x, correction=False, method="approx")
+    assert abs(w["p"] - ref.pvalue) < 1e-10
+    assert holm([0.01, 0.04, 0.03]) == [0.03, 0.06, 0.06]
+
+
+def test_wilson_interval_known_value():
+    from experiments.stats import wilson
+    lo, hi = wilson(50, 100)                  # p = .5, n = 100 -> [40.38, 59.62]
+    assert abs(lo - 40.383) < 1e-2 and abs(hi - 59.617) < 1e-2
+
+
+def test_worst_case_distance_for_empty_prediction():
+    gt = np.zeros((30, 40), bool); gt[10:20, 10:20] = True
+    m = evaluate(np.zeros_like(gt), gt)
+    assert np.isnan(m["hd95"]) and m["hd95_wc"] == np.hypot(30, 40) == 50.0
+
+
+def test_explain_agrees_with_metrics():
+    from types import SimpleNamespace
+    from esrg.explain import explain
+    gt = np.zeros((40, 40), bool); gt[10:30, 10:30] = True
+    pred = np.zeros_like(gt); pred[12:34, 8:28] = True
+    seed = np.zeros_like(gt); seed[18:22, 18:22] = True
+    st = SimpleNamespace(key="seed", image=seed, seconds=0.0, name="5 · Seed core")
+    res = SimpleNamespace(mask=pred, gt=gt, stages=[st], meta={"seconds": 1.0, "seed_mode": "auto"},
+                          stage=lambda k: st if k == "seed" else None)
+    e, m = explain(res), evaluate(pred, gt)
+    for k, mk in (("dsc", "dsc"), ("iou", "iou"), ("recall", "recall"), ("precision", "precision"),
+                  ("hd95", "hd95"), ("assd", "assd"), ("leakage", "area_ratio")):
+        assert abs(e[k]["value"] - m[mk]) < 1e-12, k
+    assert e["seed"]["value"] == 1.0
 
 
 if __name__ == "__main__":

@@ -1,0 +1,3517 @@
+{
+ "title": "Chapter 4 Results and Discussion",
+ "blocks": [
+  {
+   "t": "h1",
+   "text": "Chapter Four"
+  },
+  {
+   "t": "h1",
+   "text": "RESULTS AND DISCUSSION"
+  },
+  {
+   "t": "h2",
+   "text": "4.1 General Results"
+  },
+  {
+   "t": "p",
+   "text": "This chapter presents the evaluation of the Enhanced Seeded Region Growing (ESRG) algorithm against the original Seeded Region Growing (SRG) algorithm of Adams and Bischof (1994), which serves as the baseline control. The evaluation follows the three aspects that Udupa et al. (2006) identify for judging a segmentation method: its *accuracy* (how closely the result matches the ground truth), its *precision* in the sense of reproducibility (whether the same image always yields the same result), and its *efficiency* (the time it takes). Each specific objective is evaluated with the metric that measures its problem most directly: the seed hit rate and the variability between operators for automated seed selection (Objective 1), recall for undersegmentation (Objective 2), and precision, the leakage rate, and boundary distances for boundary leakage (Objective 3). The Dice Similarity Coefficient (DSC) and Intersection over Union (IoU) summarize the overall delineation, and processing time measures efficiency."
+  },
+  {
+   "t": "p",
+   "text": "All 21,942 runs were produced by an automated, reproducible pipeline: experiments/sampling.py draws the sample, experiments/evaluate.py runs every configuration on every sampled slice and writes one row of raw results per slice and configuration, experiments/analyze.py computes every statistic and figure in this chapter from those rows, and experiments/appendix.py writes one Excel workbook per evaluation (Appendices A to H) that lists the result of every slice. None of the runs ended in an error. The same metric definitions are implemented in the system itself: its Evaluation step displays, for any loaded slice, each metric together with the source of every variable and the worked computation."
+  },
+  {
+   "t": "h3",
+   "text": "4.1.1 Dataset and Sampling"
+  },
+  {
+   "t": "p",
+   "text": "The population is the segmentation task of the BRISC 2025 dataset (Fateh et al., 2026): 4,793 contrast-enhanced T1-weighted slices, every one with a radiologist-reviewed tumor mask, pooled from the training split (3,933) and the test split (860). The two splits were pooled because the test split alone is too small to give every tumor class the sample size required below. Because the region-growing method has no trainable weights, a training slice is not seen during learning; however, the three weights of the seed-ranking score were tuned on the training split (Table 3.4), so the possibility that training slices are favored is tested separately (Section 4.1.5). The population was divided into nine strata, one for each combination of tumor class (glioma, meningioma, pituitary) and imaging plane (axial, coronal, sagittal), both read from each filename."
+  },
+  {
+   "t": "p",
+   "text": "The sample size was determined with Cochran’s (1977) formula for estimating a proportion, such as a success rate or the seed hit rate, to within a margin of error *e* at 95% confidence:"
+  },
+  {
+   "t": "eq",
+   "num": "4.1",
+   "math": [
+    {
+     "sub": [
+      "n",
+      "0"
+     ]
+    },
+    " = ",
+    {
+     "f": [
+      [
+       {
+        "sup": [
+         "z",
+         "2"
+        ]
+       },
+       "p",
+       {
+        "rb": "1 − p"
+       }
+      ],
+      {
+       "sup": [
+        "e",
+        "2"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "*n*_{0} – required sample size for an infinite population",
+    "*z* – 1.96, the standard normal value for 95% confidence",
+    "*p* – assumed population proportion; *p* = .50 gives the largest, most conservative size",
+    "*e* – tolerated margin of error, .05 (±5 percentage points)"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Because each population is finite, *n*_{0} is reduced with the finite population correction:"
+  },
+  {
+   "t": "eq",
+   "num": "4.2",
+   "math": [
+    {
+     "sub": [
+      "n",
+      "c"
+     ]
+    },
+    " = ",
+    {
+     "f": [
+      {
+       "sub": [
+        "n",
+        "0"
+       ]
+      },
+      [
+       "1 + ",
+       {
+        "f": [
+         [
+          {
+           "sub": [
+            "n",
+            "0"
+           ]
+          },
+          " − 1"
+         ],
+         {
+          "sub": [
+           "N",
+           "c"
+          ]
+         }
+        ]
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "*n*_{c} – required sample size for population *c*, rounded up to the next whole slice",
+    "*N*_{c} – number of slices in population *c*"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Chapter 4 reports every result per tumor class as well as overall, so the requirement was applied to each class separately: a class-level rate must itself be within ±5%. Substituting the values gives *n*_{0} = 1.96² × .50 × .50 / .05² = 384.15; for the largest class, pituitary (*N*_{c} = 1,757), *n*_{c} = 384.15 / (1 + 383.15 / 1,757) = 315.37, rounded up to 316. Table 4.1 lists every class. The largest class requirement was then given to every class and divided equally among the three planes, so that all nine strata receive the same number of slices (equal allocation):"
+  },
+  {
+   "t": "eq",
+   "num": "4.3",
+   "math": [
+    {
+     "sub": [
+      "n",
+      "h"
+     ]
+    },
+    " = ⌈",
+    {
+     "f": [
+      [
+       {
+        "sub": [
+         "max",
+         "c"
+        ]
+       },
+       " ",
+       {
+        "sub": [
+         "n",
+         "c"
+        ]
+       }
+      ],
+      "P"
+     ]
+    },
+    "⌉,  n = H · ",
+    {
+     "sub": [
+      "n",
+      "h"
+     ]
+    }
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "*n*_{h} – number of slices sampled from stratum *h*",
+    "*P* – number of imaging planes per class, 3; *H* – number of strata, 9",
+    "⌈ ⌉ – rounding up to the next whole slice"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "This gives *n*_{h} = ⌈316/3⌉ = 106 slices per stratum and a total sample of 9 × 106 = 954 slices (318 per class). The precision that the drawn sample actually achieves is:"
+  },
+  {
+   "t": "eq",
+   "num": "4.4",
+   "math": [
+    "e = z",
+    {
+     "sqrt": [
+      {
+       "f": [
+        [
+         "p",
+         {
+          "rb": "1 − p"
+         }
+        ],
+        "n"
+       ]
+      },
+      " · ",
+      {
+       "f": [
+        [
+         "N − n"
+        ],
+        [
+         "N − 1"
+        ]
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "*e* – achieved margin of error of a proportion at 95% confidence",
+    "*n*, *N* – sample and population size of the level considered (all slices, or one class)"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Overall, *e* = 1.96 × √(.25/954 × 3,839/4,792) = ±2.84%, and within each class the margin stays below the targeted ±5% (Table 4.1). Equal allocation was chosen over proportional allocation because the evaluation compares tumor classes and planes with one another: giving every stratum the same size gives every class-by-plane comparison the same precision and prevents the largest class from dominating the averages (Lohr, 2021). Within each stratum, the slices were sorted by filename, shuffled with a fixed random seed (2026), and the first *n*_{h} were taken. This is simple random sampling without replacement, so every slice of a stratum had the same chance of selection, *f*_{h} = *n*_{h}/*N*_{h}, and the selection involved no judgment. Because the sampling fractions differ slightly between strata, population-weighted estimates (Equation 4.15) are reported alongside the sample means to confirm that the equal allocation does not bias the overall figures."
+  },
+  {
+   "t": "table",
+   "num": "4.1",
+   "title": "Sample Size Required by Cochran’s Formula and Sample Size Drawn",
+   "header": [
+    "Population",
+    "*N*",
+    "*n*_{0}",
+    "*n* (exact)",
+    "*n*_{min}",
+    "*n* drawn",
+    "Achieved *e*"
+   ],
+   "rows": [
+    [
+     "Glioma",
+     "1,401",
+     "384.15",
+     "301.65",
+     "302",
+     "318",
+     "±4.83%"
+    ],
+    [
+     "Meningioma",
+     "1,635",
+     "384.15",
+     "311.22",
+     "312",
+     "318",
+     "±4.93%"
+    ],
+    [
+     "Pituitary",
+     "1,757",
+     "384.15",
+     "315.37",
+     "316",
+     "318",
+     "±4.97%"
+    ],
+    [
+     "All classes (pooled)",
+     "4,793",
+     "384.15",
+     "355.71",
+     "356",
+     "954",
+     "±2.84%"
+    ]
+   ],
+   "widths": [
+    2.4,
+    1,
+    1,
+    1.1,
+    1,
+    1,
+    1.2
+   ],
+   "note": "*N* = number of slices with a tumor mask in the pooled BRISC 2025 segmentation task (training and test splits). *n*_{0} and *n* follow Equations 4.1 and 4.2 with *z* = 1.96, *p* = .50, and *e* = .05; *n*_{min} is *n* rounded up. The largest class requirement (316 slices, pituitary) was applied to every class and divided equally over the three planes (Equation 4.3), giving *n*_{h} = 106 slices per stratum. Achieved *e* is Equation 4.4 evaluated at the drawn sample size."
+  },
+  {
+   "t": "table",
+   "num": "4.2",
+   "title": "Composition of the Population and of the Equal-Allocation Stratified Sample",
+   "header": [
+    [
+     {
+      "text": ""
+     },
+     {
+      "text": ""
+     },
+     {
+      "text": "Population (*N*_{h})",
+      "span": 3,
+      "rule": true
+     },
+     {
+      "text": "Sample (*n*_{h})",
+      "span": 3,
+      "rule": true
+     },
+     {
+      "text": ""
+     }
+    ],
+    [
+     "Tumor class",
+     "Plane",
+     "Total",
+     "Train",
+     "Test",
+     "Total",
+     "Train",
+     "Test",
+     "*f*_{h}"
+    ]
+   ],
+   "rows": [
+    [
+     "Glioma",
+     "Axial",
+     "479",
+     "394",
+     "85",
+     "106",
+     "91",
+     "15",
+     "22.1%"
+    ],
+    [
+     "Glioma",
+     "Coronal",
+     "511",
+     "430",
+     "81",
+     "106",
+     "88",
+     "18",
+     "20.7%"
+    ],
+    [
+     "Glioma",
+     "Sagittal",
+     "411",
+     "323",
+     "88",
+     "106",
+     "87",
+     "19",
+     "25.8%"
+    ],
+    [
+     "Meningioma",
+     "Axial",
+     "560",
+     "423",
+     "137",
+     "106",
+     "81",
+     "25",
+     "18.9%"
+    ],
+    [
+     "Meningioma",
+     "Coronal",
+     "512",
+     "426",
+     "86",
+     "106",
+     "95",
+     "11",
+     "20.7%"
+    ],
+    [
+     "Meningioma",
+     "Sagittal",
+     "563",
+     "480",
+     "83",
+     "106",
+     "84",
+     "22",
+     "18.8%"
+    ],
+    [
+     "Pituitary",
+     "Axial",
+     "550",
+     "426",
+     "124",
+     "106",
+     "82",
+     "24",
+     "19.3%"
+    ],
+    [
+     "Pituitary",
+     "Coronal",
+     "600",
+     "510",
+     "90",
+     "106",
+     "93",
+     "13",
+     "17.7%"
+    ],
+    [
+     "Pituitary",
+     "Sagittal",
+     "607",
+     "521",
+     "86",
+     "106",
+     "90",
+     "16",
+     "17.5%"
+    ],
+    [
+     "Total",
+     "",
+     "4,793",
+     "3,933",
+     "860",
+     "954",
+     "791",
+     "163",
+     "19.9%"
+    ]
+   ],
+   "widths": [
+    1.5,
+    1.2,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "note": "Stratum *h* is a combination of tumor class and imaging plane read from each filename. Within each stratum the slices were selected by simple random sampling without replacement (fixed seed 2026). *f*_{h} = *n*_{h}/*N*_{h} is the sampling fraction. Train and Test give the BRISC split each slice came from. Slice-level selection, including the random draw order of all 4,793 slices, is listed in Appendix A."
+  },
+  {
+   "t": "p",
+   "text": "After the draw, the sample was recorded in a manifest (outputs/evaluation/sample.csv), together with the full sampling frame of all 4,793 slices and their random draw order (Appendix A), and every image and mask that was not sampled (3,839 image–mask pairs) was removed from the dataset folder. The 954 retained slices comprise 791 from the training split and 163 from the test split."
+  },
+  {
+   "t": "h3",
+   "text": "4.1.2 Evaluation Protocol"
+  },
+  {
+   "t": "p",
+   "text": "Every sampled slice was processed under the 23 configurations in Table 4.3, so every comparison is paired on identical images. Three seeding conditions separate the contribution of each enhancement. Under *automatic seeding*, both algorithms start from the seed produced by the automated seed selection of Objective 1; the baseline also receives a regular grid of background seeds (every 8 pixels inside the head mask), because the original algorithm needs competing regions in order to stop. Under *planted seeding*, one click is placed at the deepest pixel of the ground-truth tumor, the pixel farthest from its boundary, and is dilated into a disk of radius 3 pixels exactly as a manual click is. ESRG reduces this disk to its core, as it does in manual mode, while SRG grows it against the same background grid. Planted seeding simulates a correctly placed manual seed on every slice and therefore measures region growing independently of seed selection, which is where Objectives 2 and 3 act."
+  },
+  {
+   "t": "p",
+   "text": "Under *operator seeding*, five clicks per slice simulate five operators, a design adopted from studies of inter-observer variability (Joskowicz et al., 2019; Visser et al., 2019) and from the evaluation of interactive segmentation with simulated users (Moschidis & Graham, 2010). Each click is a different tumor pixel, drawn at random from the pixels deep enough for the whole click disk to lie inside the tumor:"
+  },
+  {
+   "t": "eq",
+   "num": "4.5",
+   "math": [
+    {
+     "sub": [
+      "K",
+      "i"
+     ]
+    },
+    " = {x ∈ ",
+    {
+     "sub": [
+      "G",
+      "i"
+     ]
+    },
+    " : ",
+    {
+     "sub": [
+      "D",
+      {
+       "sub": [
+        "G",
+        "i"
+       ]
+      }
+     ]
+    },
+    "(x) > ρ},  ",
+    {
+     "sub": [
+      "c",
+      "i1"
+     ]
+    },
+    ", …, ",
+    {
+     "sub": [
+      "c",
+      "i5"
+     ]
+    },
+    " ~ Uniform(",
+    {
+     "sub": [
+      "K",
+      "i"
+     ]
+    },
+    ") without replacement"
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "*K*_{i} – admissible click positions on slice *i*",
+    "*G*_{i} – ground-truth tumor of slice *i*; *D*_{G}(*x*) – distance from *x* to the nearest pixel outside *G* (Equation 3.4)",
+    "ρ – click radius, 3 pixels; each click is dilated into a disk of this radius",
+    "*c*_{i1}, …, *c*_{i5} – the five simulated operator clicks, drawn with a seed derived from the filename"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Every click is therefore a valid, correctly placed click; the clicks differ only in where inside the tumor the operator happened to click. Moschidis and Graham (2010) found that seeds placed in the interior of the object give better results than seeds near its contour, so this design is favorable to manual seeding. For Experiment E2, a synthetic bias field was multiplied into each slice before normalization, reproducing the image-formation model of Equation 3.15:"
+  },
+  {
+   "t": "eq",
+   "num": "4.6",
+   "math": [
+    "I′(x) = I(x) · ",
+    {
+     "rb": [
+      "1 + ",
+      {
+       "f": [
+        "β",
+        "2"
+       ]
+      },
+      " · ",
+      {
+       "f": [
+        "u(x)",
+        {
+         "sub": [
+          "u",
+          "max"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    ",  u(x) = (x − c) · (cos θ, sin θ)"
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "*I*(*x*), *I*′(*x*) – intensity of pixel *x* before and after the bias field is applied",
+    "β – bias amplitude, 0.4: the field spans 0.8 to 1.2, a 40% intensity non-uniformity",
+    "*u*(*x*) – signed distance of *x* from the image center *c* along the gradient direction",
+    "*u*_{max} – largest |*u*(*z*)| over the image, which scales the field to exactly ±β/2 at the image edges",
+    "θ – gradient direction, drawn at random for each slice with a fixed seed"
+   ]
+  },
+  {
+   "t": "table",
+   "num": "4.3",
+   "title": "Configurations Evaluated on Every Sampled Slice",
+   "header": [
+    "Configuration",
+    "Algorithm",
+    "Seeding",
+    "Bias field",
+    "Change from Table 3.4",
+    "Experiment"
+   ],
+   "rows": [
+    [
+     "A_SRG",
+     "SRG",
+     "Automatic",
+     "No",
+     "—",
+     "E1, E4, E6"
+    ],
+    [
+     "A_ESRG",
+     "ESRG",
+     "Automatic",
+     "No",
+     "—",
+     "E1, E4, E5, E6"
+    ],
+    [
+     "P_SRG",
+     "SRG",
+     "Planted",
+     "No",
+     "—",
+     "E2, E3, E4"
+    ],
+    [
+     "P_ESRG",
+     "ESRG",
+     "Planted",
+     "No",
+     "—",
+     "E2, E3, E4"
+    ],
+    [
+     "P_ESRG_global",
+     "ESRG",
+     "Planted",
+     "No",
+     "Global measure, δ(*x*) = |*L*(*x*) − μ_{A}|",
+     "E2, E4"
+    ],
+    [
+     "P_ESRG_nolog",
+     "ESRG",
+     "Planted",
+     "No",
+     "*L*(*x*) = *I*(*x*)",
+     "E2, E4"
+    ],
+    [
+     "P_ESRG_nostop",
+     "ESRG",
+     "Planted",
+     "No",
+     "Unconditional absorption",
+     "E3, E4"
+    ],
+    [
+     "P_ESRG_nopurify",
+     "ESRG",
+     "Planted",
+     "No",
+     "Click disk not reduced to its core",
+     "E3"
+    ],
+    [
+     "B_SRG",
+     "SRG",
+     "Planted",
+     "Yes",
+     "—",
+     "E2"
+    ],
+    [
+     "B_SRG_N4",
+     "SRG",
+     "Planted",
+     "Yes",
+     "N4 correction before growing",
+     "E2"
+    ],
+    [
+     "B_ESRG",
+     "ESRG",
+     "Planted",
+     "Yes",
+     "—",
+     "E2"
+    ],
+    [
+     "B_ESRG_global",
+     "ESRG",
+     "Planted",
+     "Yes",
+     "Global measure",
+     "E2"
+    ],
+    [
+     "B_ESRG_nolog",
+     "ESRG",
+     "Planted",
+     "Yes",
+     "Log transform off",
+     "E2"
+    ],
+    [
+     "O_SRG_1 … O_SRG_5",
+     "SRG",
+     "Operator (5 clicks)",
+     "No",
+     "—",
+     "E1"
+    ],
+    [
+     "O_ESRG_1 … O_ESRG_5",
+     "ESRG",
+     "Operator (5 clicks)",
+     "No",
+     "—",
+     "E1"
+    ]
+   ],
+   "widths": [
+    1.9,
+    0.9,
+    1.4,
+    0.8,
+    2.6,
+    1.2
+   ],
+   "note": "Every configuration was run on all 954 slices (954 × 23 = 21,942 runs; 0 ended in an error). Automatic seeding uses the seed selection of Objective 1; planted seeding places one click at the deepest ground-truth pixel; operator seeding places five clicks at random tumor pixels (Equation 4.5). Experiments E1–E6 are those of Table 3.5. The identifier appears in the Configuration column of Appendix H.",
+   "align": [
+    "l",
+    "c",
+    "c",
+    "c",
+    "l",
+    "c"
+   ]
+  },
+  {
+   "t": "h3",
+   "text": "4.1.3 Evaluation Metrics"
+  },
+  {
+   "t": "p",
+   "text": "Table 4.4 lists every metric, the objective it evaluates, and the studies that support its use. Each metric is computed per slice from the predicted mask *M* (the final output of Stage 7), the ground-truth mask *G*, and, for Objective 1, the seed core *S* (the output of Stage 5), all at the working resolution (longer side ≤ 512 pixels). Comparing *M* and *G* pixel by pixel gives the true positives TP = |*M* ∩ *G*|, the false positives FP = |*M* \\ *G*|, and the false negatives FN = |*G* \\ *M*|, from which the overlap metrics of Equations 3.32 to 3.35 follow. The metrics were chosen following the recommendation that an overlap metric be paired with a boundary-distance metric and that each metric be matched to the property of interest (Maier-Hein et al., 2024; Reinke et al., 2024)."
+  },
+  {
+   "t": "table",
+   "num": "4.4",
+   "title": "Evaluation Metrics per Objective, Their Definitions, and Supporting Studies",
+   "header": [
+    "Metric",
+    "Eq.",
+    "What it measures",
+    "Better",
+    "Supporting studies"
+   ],
+   "rows": [
+    {
+     "group": "Objective 1: automated seed selection"
+    },
+    [
+     "Seed Hit Rate (SHR)",
+     "3.38",
+     "Share of seeded slices whose whole seed core lies inside the tumor",
+     "Higher",
+     "Adams & Bischof (1994); Fan et al. (2005)"
+    ],
+    [
+     "Seed localization distance",
+     "4.7",
+     "Distance from the seed centroid to the nearest tumor pixel",
+     "Lower",
+     "Fan et al. (2005)"
+    ],
+    [
+     "Within-slice SD of DSC",
+     "4.8",
+     "Spread of DSC over five simulated operator clicks on one slice",
+     "Lower",
+     "Moschidis & Graham (2010); Joskowicz et al. (2019)"
+    ],
+    [
+     "Inconsistency rate",
+     "4.9",
+     "Share of slices whose success depends on where the operator clicks",
+     "Lower",
+     "Zou et al. (2004); Visser et al. (2019)"
+    ],
+    {
+     "group": "Objective 2: undersegmentation"
+    },
+    [
+     "Recall (sensitivity)",
+     "3.35",
+     "Share of the true tumor recovered; 1 − recall is the missed share",
+     "Higher",
+     "Taha & Hanbury (2015); Udupa et al. (2006)"
+    ],
+    {
+     "group": "Objective 3: boundary leakage"
+    },
+    [
+     "Precision",
+     "3.34",
+     "Share of the predicted region that is tumor",
+     "Higher",
+     "Taha & Hanbury (2015); Maier-Hein et al. (2024)"
+    ],
+    [
+     "Leakage Rate (LR)",
+     "3.39",
+     "Share of slices whose predicted area exceeds twice the true area",
+     "Lower",
+     "Adams & Bischof (1994); Fan et al. (2005)"
+    ],
+    [
+     "HD95",
+     "3.37",
+     "95th percentile of the distances between the two boundaries",
+     "Lower",
+     "Huttenlocher et al. (1993); Menze et al. (2015)"
+    ],
+    [
+     "ASSD",
+     "4.10",
+     "Mean distance between the two boundaries",
+     "Lower",
+     "Taha & Hanbury (2015); Yeghiazaryan & Voiculescu (2018)"
+    ],
+    {
+     "group": "Overall delineation and efficiency"
+    },
+    [
+     "DSC",
+     "3.32",
+     "Overlap of prediction and ground truth",
+     "Higher",
+     "Dice (1945); Zou et al. (2004); Menze et al. (2015)"
+    ],
+    [
+     "IoU",
+     "3.33",
+     "Intersection divided by union",
+     "Higher",
+     "Jaccard (1912); Taha & Hanbury (2015)"
+    ],
+    [
+     "Success rate",
+     "4.11",
+     "Share of slices with DSC ≥ 0.70",
+     "Higher",
+     "Zijdenbos et al. (1994)"
+    ],
+    [
+     "Processing time",
+     "—",
+     "Wall-clock seconds per slice, sequential",
+     "Lower",
+     "Udupa et al. (2006); Hoefler & Belli (2015)"
+    ]
+   ],
+   "widths": [
+    1.9,
+    0.6,
+    3.4,
+    0.8,
+    2.6
+   ],
+   "note": "Equation numbers beginning with 3 are those of Section 3.4.4; those beginning with 4 are defined in this chapter. “Better” gives the direction in which the metric improves. All metrics are computed per slice at the working resolution (longer side ≤ 512 pixels) and then summarized over the sample.",
+   "align": [
+    "l",
+    "c",
+    "l",
+    "c",
+    "l"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "*Objective 1.* The original algorithm has no seed selection step, so its result depends on where the seed is placed (Adams & Bischof, 1994; Mehnert & Jackway, 1997); Fan et al. (2005) showed that seed placement is the decisive factor in the quality of seeded region growing. The Seed Hit Rate (Equation 3.38) measures this directly: a seed core that lies entirely inside the tumor can only grow into the tumor first. Its 95% confidence interval is the Wilson score interval (Equation 4.14), which remains accurate for rates near 0% or 100% (Brown et al., 2001). How far a missed seed lies from the tumor is measured by the seed localization distance:"
+  },
+  {
+   "t": "eq",
+   "num": "4.7",
+   "math": [
+    {
+     "sub": [
+      "d",
+      "S"
+     ]
+    },
+    " = ",
+    {
+     "sub": [
+      "min",
+      "y ∈ G"
+     ]
+    },
+    " d(",
+    {
+     "sub": [
+      "x̄",
+      "S"
+     ]
+    },
+    ", y)"
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "*d*_{S} – seed localization distance in pixels; 0 when the centroid lies inside the tumor",
+    "*x̄*_{S} – centroid of the seed core *S*, rounded to the nearest pixel",
+    "*d*(*a*, *b*) – Euclidean distance between pixels *a* and *b*"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "The problem statement of Objective 1 is that manual seeding produces *inconsistent* results. Consistency is the precision aspect of Udupa et al. (2006) and is measured, as in studies of inter-observer agreement (Joskowicz et al., 2019; Zou et al., 2004), by how much the result changes when a different operator seeds the same slice. For each slice *i*, the spread of DSC over the *K* = 5 simulated operators (Equation 4.5) is:"
+  },
+  {
+   "t": "eq",
+   "num": "4.8",
+   "math": [
+    {
+     "sub": [
+      "SD",
+      "i"
+     ]
+    },
+    " = ",
+    {
+     "sqrt": [
+      {
+       "f": [
+        "1",
+        "K − 1"
+       ]
+      },
+      {
+       "sum": {
+        "lo": "k = 1",
+        "hi": "K",
+        "body": {
+         "sup": [
+          {
+           "rb": [
+            {
+             "sub": [
+              "DSC",
+              "ik"
+             ]
+            },
+            " − ",
+            {
+             "sub": [
+              "m",
+              "i"
+             ]
+            }
+           ]
+          },
+          "2"
+         ]
+        }
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "*SD*_{i} – within-slice standard deviation of DSC; 0 means every operator obtained the same result",
+    "*DSC*_{ik} – DSC obtained from the click of operator *k*; *m*_{i} – mean DSC of the five operators"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Whether the variation changes the *outcome* is measured by the inconsistency rate, the share of slices on which some operators succeed and others fail:"
+  },
+  {
+   "t": "eq",
+   "num": "4.9",
+   "math": [
+    "IR = ",
+    {
+     "f": [
+      "1",
+      "N"
+     ]
+    },
+    {
+     "sum": {
+      "lo": "i = 1",
+      "hi": "N",
+      "body": [
+       "𝟙",
+       {
+        "sb": [
+         "0 < ",
+         {
+          "sum": {
+           "lo": "k = 1",
+           "hi": "K",
+           "body": {
+            "sub": [
+             "s",
+             "ik"
+            ]
+           }
+          }
+         },
+         " < K"
+        ]
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "*IR* – inconsistency rate",
+    "*s*_{ik} – 1 if the click of operator *k* gives a successful segmentation of slice *i* (Equation 4.11), else 0",
+    "𝟙[·] – indicator, 1 when the condition holds"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "The automatic seed is computed from the image alone, so it is deterministic and its *SD*_{i} and *IR* are zero by construction. This was verified empirically by running automatic seeding twice on the slices of the timing subsample (below), once in the evaluation run and once in the separate timing pass, and comparing the masks."
+  },
+  {
+   "t": "p",
+   "text": "*Objective 2.* Undersegmentation means that part of the tumor is left out of the result, that is, false negatives. Recall (sensitivity, Equation 3.35) is the share of the true tumor that the result recovers, and its complement, FN/|*G*| = 1 − recall, is the share left unsegmented; it is the standard measure of undersegmentation (Taha & Hanbury, 2015; Udupa et al., 2006). Recall is not affected by false positives, so it isolates the effect that the local log-domain measure is designed to have."
+  },
+  {
+   "t": "p",
+   "text": "*Objective 3.* Boundary leakage means that the region crosses the tumor boundary into surrounding tissue, that is, false positives. Precision (Equation 3.34) is the share of the result that is tumor, so its complement is the share that leaked. The Leakage Rate (Equation 3.39) counts the slices on which the region grew to more than twice the tumor area, the gross flooding that unconditional absorption causes (Adams & Bischof, 1994; Fan et al., 2005). Because overlap metrics are insensitive to where the errors lie, the boundary itself is evaluated with HD95 (Equation 3.37), the boundary metric of the BRATS benchmark (Menze et al., 2015), and with the average symmetric surface distance (Taha & Hanbury, 2015; Yeghiazaryan & Voiculescu, 2018):"
+  },
+  {
+   "t": "eq",
+   "num": "4.10",
+   "math": [
+    "ASSD = ",
+    {
+     "f": [
+      [
+       {
+        "sum": {
+         "lo": "p ∈ ∂M",
+         "hi": "",
+         "body": [
+          "d(p, ∂G)"
+         ]
+        }
+       },
+       " + ",
+       {
+        "sum": {
+         "lo": "q ∈ ∂G",
+         "hi": "",
+         "body": [
+          "d(q, ∂M)"
+         ]
+        }
+       }
+      ],
+      [
+       {
+        "sub": [
+         "N",
+         "∂M"
+        ]
+       },
+       " + ",
+       {
+        "sub": [
+         "N",
+         "∂G"
+        ]
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "∂*M*, ∂*G* – boundary pixels of the predicted and true masks (Equation 3.36)",
+    "*d*(*p*, ∂*G*) – Euclidean distance from pixel *p* to the nearest pixel of ∂*G*, in pixels",
+    "*N*_{∂M}, *N*_{∂G} – number of boundary pixels of each mask"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "HD95 and ASSD are undefined when the prediction is empty, which happens when the seed selection reports no tumor candidate. Dropping those slices would hide failures, so, as recommended by Maier-Hein et al. (2024) and Reinke et al. (2024), they receive the worst possible value, the length of the image diagonal (for example, 724.1 pixels for a 512 × 512 slice)."
+  },
+  {
+   "t": "p",
+   "text": "*Overall delineation and efficiency.* DSC (Equation 3.32) is the most widely used measure of segmentation accuracy and of agreement between segmentations (Dice, 1945; Zou et al., 2004), and IoU (Equation 3.33) is its stricter counterpart (Jaccard, 1912). Because the per-slice DSC is often bimodal, the share of successfully segmented slices is also reported:"
+  },
+  {
+   "t": "eq",
+   "num": "4.11",
+   "math": [
+    {
+     "sub": [
+      "s",
+      "i"
+     ]
+    },
+    " = 𝟙",
+    {
+     "sb": [
+      {
+       "sub": [
+        "DSC",
+        "i"
+       ]
+      },
+      " ≥ 0.70"
+     ]
+    },
+    ",  SR = ",
+    {
+     "f": [
+      "1",
+      "N"
+     ]
+    },
+    {
+     "sum": {
+      "lo": "i = 1",
+      "hi": "N",
+      "body": {
+       "sub": [
+        "s",
+        "i"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "*s*_{i} – success indicator of slice *i*; *SR* – success rate",
+    "0.70 – success threshold; a DSC above 0.70 is regarded as excellent agreement (Zijdenbos et al., 1994)"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Processing time is the wall-clock time per slice from loading the image to the final mask, excluding the computation of the metrics. The accuracy runs used ten parallel worker processes, whose timings are distorted by contention, so time was measured in a separate sequential pass following good benchmarking practice (Hoefler & Belli, 2015): one process with nothing else running, a discarded warm-up run, the order of the two algorithms alternated from slice to slice, and summaries by medians and nonparametric tests. Because a sequential pass over all slices would take several hours, it was run on a stratified random subsample: the first 20 slices of every stratum in the random draw order of the sampling step (180 slices). The pass ran on 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz with 7.8 GB of memory under the Windows *Balanced* power plan, on battery power, which lowers the clock speed; absolute times are therefore longer than on mains power, but the comparison between the two algorithms is unaffected because every slice was timed for both under the same conditions."
+  },
+  {
+   "t": "p",
+   "text": "As a worked example, consider slice brisc2025_train_01907_me_co_t1.jpg (meningioma, coronal) segmented by ESRG under automatic seeding. Its ground truth contains |*G*| = 3,345 pixels and the result |*M*| = 3,065 pixels, of which TP = 2,733 lie inside the tumor, so FP = 332 and FN = 612. Then DSC = 2(2,733) / (2(2,733) + 332 + 612) = 0.8527, IoU = 2,733 / 3,677 = 0.7433, precision = 2,733 / 3,065 = 0.8917, recall = 2,733 / 3,345 = 0.8170, and the area ratio is 3,065 / 3,345 = 0.916, so the slice did not leak and is a success. Its seed core of 467 pixels lies entirely inside the tumor (a hit), and HD95 = 13.92 pixels. The same computation, with every intermediate value, is displayed by the system’s Evaluation step, and the per-slice values of every evaluation are listed in Appendices B to G."
+  },
+  {
+   "t": "h3",
+   "text": "4.1.4 Statistical Treatment of the Results"
+  },
+  {
+   "t": "p",
+   "text": "Because every configuration was run on the same slices, configurations are compared with paired tests. The paired *t* test assumes normally distributed differences; this was checked with the Shapiro–Wilk test (Shapiro & Wilk, 1965), which rejected normality for every comparison in Table 4.5. Per-slice DSC is bounded between 0 and 1 and bimodal (Figure 4.1), so the nonparametric Wilcoxon signed-rank test was used, as recommended for comparing two methods on the same set of cases (Demšar, 2006; Wilcoxon, 1945)."
+  },
+  {
+   "t": "table",
+   "num": "4.5",
+   "title": "Shapiro–Wilk Test of Normality of the Paired Differences",
+   "header": [
+    "Comparison",
+    "Metric",
+    "*N*",
+    "*W*",
+    "*p*"
+   ],
+   "rows": [
+    [
+     "SRG vs. ESRG, automatic seed",
+     "DSC",
+     "954",
+     ".811",
+     "< .001"
+    ],
+    [
+     "SRG vs. ESRG, automatic seed",
+     "Precision",
+     "943",
+     ".389",
+     "< .001"
+    ],
+    [
+     "SRG vs. ESRG, automatic seed",
+     "Recall",
+     "954",
+     ".814",
+     "< .001"
+    ],
+    [
+     "SRG vs. ESRG, automatic seed",
+     "HD95 (px)",
+     "954",
+     ".787",
+     "< .001"
+    ],
+    [
+     "SRG vs. ESRG, planted seed",
+     "DSC",
+     "954",
+     ".960",
+     "< .001"
+    ],
+    [
+     "SRG vs. ESRG, planted seed",
+     "Precision",
+     "954",
+     ".474",
+     "< .001"
+    ],
+    [
+     "SRG vs. ESRG, planted seed",
+     "Recall",
+     "954",
+     ".949",
+     "< .001"
+    ],
+    [
+     "SRG vs. ESRG, planted seed",
+     "HD95 (px)",
+     "954",
+     ".674",
+     "< .001"
+    ]
+   ],
+   "widths": [
+    3,
+    1.6,
+    0.9,
+    0.9,
+    0.9
+   ],
+   "note": "The paired difference ESRG − SRG was tested per slice. A *p* below .05 rejects normality, so the paired *t* test is not appropriate and the Wilcoxon signed-rank test is used (Demšar, 2006).",
+   "align": [
+    "l",
+    "l",
+    "c",
+    "c",
+    "c"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "For every slice, the difference *d*_{i} = *y*_{i} − *x*_{i} between the compared configuration *y* and the reference *x* is computed; zero differences are dropped, the remaining |*d*_{i}| are ranked, and:"
+  },
+  {
+   "t": "eq",
+   "num": "4.12",
+   "math": [
+    "Z = ",
+    {
+     "f": [
+      [
+       "W⁺ − ",
+       {
+        "f": [
+         "n′(n′ + 1)",
+         "4"
+        ]
+       }
+      ],
+      {
+       "sqrt": [
+        {
+         "f": [
+          "n′(n′ + 1)(2n′ + 1)",
+          "24"
+         ]
+        },
+        " − ",
+        {
+         "sum": {
+          "lo": "g",
+          "hi": "",
+          "body": {
+           "f": [
+            [
+             {
+              "sup": [
+               {
+                "sub": [
+                 "t",
+                 "g"
+                ]
+               },
+               "3"
+              ]
+             },
+             " − ",
+             {
+              "sub": [
+               "t",
+               "g"
+              ]
+             }
+            ],
+            "48"
+           ]
+          }
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "*W*^{+} – sum of the ranks of the positive differences (slices on which *y* scored higher)",
+    "*n*′ – number of slices with a non-zero difference",
+    "*t*_{g} – number of differences sharing the same absolute value in tie group *g*",
+    "*Z* – standardized statistic, positive when *y* tends to score higher than *x*"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "The two-sided *p* value is read from the standard normal distribution, and the effect size is *r* = *Z*/√*N* (Equation 3.41), where *N* is the number of pairs; |*r*| near .1, .3, and .5 is conventionally a small, medium, and large effect (Fritz et al., 2012). For example, for DSC under automatic seeding (Table 4.6), ESRG scored higher than SRG on 478 slices and lower on 63, with 413 ties at zero; with *n*′ = 541, *W*^{+} = 136,320.0, the expected value *n*′(*n*′ + 1)/4 = 73,305.5, and a tie-corrected standard deviation of 3,637.5, *Z* = (136,320.0 − 73,305.5) / 3,637.5 = 17.32 and *r* = 17.32 / √954 = .56. When several tests answer one question, such as the metrics of one comparison or the three tumor classes, the *p* values are adjusted with the Holm procedure (Equation 3.40). Paired rates, such as the success and leakage rates, are compared with the exact McNemar test (McNemar, 1947), which uses only the slices on which the two configurations disagree:"
+  },
+  {
+   "t": "eq",
+   "num": "4.13",
+   "math": [
+    "p = min",
+    {
+     "rb": [
+      "1, 2",
+      {
+       "sum": {
+        "lo": "i = 0",
+        "hi": "min(b, c)",
+        "body": [
+         "C(b + c, i) ",
+         {
+          "sup": [
+           "0.5",
+           "b + c"
+          ]
+         }
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "*b* – slices on which only the reference configuration has the outcome",
+    "*c* – slices on which only the compared configuration has the outcome",
+    "C(*b* + *c*, *i*) – number of ways of choosing *i* of the *b* + *c* discordant slices"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Rates are reported with the Wilson score interval (Wilson, 1927), recommended over the normal approximation because it stays within 0–100% and keeps its coverage near the extremes (Brown et al., 2001):"
+  },
+  {
+   "t": "eq",
+   "num": "4.14",
+   "math": [
+    {
+     "f": [
+      [
+       "p̂ + ",
+       {
+        "f": [
+         {
+          "sup": [
+           "z",
+           "2"
+          ]
+         },
+         "2n"
+        ]
+       },
+       " ± z",
+       {
+        "sqrt": [
+         {
+          "f": [
+           [
+            "p̂(1 − p̂)"
+           ],
+           "n"
+          ]
+         },
+         " + ",
+         {
+          "f": [
+           {
+            "sup": [
+             "z",
+             "2"
+            ]
+           },
+           {
+            "sup": [
+             "4n",
+             "2"
+            ]
+           }
+          ]
+         }
+        ]
+       }
+      ],
+      [
+       "1 + ",
+       {
+        "f": [
+         {
+          "sup": [
+           "z",
+           "2"
+          ]
+         },
+         "n"
+        ]
+       }
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "*p̂* – observed proportion *k*/*n*; *z* – 1.96"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "To express the overall results for the whole population rather than for the equally allocated sample, each stratum mean is weighted by the stratum’s share of the population (Cochran, 1977):"
+  },
+  {
+   "t": "eq",
+   "num": "4.15",
+   "math": [
+    {
+     "sub": [
+      "ȳ",
+      "st"
+     ]
+    },
+    " = ",
+    {
+     "sum": {
+      "lo": "h = 1",
+      "hi": "H",
+      "body": [
+       {
+        "sub": [
+         "W",
+         "h"
+        ]
+       },
+       {
+        "sub": [
+         "ȳ",
+         "h"
+        ]
+       }
+      ]
+     }
+    },
+    ",  ",
+    {
+     "sub": [
+      "W",
+      "h"
+     ]
+    },
+    " = ",
+    {
+     "f": [
+      {
+       "sub": [
+        "N",
+        "h"
+       ]
+      },
+      "N"
+     ]
+    },
+    ",  SE = ",
+    {
+     "sqrt": {
+      "sum": {
+       "lo": "h = 1",
+       "hi": "H",
+       "body": [
+        {
+         "sup": [
+          {
+           "sub": [
+            "W",
+            "h"
+           ]
+          },
+          "2"
+         ]
+        },
+        {
+         "rb": [
+          "1 − ",
+          {
+           "sub": [
+            "f",
+            "h"
+           ]
+          }
+         ]
+        },
+        {
+         "f": [
+          {
+           "sup": [
+            {
+             "sub": [
+              "s",
+              "h"
+             ]
+            },
+            "2"
+           ]
+          },
+          {
+           "sub": [
+            "n",
+            "h"
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "*ȳ*_{h}, *s*_{h} – sample mean and standard deviation of stratum *h*",
+    "*f*_{h} – sampling fraction *n*_{h}/*N*_{h}; *SE* – standard error of the weighted estimate"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "The ablation configurations are compared jointly with the Friedman test (Friedman, 1937), which ranks the *k* configurations within each slice:"
+  },
+  {
+   "t": "eq",
+   "num": "4.16",
+   "math": [
+    {
+     "sup": [
+      "χ",
+      "2"
+     ]
+    },
+    " = ",
+    {
+     "f": [
+      "12",
+      [
+       "N k (k + 1)"
+      ]
+     ]
+    },
+    {
+     "sum": {
+      "lo": "j = 1",
+      "hi": "k",
+      "body": {
+       "sup": [
+        {
+         "sub": [
+          "R",
+          "j"
+         ]
+        },
+        "2"
+       ]
+      }
+     }
+    },
+    " − 3N(k + 1)"
+   ]
+  },
+  {
+   "t": "where",
+   "items": [
+    "*R*_{j} – sum over slices of the ranks of configuration *j*; *k* – number of configurations; *N* – slices",
+    "The effect size is Kendall’s *W* = χ²/(*N*(*k* − 1))."
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Differences among tumor classes and planes are tested with the chi-square test of independence for rates, with Cramér’s *V* as the effect size, and with the Kruskal–Wallis test for DSC (Kruskal & Wallis, 1952). Two independent groups of slices, such as slices whose seed hit or missed the tumor, are compared with the Mann–Whitney test (Mann & Whitney, 1947) and the rank-biserial correlation (Kerby, 2014). All tests are two-sided at a significance level of .05."
+  },
+  {
+   "t": "h3",
+   "text": "4.1.5 Overall Performance"
+  },
+  {
+   "t": "p",
+   "text": "Table 4.6 compares the two algorithms under automatic seeding, which is how the system operates without user input."
+  },
+  {
+   "t": "table",
+   "num": "4.6",
+   "title": "Overall Performance of the Baseline and Enhanced Algorithm Under Automatic Seeding",
+   "header": [
+    "Metric",
+    "SRG *M* (*SD*)",
+    "SRG *Mdn*",
+    "ESRG *M* (*SD*)",
+    "ESRG *Mdn*",
+    "*Z* or *b* / *c*",
+    "*p* (Holm)",
+    "*r*"
+   ],
+   "rows": [
+    [
+     "DSC",
+     "0.148 (0.200)",
+     "0.000",
+     "0.319 (0.385)",
+     "0.052",
+     "17.32",
+     "< .001",
+     ".56"
+    ],
+    [
+     "IoU",
+     "0.095 (0.142)",
+     "0.000",
+     "0.268 (0.344)",
+     "0.027",
+     "17.39",
+     "< .001",
+     ".56"
+    ],
+    [
+     "Precision",
+     "0.442 (0.493)",
+     "0.000",
+     "0.386 (0.467)",
+     "0.028",
+     "−3.94",
+     "< .001",
+     "−.13"
+    ],
+    [
+     "Recall",
+     "0.097 (0.145)",
+     "0.000",
+     "0.420 (0.416)",
+     "0.399",
+     "19.86",
+     "< .001",
+     ".64"
+    ],
+    [
+     "HD95 (px)",
+     "116.02 (88.49)",
+     "102.46",
+     "128.48 (104.24)",
+     "135.13",
+     "−0.76",
+     ".448",
+     "−.02"
+    ],
+    [
+     "ASSD (px)",
+     "85.25 (79.29)",
+     "65.41",
+     "86.32 (80.80)",
+     "84.21",
+     "−7.24",
+     "< .001",
+     "−.23"
+    ],
+    [
+     "Success rate (DSC ≥ 0.70)",
+     "1.7%",
+     "—",
+     "29.4%",
+     "—",
+     "8 / 272",
+     "< .001",
+     "—"
+    ],
+    [
+     "Leakage rate (|*M*| > 2|*G*|)",
+     "1.5%",
+     "—",
+     "27.5%",
+     "—",
+     "0 / 248",
+     "< .001",
+     "—"
+    ]
+   ],
+   "widths": [
+    2.0,
+    1.55,
+    0.85,
+    1.55,
+    0.85,
+    1.05,
+    0.85,
+    0.6
+   ],
+   "note": "*N* = 954 paired slices under automatic seeding. *M* (*SD*) is the mean and standard deviation over slices and *Mdn* the median. *Z* and *r* come from the Wilcoxon signed-rank test of ESRG against SRG (Equations 4.12 and 3.41); a positive value means ESRG scored higher, an improvement for every metric except HD95 and ASSD, where lower is better. For the two rates, *b* / *c* are the slices on which only SRG or only ESRG had the outcome (exact McNemar test, Equation 4.13). HD95 and ASSD of an empty prediction are set to the image diagonal (Section 4.1.3; 11 ESRG slices). The eight *p* values are Holm-adjusted together."
+  },
+  {
+   "t": "p",
+   "text": "Under automatic seeding, mean DSC is 0.148 for SRG and 0.319 for ESRG (*Z* = 17.32, *p* < .001, *r* = .56), a large effect, and mean IoU moves from 0.095 to 0.268. The largest change is in recall, from 0.097 to 0.420 (*Z* = 19.86, *p* < .001, *r* = .64). The share of successfully segmented slices is 1.7% for SRG and 29.4% for ESRG: ESRG succeeded on 272 slices on which SRG failed, and the reverse happened on 8 (*p* < .001). Mean precision is 0.442 for SRG and 0.386 for ESRG (*Z* = −3.94, *p* < .001, *r* = −.13), and the leakage rate is 1.5% against 27.5% (*p* < .001). The enhanced algorithm is therefore significantly better at delineating the tumor, and the gain comes mainly from recall: it recovers about four times as much of the tumor. The lower precision and higher leakage rate do not mean that the baseline controls leakage better. Its background seeds surround the tumor seed and claim the neighboring tissue first, so its tumor region rarely grows: its median area is only 0.17 times the true tumor area under automatic seeding, against 0.82 for ESRG. The baseline avoids leakage by severely undersegmenting. Moreover, 210 of the 262 slices on which ESRG leaked (80.2%) started from a seed that was not entirely inside the tumor, so the region grew in the wrong tissue from the outset. On the 412 slices whose automatic seed hit the tumor, which both algorithms share, ESRG reaches a mean DSC of 0.707 against 0.335 and a mean recall of 0.727 against 0.216 (*Z* = 17.27, *p* < .001). HD95 does not differ significantly (*p* = .448): both algorithms start from the same seed, so on the slices where that seed misses the tumor both boundaries are far from the true one, whichever algorithm grows the region. Sections 4.2.1 and 4.2.3 separate the contribution of seed placement from that of growth."
+  },
+  {
+   "t": "table",
+   "num": "4.7",
+   "title": "Overall Performance of the Baseline and Enhanced Algorithm Under Planted Seeding",
+   "header": [
+    "Metric",
+    "SRG *M* (*SD*)",
+    "SRG *Mdn*",
+    "ESRG *M* (*SD*)",
+    "ESRG *Mdn*",
+    "*Z* or *b* / *c*",
+    "*p* (Holm)",
+    "*r*"
+   ],
+   "rows": [
+    [
+     "DSC",
+     "0.148 (0.165)",
+     "0.086",
+     "0.387 (0.312)",
+     "0.338",
+     "16.35",
+     "< .001",
+     ".53"
+    ],
+    [
+     "IoU",
+     "0.091 (0.125)",
+     "0.045",
+     "0.292 (0.273)",
+     "0.204",
+     "16.33",
+     "< .001",
+     ".53"
+    ],
+    [
+     "Precision",
+     "0.998 (0.016)",
+     "1.000",
+     "0.860 (0.324)",
+     "1.000",
+     "−13.06",
+     "< .001",
+     "−.42"
+    ],
+    [
+     "Recall",
+     "0.092 (0.128)",
+     "0.045",
+     "0.416 (0.339)",
+     "0.376",
+     "19.79",
+     "< .001",
+     ".64"
+    ],
+    [
+     "HD95 (px)",
+     "43.08 (26.22)",
+     "38.37",
+     "54.72 (67.06)",
+     "28.35",
+     "−4.88",
+     "< .001",
+     "−.16"
+    ],
+    [
+     "ASSD (px)",
+     "26.31 (14.70)",
+     "24.98",
+     "29.17 (38.23)",
+     "14.37",
+     "−6.26",
+     "< .001",
+     "−.20"
+    ],
+    [
+     "Success rate (DSC ≥ 0.70)",
+     "2.0%",
+     "—",
+     "23.5%",
+     "—",
+     "17 / 222",
+     "< .001",
+     "—"
+    ],
+    [
+     "Leakage rate (|*M*| > 2|*G*|)",
+     "0.0%",
+     "—",
+     "14.4%",
+     "—",
+     "0 / 137",
+     "< .001",
+     "—"
+    ]
+   ],
+   "widths": [
+    2.0,
+    1.55,
+    0.85,
+    1.55,
+    0.85,
+    1.05,
+    0.85,
+    0.6
+   ],
+   "note": "*N* = 954 paired slices under a seed planted inside the tumor. *M* (*SD*) is the mean and standard deviation over slices and *Mdn* the median. *Z* and *r* come from the Wilcoxon signed-rank test of ESRG against SRG (Equations 4.12 and 3.41); a positive value means ESRG scored higher, an improvement for every metric except HD95 and ASSD, where lower is better. For the two rates, *b* / *c* are the slices on which only SRG or only ESRG had the outcome (exact McNemar test, Equation 4.13). HD95 and ASSD of an empty prediction are set to the image diagonal (Section 4.1.3; 0 ESRG slices). The eight *p* values are Holm-adjusted together."
+  },
+  {
+   "t": "p",
+   "text": "Table 4.7 repeats the comparison with the seed planted inside the tumor on every slice, which isolates the region-growing procedure. Mean DSC is 0.148 for SRG and 0.387 for ESRG (*Z* = 16.35, *p* < .001, *r* = .53), and mean recall 0.092 against 0.416 (*Z* = 19.79, *p* < .001, *r* = .64). Mean precision is 0.998 for SRG and 0.860 for ESRG (*Z* = −13.06, *p* < .001, *r* = −.42), and median HD95 is 38.37 against 28.35 pixels (*Z* = −4.88, *p* < .001, *r* = −.16). With a correctly placed seed, the enhanced algorithm again delineates the tumor significantly better, with a large effect on DSC and recall. The baseline’s near-perfect precision reflects how little it grows: its median predicted area is 0.045 times the tumor area, so almost everything it absorbs is tumor but it misses most of the tumor. ESRG trades a moderate loss of mean precision (median 1.000) for a fourfold gain in recall, and its boundary lies closer to the true boundary on most slices (median ASSD 14.37 against 24.98 pixels). Its mean HD95 is higher than its median because the 14.4% of slices that leak have large boundary errors."
+  },
+  {
+   "t": "figure",
+   "num": "4.1",
+   "img": "figures/fig4_1_dsc_distribution.png",
+   "title": "Distribution of Per-Slice DSC for the Baseline and Enhanced Algorithm",
+   "note": "Each curve is a histogram of the per-slice DSC of one configuration in bins of width 0.05, expressed as the percentage of the 954 sampled slices. The dotted line marks the success threshold of 0.70 (Equation 4.11).",
+   "w": 2160,
+   "h": 870
+  },
+  {
+   "t": "p",
+   "text": "Figure 4.1 shows why medians and success rates are reported alongside means. Under automatic seeding, 43.4% of ESRG slices and 54.5% of SRG slices have a DSC of exactly zero, the slices on which the seed missed the tumor. ESRG then has a second cluster between 0.8 and 0.95, the slices on which its seed hit, whereas the baseline has almost no slice above 0.6. With a planted seed the zeros disappear for both algorithms (0.0% and 0.0%); ESRG spreads across the whole range while the baseline stays concentrated below 0.2. Because the distribution is bimodal, a mean summarizes it poorly, which is why medians, success rates, and rank-based tests are used throughout (Maier-Hein et al., 2024; Reinke et al., 2024)."
+  },
+  {
+   "t": "table",
+   "num": "4.8",
+   "title": "Equal-Allocation (Sample) Means and Population-Weighted Estimates",
+   "header": [
+    "Configuration",
+    "Metric",
+    "Sample *M*",
+    "Weighted *M*",
+    "*SE*",
+    "95% CI"
+   ],
+   "rows": [
+    [
+     "SRG, automatic seed",
+     "DSC",
+     "0.148",
+     "0.154",
+     "0.0056",
+     "[0.143, 0.164]"
+    ],
+    [
+     "SRG, automatic seed",
+     "Recall",
+     "0.097",
+     "0.100",
+     "0.0042",
+     "[0.092, 0.108]"
+    ],
+    [
+     "SRG, automatic seed",
+     "Precision",
+     "0.442",
+     "0.460",
+     "0.0127",
+     "[0.435, 0.485]"
+    ],
+    [
+     "ESRG, automatic seed",
+     "DSC",
+     "0.319",
+     "0.330",
+     "0.0102",
+     "[0.310, 0.350]"
+    ],
+    [
+     "ESRG, automatic seed",
+     "Recall",
+     "0.420",
+     "0.423",
+     "0.0114",
+     "[0.401, 0.445]"
+    ],
+    [
+     "ESRG, automatic seed",
+     "Precision",
+     "0.386",
+     "0.402",
+     "0.0123",
+     "[0.378, 0.426]"
+    ],
+    [
+     "SRG, planted seed",
+     "DSC",
+     "0.148",
+     "0.150",
+     "0.0048",
+     "[0.141, 0.160]"
+    ],
+    [
+     "SRG, planted seed",
+     "Recall",
+     "0.092",
+     "0.093",
+     "0.0038",
+     "[0.086, 0.101]"
+    ],
+    [
+     "SRG, planted seed",
+     "Precision",
+     "0.998",
+     "0.998",
+     "0.0005",
+     "[0.997, 0.999]"
+    ],
+    [
+     "ESRG (full), planted seed",
+     "DSC",
+     "0.387",
+     "0.394",
+     "0.0083",
+     "[0.378, 0.410]"
+    ],
+    [
+     "ESRG (full), planted seed",
+     "Recall",
+     "0.416",
+     "0.412",
+     "0.0093",
+     "[0.394, 0.431]"
+    ],
+    [
+     "ESRG (full), planted seed",
+     "Precision",
+     "0.860",
+     "0.870",
+     "0.0080",
+     "[0.855, 0.886]"
+    ]
+   ],
+   "widths": [
+    2.6,
+    1.2,
+    1.1,
+    1.2,
+    1,
+    1.6
+   ],
+   "note": "Sample *M* is the unweighted mean over the equal-allocation sample. Weighted *M* re-weights each stratum by its population share *W*_{h} = *N*_{h}/*N* (Equation 4.15), giving an unbiased estimate for the whole population; *SE* includes the finite population correction.",
+   "align": [
+    "l",
+    "l",
+    "c",
+    "c",
+    "c",
+    "c"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Table 4.8 confirms that the equal allocation does not distort the overall figures: re-weighting the strata to their population shares changes the mean DSC of ESRG under automatic seeding from 0.319 to 0.330 (95% CI [0.310, 0.350]), and no weighted estimate differs from its sample mean by more than 0.018. Finally, slices drawn from the training split, on which the seed-ranking weights were tuned, did not score differently from test-split slices: under automatic seeding the mean DSC of ESRG is 0.313 on training slices (*n* = 791) and 0.349 on test slices (*n* = 163; Mann–Whitney *p* = .062, *r* = −.09), and with a planted seed 0.378 against 0.432 (*p* = .082). The training-split slices therefore show no advantage; if anything they score slightly lower, so the tuning of three ranking weights on that split did not inflate the results, and pooling the splits to reach the required sample size did not bias the evaluation in favor of the method."
+  },
+  {
+   "t": "h2",
+   "text": "4.2 Results per Objective"
+  },
+  {
+   "t": "h3",
+   "text": "4.2.1 Automated Seed Selection"
+  },
+  {
+   "t": "p",
+   "text": "The first problem is that the original algorithm has no defined seed selection step, so its output depends on where an operator places the seed, which produces inconsistent results (Adams & Bischof, 1994). The proposed solution automates seed selection: multi-level Otsu thresholding isolates the brightest interior tissue, candidates near the head outline are removed by the clearance filter, the remaining candidates are ranked, and the distance-transform core of the top-ranked candidate becomes the seed (Section 3.4.1). Two questions follow: whether the automatic seed lands in the tumor (accuracy of the seed), and whether automation removes the dependence on the operator (consistency)."
+  },
+  {
+   "t": "table",
+   "num": "4.9",
+   "title": "Seed Hit Rate and Seed Localization of the Automated Seed Selection",
+   "header": [
+    "Group",
+    "*n*",
+    "No candidate",
+    "Hits / *N*_{S}",
+    "SHR",
+    "95% CI",
+    "Distance, px *Mdn* [IQR]",
+    "Inside share *M*"
+   ],
+   "rows": [
+    {
+     "group": "By tumor class"
+    },
+    [
+     "Glioma",
+     "318",
+     "0",
+     "49 / 318",
+     "15.4%",
+     "[11.9, 19.8]",
+     "107.4 [47.2, 158.5]",
+     "0.157"
+    ],
+    [
+     "Meningioma",
+     "318",
+     "11",
+     "231 / 307",
+     "75.2%",
+     "[70.1, 79.7]",
+     "0.0 [0.0, 0.0]",
+     "0.757"
+    ],
+    [
+     "Pituitary",
+     "318",
+     "0",
+     "132 / 318",
+     "41.5%",
+     "[36.2, 47.0]",
+     "44.1 [0.0, 95.3]",
+     "0.424"
+    ],
+    [
+     "All slices",
+     "954",
+     "11",
+     "412 / 943",
+     "43.7%",
+     "[40.6, 46.9]",
+     "42.0 [0.0, 116.7]",
+     "0.442"
+    ],
+    {
+     "group": "By imaging plane"
+    },
+    [
+     "Axial",
+     "318",
+     "8",
+     "138 / 310",
+     "44.5%",
+     "[39.1, 50.1]",
+     "32.6 [0.0, 96.1]",
+     "0.453"
+    ],
+    [
+     "Coronal",
+     "318",
+     "0",
+     "165 / 318",
+     "51.9%",
+     "[46.4, 57.3]",
+     "0.0 [0.0, 111.6]",
+     "0.520"
+    ],
+    [
+     "Sagittal",
+     "318",
+     "3",
+     "109 / 315",
+     "34.6%",
+     "[29.6, 40.0]",
+     "81.5 [0.0, 143.1]",
+     "0.354"
+    ],
+    [
+     "All slices",
+     "954",
+     "11",
+     "412 / 943",
+     "43.7%",
+     "[40.6, 46.9]",
+     "42.0 [0.0, 116.7]",
+     "0.442"
+    ]
+   ],
+   "widths": [
+    1.5,
+    0.7,
+    1,
+    1.1,
+    0.8,
+    1.2,
+    1.7,
+    1
+   ],
+   "note": "Configuration A_ESRG. A hit is a slice whose whole seed core lies inside the ground-truth tumor (Equation 3.38); *N*_{S} counts the slices that received a seed, and “No candidate” those for which the selector reported no tumor instead of guessing. The 95% CI is the Wilson score interval (Equation 4.14). Distance is the seed localization distance (Equation 4.7; 0 when the centroid lies in the tumor); inside share is |*S* ∩ *G*|/|*S*|. Class differences in SHR: χ²(2, *N* = 943) = 228.25, *p* < .001, Cramér’s *V* = .49; plane differences: χ²(2, *N* = 943) = 19.34, *p* < .001, *V* = .14."
+  },
+  {
+   "t": "p",
+   "text": "Table 4.9 and Figure 4.2 show that the automatic seed lies entirely inside the tumor on 412 of 943 seeded slices, a seed hit rate of 43.7% (95% CI [40.6, 46.9]); on 11 slices the selector reported no tumor candidate instead of guessing. Reliability depends strongly on the tumor class (χ²(2) = 228.25, *p* < .001, Cramér’s *V* = .49, a large association). The seed hits 75.2% of meningiomas, whose bright, compact, well-circumscribed enhancement places them clearly in the highest interior intensity class, consistent with intensity-based seeding results in the literature (Biratu et al., 2021); its median localization distance is 0.0 pixels, that is, the seed centroid lies inside the tumor. Reliability is lower for pituitary tumors (41.5%), which sit centrally among normal structures of similar brightness, and lowest for gliomas (15.4%, median distance 107.4 pixels), whose heterogeneous, often weakly enhancing tissue is frequently not the brightest structure in the head (Tohka, 2014). The imaging plane matters much less (χ²(2) = 19.34, *p* < .001, *V* = .14, a small association): coronal slices give the highest rate (51.9%) and sagittal slices the lowest (34.6%). When the seed misses, it usually lands on a different structure altogether rather than just outside the tumor edge, as the large localization distances show."
+  },
+  {
+   "t": "figure",
+   "num": "4.2",
+   "img": "figures/fig4_2_seed_hit_rate.png",
+   "title": "Seed Hit Rate of the Automated Seed Selection by Tumor Class and Imaging Plane",
+   "note": "Bars are the seed hit rates of Table 4.9; error bars are Wilson 95% confidence intervals (Equation 4.14).",
+   "w": 2160,
+   "h": 900
+  },
+  {
+   "t": "table",
+   "num": "4.10",
+   "title": "Delineation Quality of the Enhanced Algorithm by Seed Outcome",
+   "header": [
+    "Seed outcome",
+    "*n*",
+    "DSC *M* (*SD*)",
+    "DSC *Mdn* [IQR]",
+    "Successful slices"
+   ],
+   "rows": [
+    [
+     "Seed hit",
+     "412",
+     "0.707 (0.265)",
+     "0.814 [0.619, 0.903]",
+     "279 (67.7%)"
+    ],
+    [
+     "Seed miss or no seed",
+     "542",
+     "0.024 (0.078)",
+     "0.000 [0.000, 0.000]",
+     "1 (0.2%)"
+    ]
+   ],
+   "widths": [
+    2,
+    0.8,
+    1.6,
+    2,
+    1.6
+   ],
+   "note": "Configuration A_ESRG. Mann–Whitney test of DSC between the two groups: *U* = 221,072, *p* < .001, rank-biserial *r* = .98 (Kerby, 2014)."
+  },
+  {
+   "t": "p",
+   "text": "The seed outcome decides the result (Table 4.10). When the seed lands in the tumor, ESRG reaches a median DSC of 0.814 and succeeds on 67.7% of slices; when it misses, the median DSC is 0.000 and 0.2% succeed (*U* = 221,072, *p* < .001, *r* = .98). Of the 262 slices on which ESRG leaked under automatic seeding, 210 started from a seed that was not entirely inside the tumor, so most leakage under automatic seeding is a consequence of a misplaced seed rather than of the stopping criterion."
+  },
+  {
+   "t": "table",
+   "num": "4.11",
+   "title": "Variability of the Result Across Five Simulated Operators and Under Automatic Seeding",
+   "header": [
+    [
+     {
+      "text": ""
+     },
+     {
+      "text": "Within-slice *SD* of DSC",
+      "span": 2,
+      "rule": true
+     },
+     {
+      "text": "Mean range of DSC",
+      "span": 2,
+      "rule": true
+     },
+     {
+      "text": "Inconsistency rate",
+      "span": 2,
+      "rule": true
+     },
+     {
+      "text": "Automatic"
+     }
+    ],
+    [
+     "Tumor class",
+     "SRG",
+     "ESRG",
+     "SRG",
+     "ESRG",
+     "SRG",
+     "ESRG",
+     "*SD* (both)"
+    ]
+   ],
+   "rows": [
+    [
+     "Glioma",
+     "0.042 (0.034)",
+     "0.177 (0.124)",
+     "0.104",
+     "0.405",
+     "0.9%",
+     "25.2%",
+     "0.000 (0.000)"
+    ],
+    [
+     "Meningioma",
+     "0.044 (0.038)",
+     "0.229 (0.137)",
+     "0.106",
+     "0.530",
+     "0.9%",
+     "68.9%",
+     "0.000 (0.000)"
+    ],
+    [
+     "Pituitary",
+     "0.066 (0.048)",
+     "0.262 (0.113)",
+     "0.160",
+     "0.596",
+     "2.2%",
+     "56.0%",
+     "0.000 (0.000)"
+    ],
+    [
+     "All classes",
+     "0.051 (0.042)",
+     "0.223 (0.130)",
+     "0.123",
+     "0.510",
+     "1.4%",
+     "50.0%",
+     "0.000 (0.000)"
+    ]
+   ],
+   "widths": [
+    1.5,
+    1.25,
+    1.25,
+    0.85,
+    0.85,
+    1,
+    1,
+    1.25
+   ],
+   "note": "Each slice was segmented from five operator clicks placed at random tumor pixels more than 3 pixels (the click radius) from the tumor boundary (Equation 4.5; configurations O_SRG_1–5 and O_ESRG_1–5). Within-slice *SD* (Equation 4.8) is shown as *M* (*SD*) over slices; the range is the largest minus the smallest DSC of the five clicks; the inconsistency rate (Equation 4.9) is the share of slices on which some clicks succeed (DSC ≥ 0.70) and others fail. The automatic seed is deterministic, so its within-slice *SD* is zero by construction; this was confirmed by an independent rerun (Section 4.2.1)."
+  },
+  {
+   "t": "p",
+   "text": "Table 4.11 and Figure 4.3 address the consistency that Objective 1 targets. With five equally valid operator clicks inside the same tumor, the DSC of the original algorithm varies with a mean within-slice *SD* of 0.051, and that of the enhanced grower with 0.223; the five results span a mean range of 0.123 and 0.510 DSC, respectively. On 50.0% of slices (95% CI [46.8, 53.2]), whether the enhanced grower succeeded depended on which operator clicked, and on 1.4% for the baseline. The automatic seed, in contrast, produced identical masks in both independent runs on 180 of 180 slices for ESRG and 180 of 180 for SRG (largest DSC difference 0.0000), so its within-slice variability and inconsistency rate are zero. Two findings follow. First, the original algorithm appears consistent only because it consistently undersegments: its mean DSC over the five operators is 0.122, so its results cannot vary much. Second, the enhanced grower is far more sensitive to where the seed is placed (*Z* = 25.21, *p* < .001, *r* = .82): because its stopping bound is derived from the statistics of the seed region (Equation 3.28), a click on a slightly brighter or more heterogeneous part of the tumor produces a different bound and a different result. This confirms the problem stated for Objective 1, that manual seeding makes the output depend on the operator (Adams & Bischof, 1994; Fan et al., 2005), and it is exactly the variability that the automated seed removes: with no operator input, the same slice always yields the same seed and the same mask. The cost of automation is measured by comparing the automatic result with the average of the five operator results for the same grower. Over all slices the operators do better (mean DSC 0.374 against 0.319; *Z* = −5.39, *p* < .001, *r* = −.17), but this difference comes from glioma (0.217 against 0.098, *p* < .001), where the automatic seed seldom reaches the tumor. For meningioma (0.556 against 0.550, *p* = .290) and pituitary tumors (0.350 against 0.310, *p* = .066), the automatic seed performs as well as the average operator who clicks correctly inside the tumor, without any operator input and with no variability. The automatic seed also outperforms the original algorithm seeded by an operator (*Z* = 8.57, *p* < .001)."
+  },
+  {
+   "t": "figure",
+   "num": "4.3",
+   "img": "figures/fig4_3_operator_variability.png",
+   "title": "Within-Slice Variability of DSC Across Five Simulated Operators",
+   "note": "Boxes show the distribution over slices of the within-slice standard deviation of DSC (Equation 4.8); whiskers extend to 1.5 interquartile ranges, outliers are not drawn. The automatic seed has a within-slice standard deviation of zero on every slice.",
+   "w": 2160,
+   "h": 900
+  },
+  {
+   "t": "table",
+   "num": "4.12",
+   "title": "Failure Attribution of the Enhanced Algorithm Under Automatic Seeding (Experiment E5)",
+   "header": [
+    "Bucket",
+    "Glioma",
+    "Meningioma",
+    "Pituitary",
+    "All classes"
+   ],
+   "rows": [
+    [
+     "C – Seed chose wrong structure (Stage 5)",
+     "87 (27.4%)",
+     "60 (18.9%)",
+     "131 (41.2%)",
+     "278 (29.1%)"
+    ],
+    [
+     "G – Success",
+     "15 (4.7%)",
+     "175 (55.0%)",
+     "86 (27.0%)",
+     "276 (28.9%)"
+    ],
+    [
+     "B – Tumor absent from candidates (Stage 4)",
+     "184 (57.9%)",
+     "15 (4.7%)",
+     "42 (13.2%)",
+     "241 (25.3%)"
+    ],
+    [
+     "E – Growth undersegmented (Stage 6 measure)",
+     "12 (3.8%)",
+     "25 (7.9%)",
+     "38 (11.9%)",
+     "75 (7.9%)"
+    ],
+    [
+     "D – Growth leaked (Stage 6 stopping)",
+     "16 (5.0%)",
+     "25 (7.9%)",
+     "9 (2.8%)",
+     "50 (5.2%)"
+    ],
+    [
+     "A – Head mask lost tumor (Stage 2)",
+     "3 (0.9%)",
+     "3 (0.9%)",
+     "12 (3.8%)",
+     "18 (1.9%)"
+    ],
+    [
+     "X – False no-candidate flag",
+     "0 (0.0%)",
+     "11 (3.5%)",
+     "0 (0.0%)",
+     "11 (1.2%)"
+    ],
+    [
+     "F – Post-processing hurt result (Stage 7)",
+     "1 (0.3%)",
+     "4 (1.3%)",
+     "0 (0.0%)",
+     "5 (0.5%)"
+    ],
+    [
+     "Total",
+     "318",
+     "318",
+     "318",
+     "954"
+    ]
+   ],
+   "widths": [
+    3.4,
+    1.3,
+    1.3,
+    1.3,
+    1.3
+   ],
+   "note": "Values are the number (and percentage) of slices in each bucket. Each slice is assigned to the first failed gate, checked in the order of Section 3.4.4: X, A (head mask kept < 90% of the tumor), B (< 30% of the tumor in the candidate mask), C (< 50% of the seed core inside the tumor), G (final DSC ≥ 0.70), F (post-processing lowered DSC by ≥ 0.10), D (growth precision < 0.50 and not above recall), and E (all others). Class differences in the distribution over G, B, C, and the remaining buckets: χ²(6, *N* = 954) = 385.89, *p* < .001, *V* = .45.",
+   "align": [
+    "l",
+    "c",
+    "c",
+    "c",
+    "c"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Table 4.12 locates the remaining failures of the automatic pipeline (Experiment E5). Successful slices (bucket G) make up 28.9% of the sample. Most failures occur before region growing begins: on 29.1% of slices a candidate containing the tumor existed but a different structure was ranked first (C), and on 25.3% the tumor never entered the highest intensity class (B). Together with the false no-candidate flags (X), seeding accounts for 55.6% of slices, whereas leakage (D) and undersegmentation (E) during growth account for only 13.1%. The pattern differs by class (χ²(6) = 385.89, *p* < .001, *V* = .45). For gliomas the dominant failure is B (57.9%): weakly enhancing tumor tissue falls below the uppermost Otsu threshold. For pituitary tumors it is C (41.2%): the tumor is a candidate, but a brighter neighboring structure is ranked above it. For meningioma, 55.0% of slices succeed. The automated seed selection is therefore the component that limits the fully automatic pipeline, and the manual seeding option remains necessary for pituitary tumors and gliomas."
+  },
+  {
+   "t": "h3",
+   "text": "4.2.2 Minimization of Undersegmentation"
+  },
+  {
+   "t": "p",
+   "text": "The second problem is that the original difference measure compares each pixel with the global region mean, so tumor pixels that differ gradually from the seed, for example on the darker side of a bias gradient, are rejected and left unsegmented. The proposed solution compares each candidate pixel with the nearby absorbed pixels (Equation 3.23) in the logarithmic domain (Equation 3.18). Its effect is measured by recall, with the seed planted inside the tumor so that seed placement plays no part. The full enhanced grower is compared with the baseline and with two ablated versions: one with the global measure restored, and one with the log transform switched off."
+  },
+  {
+   "t": "table",
+   "num": "4.13",
+   "title": "Recall of the Baseline, the Ablated Variants, and the Full Enhanced Algorithm With a Planted Seed",
+   "header": [
+    "Configuration",
+    "Glioma",
+    "Meningioma",
+    "Pituitary",
+    "All classes"
+   ],
+   "rows": [
+    {
+     "group": "Recall *M* (*SD*)"
+    },
+    [
+     "SRG (baseline)",
+     "0.078 (0.111)",
+     "0.069 (0.103)",
+     "0.128 (0.156)",
+     "0.092 (0.128)"
+    ],
+    [
+     "ESRG, global measure",
+     "0.187 (0.291)",
+     "0.168 (0.189)",
+     "0.116 (0.147)",
+     "0.157 (0.219)"
+    ],
+    [
+     "ESRG, log transform off",
+     "0.398 (0.407)",
+     "0.325 (0.339)",
+     "0.252 (0.286)",
+     "0.325 (0.353)"
+    ],
+    [
+     "ESRG (full)",
+     "0.439 (0.397)",
+     "0.506 (0.301)",
+     "0.304 (0.274)",
+     "0.416 (0.339)"
+    ],
+    {
+     "group": "Full ESRG vs. reference, *r* (*Z*)"
+    },
+    [
+     "SRG (baseline)",
+     ".60 (10.76)",
+     ".79 (14.16)",
+     ".46 (8.12)",
+     ".64 (19.79)"
+    ],
+    [
+     "ESRG, global measure",
+     ".75 (13.45)",
+     ".83 (14.78)",
+     ".78 (13.88)",
+     ".79 (24.34)"
+    ],
+    [
+     "ESRG, log transform off",
+     ".22 (3.94)",
+     ".58 (10.32)",
+     ".36 (6.38)",
+     ".40 (12.28)"
+    ]
+   ],
+   "widths": [
+    2.1,
+    1.3,
+    1.3,
+    1.3,
+    1.3
+   ],
+   "note": "Recall = TP/(TP + FN) (Equation 3.35), the share of the true tumor recovered. All four configurations start from the same planted click, so each difference is due to the growing procedure alone. Each test is a Wilcoxon signed-rank test of full ESRG against the named configuration; positive *Z* and *r* mean that full ESRG recovered more of the tumor. *p* values are Holm-adjusted over the three comparisons within each class; the largest adjusted *p* is < .001.",
+   "align": [
+    "l",
+    "c",
+    "c",
+    "c",
+    "c"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Table 4.13 and Figure 4.4(a) show that the full enhanced grower recovers a mean 0.416 of the tumor, against 0.092 for the baseline (*Z* = 19.79, *p* < .001, *r* = .64). In other words, the share of the tumor left unsegmented falls from 90.8% to 58.4%. The ablations isolate the two parts of the enhancement. Restoring the global measure lowers mean recall to 0.157 (*Z* = 24.34, *p* < .001, *r* = .79), and switching off the log transform lowers it to 0.325 (*Z* = 12.28, *p* < .001, *r* = .40). The local comparison is the larger of the two contributions: with everything else held fixed, it improved recall on 786 slices and lowered it on 44, a large effect in every class. The log transform adds a medium effect (540 slices improved, 242 worse), and it does so without a loss of precision (0.861 without it against 0.860 with it, *p* = .424), raising mean DSC from 0.275 to 0.387. In the log domain the tolerance σ_{A} is effectively relative to the intensity level, so the same bound admits proportionally similar variations at any brightness. The local measure costs some precision (0.957 to 0.860), but its recall gain is far larger and mean DSC doubles, from 0.193 to 0.387. The share of slices on which at least half of the tumor is recovered rises from 2.5% for the baseline to 40.5%. This directly addresses the second problem: making the similarity comparison local and logarithmic substantially reduces undersegmentation (Akram et al., 2017; Li et al., 2011). Recall nevertheless remains moderate in absolute terms, lowest for pituitary tumors (0.304). Growth ended at the maximum of four passes on 796 of the 954 planted slices (83.4%), so the region was usually still growing when the pass limit was reached, and the small purified seed yields a tight initial bound (Table 4.17)."
+  },
+  {
+   "t": "figure",
+   "num": "4.4",
+   "img": "figures/fig4_4_recall_precision.png",
+   "title": "Effect of the Local Log-Domain Measure on Recall and of the Adaptive Stopping Criterion on Precision",
+   "note": "All configurations use the same planted seed. Panel (a) shows the mean recall of Table 4.13 and panel (b) the mean precision of Table 4.15. Error bars are 95% confidence intervals of the mean, *M* ± *t*_{0.975, N−1} · *SD*/√*N*.",
+   "w": 2160,
+   "h": 1860
+  },
+  {
+   "t": "table",
+   "num": "4.14",
+   "title": "Recall With and Without a Synthetic 40% Bias Field (Experiment E2)",
+   "header": [
+    "Configuration",
+    "Recall, no bias",
+    "Recall, bias field",
+    "Change in *M*",
+    "*M* |change|",
+    "*Z*, *p* (Holm)",
+    "Mean DSC"
+   ],
+   "rows": [
+    [
+     "SRG",
+     "0.092 (0.128)",
+     "0.092 (0.129)",
+     "+0.000",
+     "0.010",
+     "0.49, .726",
+     "0.148 → 0.148"
+    ],
+    [
+     "ESRG, global measure",
+     "0.157 (0.219)",
+     "0.160 (0.212)",
+     "+0.003",
+     "0.031",
+     "6.67, < .001",
+     "0.193 → 0.205"
+    ],
+    [
+     "ESRG, log off",
+     "0.325 (0.353)",
+     "0.318 (0.350)",
+     "−0.007",
+     "0.044",
+     "−1.06, .726",
+     "0.275 → 0.271"
+    ],
+    [
+     "ESRG (full)",
+     "0.416 (0.339)",
+     "0.415 (0.337)",
+     "−0.001",
+     "0.048",
+     "−1.17, .726",
+     "0.387 → 0.387"
+    ],
+    [
+     "SRG + N4",
+     "—",
+     "0.092 (0.130)",
+     "—",
+     "—",
+     "—",
+     "— → 0.148"
+    ]
+   ],
+   "widths": [
+    1.8,
+    1.3,
+    1.3,
+    1,
+    1,
+    1.3,
+    1.4
+   ],
+   "note": "Values are recall *M* (*SD*) over the same slices and planted seeds; only the bias field of Equation 4.6 differs. “Change in *M*” is the biased minus the unbiased mean, and *M* |change| the average absolute per-slice change. Each configuration is compared with itself without the field (Wilcoxon signed-rank test, Holm-adjusted over the four configurations). N4 was applied only under the field; against plain SRG on the biased slices it changed recall with *Z* = −1.41, *p* = .159."
+  },
+  {
+   "t": "p",
+   "text": "Table 4.14 and Figure 4.5 test the robustness to a bias field claimed for the log-domain measure (Experiment E2). With the 40% field, the mean recall of full ESRG changes from 0.416 to 0.415 (*p* = .726), and that of the baseline from 0.092 to 0.092 (*p* = .726). Full ESRG on biased slices still recovers far more of the tumor than SRG with N4 correction (0.415 against 0.092; *Z* = 19.80, *p* < .001, *r* = .64). Neither full ESRG, nor ESRG without the log transform, nor the baseline changed significantly under the field (Holm-adjusted *p* = .726 or above); individual slices moved by a mean of 0.048 in recall for full ESRG, but in both directions. Only the global-measure variant changed significantly, by 0.003 (*p* < .001), a statistically detectable but practically negligible amount, and N4 correction did not change the baseline (*p* = .159). The field used here is smooth: across a tumor of median size (about 65 pixels in diameter) it changes the intensity by only about 3.6%, which is small compared with the natural heterogeneity of the tumor. The experiment therefore shows that ESRG is robust to a field of this size, rather than that the baseline is harmed by it; the gains of Objective 2 in Table 4.13 appear on the original slices and come from comparing each pixel with its own neighborhood on a relative scale."
+  },
+  {
+   "t": "figure",
+   "num": "4.5",
+   "img": "figures/fig4_5_bias_field.png",
+   "title": "Recall of Each Configuration With and Without the Synthetic Bias Field",
+   "note": "Bars are the mean recall of Table 4.14; error bars are 95% confidence intervals of the mean.",
+   "w": 1920,
+   "h": 900
+  },
+  {
+   "t": "h3",
+   "text": "4.2.3 Decrease Boundary Leakage"
+  },
+  {
+   "t": "p",
+   "text": "The third problem is that the original algorithm absorbs the next candidate pixel unconditionally, so growth crosses weak boundaries and floods the surrounding tissue. The proposed solution absorbs a pixel only while it lies within confidence bounds derived from the region’s own standard deviation, with the statistics frozen in each pass (Equations 3.28 to 3.30). To isolate the criterion, the enhanced grower was run with and without it from the same planted seed; without it, pixels are absorbed unconditionally, as in the original algorithm."
+  },
+  {
+   "t": "table",
+   "num": "4.15",
+   "title": "Precision and Leakage With and Without the Adaptive Stopping Criterion",
+   "header": [
+    [
+     {
+      "text": ""
+     },
+     {
+      "text": "Precision *M* (*SD*)",
+      "span": 3,
+      "rule": true
+     },
+     {
+      "text": "Leakage rate",
+      "span": 3,
+      "rule": true
+     },
+     {
+      "text": ""
+     }
+    ],
+    [
+     "Tumor class",
+     "No stopping",
+     "Adaptive",
+     "*r* (*Z*)",
+     "No stopping",
+     "Adaptive",
+     "*b* / *c*",
+     "|*M*|/|*G*| *Mdn*"
+    ]
+   ],
+   "rows": [
+    [
+     "Glioma",
+     "0.050 (0.083)",
+     "0.676 (0.438)",
+     ".86 (15.28)",
+     "99.4%",
+     "34.3%",
+     "207 / 0",
+     "27.28 → 0.36"
+    ],
+    [
+     "Meningioma",
+     "0.085 (0.180)",
+     "0.949 (0.192)",
+     ".86 (15.26)",
+     "96.5%",
+     "4.4%",
+     "293 / 0",
+     "24.26 → 0.55"
+    ],
+    [
+     "Pituitary",
+     "0.053 (0.180)",
+     "0.953 (0.191)",
+     ".85 (15.19)",
+     "96.5%",
+     "4.4%",
+     "293 / 0",
+     "62.08 → 0.23"
+    ],
+    [
+     "All classes",
+     "0.063 (0.155)",
+     "0.860 (0.324)",
+     ".86 (26.42)",
+     "97.5%",
+     "14.4%",
+     "793 / 0",
+     "37.00 → 0.38"
+    ]
+   ],
+   "widths": [
+    1.3,
+    1.2,
+    1.2,
+    1.0,
+    1.05,
+    1.05,
+    0.8,
+    1.3
+   ],
+   "note": "Both configurations use the local log-domain measure and the same planted seed; only the stopping criterion differs. Precision = TP/(TP + FP) (Equation 3.34), tested with the Wilcoxon signed-rank test, Holm-adjusted over the two reference configurations (no stopping criterion and SRG) within each row. Leakage is a predicted area more than twice the ground-truth area (Equation 3.39); *b* / *c* are the slices that leaked only without or only with the criterion (exact McNemar test). The last column is the median area ratio without → with the criterion."
+  },
+  {
+   "t": "p",
+   "text": "Table 4.15, Figure 4.4(b), and Figure 4.6 show the effect of the stopping criterion. Without it, the region leaks on 97.5% of slices, its median area is 37.00 times the true tumor area, and mean precision is 0.063. With it, the leakage rate falls to 14.4% (*b* / *c* = 793 / 0, *p* < .001) and mean precision rises to 0.860 (*Z* = 26.42, *p* < .001, *r* = .86). No slice leaked with the criterion that did not also leak without it (*c* = 0), and the improvement is large and significant in every class (*r* from .85 to .86). The median precision with the criterion is 1.000, meaning that on most slices every absorbed pixel is tumor. The criterion also raises mean DSC from 0.073 to 0.387, although recall falls from 0.976 to 0.416, because unconditional growth covers the tumor only by covering the whole head. This directly addresses the third problem: the adaptive stopping criterion prevents the flooding caused by unconditional absorption, in the same way that confidence-connected region growing bounds a region by its own statistics (Insight Software Consortium, n.d.). Leakage is not eliminated. Glioma remains the most affected class (34.3% leakage, mean precision 0.676), because its infiltrative margin has no sharp intensity step at which the bound can stop growth. The baseline shows no leakage with a planted seed (0.0%), but, as noted in Section 4.1, it achieves this by stopping far inside the tumor (median area ratio 0.045)."
+  },
+  {
+   "t": "figure",
+   "num": "4.6",
+   "img": "figures/fig4_6_leakage_rate.png",
+   "title": "Leakage Rate With and Without the Adaptive Stopping Criterion",
+   "note": "Planted seed. A slice leaks when its predicted area exceeds twice the ground-truth area (Equation 3.39). Error bars are Wilson 95% confidence intervals.",
+   "w": 1920,
+   "h": 900
+  },
+  {
+   "t": "table",
+   "num": "4.16",
+   "title": "Boundary Distances of the Baseline, the Enhanced Algorithm Without Stopping, and the Full Enhanced Algorithm",
+   "header": [
+    [
+     {
+      "text": ""
+     },
+     {
+      "text": "*Mdn* [IQR], pixels",
+      "span": 3,
+      "rule": true
+     },
+     {
+      "text": "Full ESRG vs. … *Z*",
+      "span": 2,
+      "rule": true
+     }
+    ],
+    [
+     "Tumor class",
+     "SRG",
+     "ESRG, no stopping",
+     "ESRG (full)",
+     "SRG",
+     "No stop"
+    ]
+   ],
+   "rows": [
+    {
+     "group": "HD95 (px)"
+    },
+    [
+     "Glioma",
+     "45.8 [29.6, 66.1]",
+     "254.8 [211.0, 294.0]",
+     "58.3 [30.7, 156.1]",
+     "6.56",
+     "−15.36"
+    ],
+    [
+     "Meningioma",
+     "42.5 [29.9, 53.9]",
+     "252.0 [216.3, 307.0]",
+     "19.8 [11.4, 34.5]",
+     "−10.64",
+     "−15.21"
+    ],
+    [
+     "Pituitary",
+     "30.5 [21.8, 42.2]",
+     "248.6 [229.9, 266.8]",
+     "23.4 [15.7, 37.1]",
+     "−4.74",
+     "−15.19"
+    ],
+    [
+     "All classes",
+     "38.4 [26.1, 53.1]",
+     "250.3 [222.0, 284.2]",
+     "28.3 [16.0, 55.1]",
+     "−4.88",
+     "−26.40"
+    ],
+    {
+     "group": "ASSD (px)"
+    },
+    [
+     "Glioma",
+     "28.8 [18.3, 38.8]",
+     "156.8 [132.2, 182.1]",
+     "32.4 [16.3, 84.8]",
+     "5.73",
+     "−15.35"
+    ],
+    [
+     "Meningioma",
+     "28.3 [19.6, 37.7]",
+     "159.0 [125.0, 181.3]",
+     "8.0 [4.7, 17.5]",
+     "−11.43",
+     "−15.20"
+    ],
+    [
+     "Pituitary",
+     "18.5 [12.0, 26.4]",
+     "169.5 [149.6, 189.0]",
+     "11.9 [7.1, 21.0]",
+     "−5.47",
+     "−15.19"
+    ],
+    [
+     "All classes",
+     "25.0 [15.7, 33.9]",
+     "162.5 [136.1, 183.7]",
+     "14.4 [6.8, 31.4]",
+     "−6.26",
+     "−26.41"
+    ]
+   ],
+   "widths": [
+    0.9,
+    1.4,
+    1.4,
+    1.4,
+    0.65,
+    0.75
+   ],
+   "note": "Planted seed. HD95 (Equation 3.37) and ASSD (Equation 4.10) in pixels at the working resolution; lower is better, so a negative *Z* means that full ESRG had the smaller distance on most slices. *Z* is the Wilcoxon signed-rank statistic; after Holm adjustment over the two comparisons within each row, every *p* is < .001."
+  },
+  {
+   "t": "p",
+   "text": "Table 4.16 evaluates the boundary itself. The median HD95 of full ESRG is 28.35 pixels, against 250.28 without the stopping criterion (*Z* = −26.40, *p* < .001, *r* = −.85) and 38.37 for the baseline (*Z* = −4.88, *p* < .001, *r* = −.16); the median ASSD is 14.37, 162.46, and 24.98 pixels, respectively. Without the stopping criterion the boundary lies, at its 95th percentile, a median of 250 pixels from the true boundary, about half the width of a 512-pixel slice, so the criterion reduces the boundary error by roughly an order of magnitude. Against the baseline, the full enhanced algorithm places the boundary closer on most slices overall; by class, it is clearly better for meningioma (median HD95 19.84 against 42.49 pixels) and pituitary tumors (23.45 against 30.48), but worse for glioma (58.28 against 45.77), where the slices that leak carry their boundary into the surrounding tissue. A boundary metric is needed to see this, since overlap metrics alone do not reveal where the errors lie (Reinke et al., 2024; Taha & Hanbury, 2015)."
+  },
+  {
+   "t": "table",
+   "num": "4.17",
+   "title": "Effect of Seed Purification on the Enhanced Algorithm With a Planted Seed",
+   "header": [
+    "Metric",
+    "Click disk *M* (*SD*)",
+    "Purified core *M* (*SD*)",
+    "*Z* or *b* / *c*",
+    "*p* (Holm)",
+    "*r*"
+   ],
+   "rows": [
+    [
+     "DSC",
+     "0.486 (0.324)",
+     "0.387 (0.312)",
+     "−14.13",
+     "< .001",
+     "−.46"
+    ],
+    [
+     "Recall",
+     "0.659 (0.294)",
+     "0.416 (0.339)",
+     "−23.55",
+     "< .001",
+     "−.76"
+    ],
+    [
+     "Precision",
+     "0.701 (0.425)",
+     "0.860 (0.324)",
+     "16.99",
+     "< .001",
+     ".55"
+    ],
+    [
+     "HD95 (px)",
+     "79.90 (95.22)",
+     "54.72 (67.06)",
+     "0.80",
+     ".424",
+     ".03"
+    ],
+    [
+     "Success rate (DSC ≥ 0.70)",
+     "36.5%",
+     "23.5%",
+     "164 / 40",
+     "< .001",
+     "—"
+    ],
+    [
+     "Leakage rate (|*M*| > 2|*G*|)",
+     "30.5%",
+     "14.4%",
+     "156 / 2",
+     "< .001",
+     "—"
+    ],
+    [
+     "Seed area, px (*Mdn*)",
+     "29",
+     "5",
+     "—",
+     "—",
+     "—"
+    ],
+    [
+     "Initial σ_{A} (*Mdn*)",
+     "0.0447",
+     "0.0253",
+     "—",
+     "—",
+     "—"
+    ],
+    [
+     "σ_{A} set by σ_{floor}",
+     "12.7%",
+     "39.4%",
+     "—",
+     "—",
+     "—"
+    ]
+   ],
+   "widths": [
+    2.2,
+    1.6,
+    1.6,
+    1.2,
+    1,
+    0.7
+   ],
+   "note": "Configurations P_ESRG_nopurify (the click disk used directly) and P_ESRG (the disk reduced to its core, the default in manual mode). Tests compare the purified core against the disk; *p* values are Holm-adjusted together. Initial σ_{A} is max(*s*_{A}, σ_{floor}) in the first pass (Equation 3.28); the last row is the share of slices on which the noise floor, not the seed, set that value."
+  },
+  {
+   "t": "p",
+   "text": "Table 4.17 examines the seed size, which sets the first stopping bound. Purifying the planted click shrinks it from a median of 29 to 5 pixels, and its initial σ_{A} from 0.0447 to 0.0253; on 39.4% of slices the noise floor, not the seed, then sets the bound. A seed of a few pixels has a very small spread, so the resulting bound is tight and growth stops before the tumor edge. Purification halves the leakage rate (30.5% to 14.4%) and raises precision (0.701 to 0.860), but it lowers recall (0.659 to 0.416) and mean DSC (0.486 to 0.387); the larger click disk gives a looser bound that reaches further (success 36.5% against 23.5%) but leaks more often. The seed size therefore controls the balance between the two growth objectives: purification favors Objective 3, and the unpurified disk favors Objective 2."
+  },
+  {
+   "t": "h3",
+   "text": "4.2.4 Overall Delineation Quality and Class-Dependent Performance"
+  },
+  {
+   "t": "p",
+   "text": "Combining the three enhancements, Table 4.18 reports the median DSC by tumor class for both algorithms under both seeding conditions, with the share of successfully segmented slices."
+  },
+  {
+   "t": "table",
+   "num": "4.18",
+   "title": "Dice Similarity Coefficient by Tumor Class",
+   "header": [
+    [
+     {
+      "text": ""
+     },
+     {
+      "text": "Automatic seed",
+      "span": 3,
+      "rule": true
+     },
+     {
+      "text": "Planted seed",
+      "span": 3,
+      "rule": true
+     }
+    ],
+    [
+     "Tumor class",
+     "SRG",
+     "ESRG",
+     "*r*",
+     "SRG",
+     "ESRG",
+     "*r*"
+    ]
+   ],
+   "rows": [
+    [
+     "Glioma",
+     "0.000 (0.6%)",
+     "0.000 (5.0%)",
+     ".38",
+     "0.075 (1.6%)",
+     "0.127 (6.3%)",
+     ".27"
+    ],
+    [
+     "Meningioma",
+     "0.230 (1.6%)",
+     "0.759 (56.0%)",
+     ".71",
+     "0.068 (0.9%)",
+     "0.663 (46.5%)",
+     ".77"
+    ],
+    [
+     "Pituitary",
+     "0.000 (2.8%)",
+     "0.000 (27.0%)",
+     ".52",
+     "0.133 (3.5%)",
+     "0.351 (17.6%)",
+     ".41"
+    ],
+    [
+     "All classes",
+     "0.000 (1.7%)",
+     "0.052 (29.4%)",
+     ".56",
+     "0.086 (2.0%)",
+     "0.338 (23.5%)",
+     ".53"
+    ]
+   ],
+   "widths": [
+    1.3,
+    1.3,
+    1.3,
+    0.55,
+    1.3,
+    1.3,
+    0.55
+   ],
+   "note": "Values are the median DSC with the success rate (DSC ≥ 0.70) in parentheses. *r* = *Z*/√*N* (Equation 3.41) is the effect size of the Wilcoxon signed-rank test of ESRG against SRG under the same seeding; after Holm adjustment over the three classes every *p* is < .001. DSC of ESRG differs across classes under automatic seeding, *H*(2) = 185.09, *p* < .001, and planted seeding, *H*(2) = 172.07, *p* < .001 (Kruskal–Wallis)."
+  },
+  {
+   "t": "p",
+   "text": "Table 4.18 shows three distinct outcomes. Meningioma is delineated reliably and automatically: its median DSC improves from 0.230 to 0.759 (*p* < .001, *r* = .71), and 56.0% of slices are segmented successfully without any user input. Pituitary tumors improve significantly (*p* < .001), and their success rate rises from 2.8% to 27.0%, but their median DSC under automatic seeding stays at 0.000 because the seed lands in the tumor on 41.5% of slices; with a planted seed their median rises to 0.351, so for these tumors the manual seeding mode is the practical option. Glioma is the most difficult class: the enhanced algorithm is significantly better under both seeding conditions, but its median DSC remains low (0.000 automatic, 0.127 planted). The heterogeneous, infiltrative appearance of glioma provides no sharp boundary for an intensity-based method to follow, which limits both recall and precision. The tumor class explains a substantial share of the variation in DSC (ε² = .19 under automatic and .18 under planted seeding)."
+  },
+  {
+   "t": "table",
+   "num": "4.19",
+   "title": "Median DSC of the Enhanced Algorithm by Tumor Class and Imaging Plane",
+   "header": [
+    [
+     {
+      "text": ""
+     },
+     {
+      "text": "Automatic seed",
+      "span": 3,
+      "rule": true
+     },
+     {
+      "text": "Planted seed",
+      "span": 3,
+      "rule": true
+     }
+    ],
+    [
+     "Tumor class",
+     "Axial",
+     "Coronal",
+     "Sagittal",
+     "Axial",
+     "Coronal",
+     "Sagittal"
+    ]
+   ],
+   "rows": [
+    [
+     "Glioma",
+     "0.028 (5.7%)",
+     "0.000 (8.5%)",
+     "0.000 (0.9%)",
+     "0.119 (7.5%)",
+     "0.103 (5.7%)",
+     "0.166 (5.7%)"
+    ],
+    [
+     "Meningioma",
+     "0.629 (48.1%)",
+     "0.821 (67.9%)",
+     "0.723 (51.9%)",
+     "0.685 (48.1%)",
+     "0.659 (45.3%)",
+     "0.656 (46.2%)"
+    ],
+    [
+     "Pituitary",
+     "0.000 (26.4%)",
+     "0.465 (34.0%)",
+     "0.000 (20.8%)",
+     "0.356 (19.8%)",
+     "0.326 (14.2%)",
+     "0.366 (18.9%)"
+    ],
+    [
+     "All classes",
+     "0.060 (26.7%)",
+     "0.162 (36.8%)",
+     "0.000 (24.5%)",
+     "0.295 (25.2%)",
+     "0.315 (21.7%)",
+     "0.395 (23.6%)"
+    ]
+   ],
+   "widths": [
+    1.4,
+    1.3,
+    1.3,
+    1.3,
+    1.3,
+    1.3,
+    1.3
+   ],
+   "note": "Values are the median DSC of ESRG with the success rate in parentheses; every class × plane cell holds *n*_{h} = 106 slices. Across planes, DSC differs under automatic seeding with *H*(2) = 15.16, *p* < .001, and under planted seeding with *H*(2) = 0.97, *p* = .616 (Kruskal–Wallis)."
+  },
+  {
+   "t": "p",
+   "text": "Table 4.19 reports the results per imaging plane. The plane has a statistically significant but small effect under automatic seeding (ε² = .02) and no significant effect with a planted seed (*p* = .616). The plane therefore affects where the automatic seed lands rather than how the region grows. The clearest example is automatic seeding of pituitary tumors, whose coronal slices reach a median DSC of 0.465 against 0.000 on axial and 0.000 on sagittal slices, in line with the higher coronal seed hit rate: the pituitary gland is easier to separate from neighboring bright structures on coronal views."
+  },
+  {
+   "t": "table",
+   "num": "4.20",
+   "title": "Contribution of Each Enhancement With a Planted Seed (Experiment E4)",
+   "header": [
+    "Configuration",
+    "DSC *M*",
+    "Recall *M*",
+    "Precision *M*",
+    "Success",
+    "Leakage",
+    "Mean rank",
+    "vs. full *Z*, *p*"
+   ],
+   "rows": [
+    [
+     "ESRG (full)",
+     "0.387",
+     "0.416",
+     "0.860",
+     "23.5%",
+     "14.4%",
+     "1.70",
+     "—"
+    ],
+    [
+     "Global measure",
+     "0.193",
+     "0.157",
+     "0.957",
+     "3.0%",
+     "4.1%",
+     "2.72",
+     "19.39, < .001"
+    ],
+    [
+     "Log transform off",
+     "0.275",
+     "0.325",
+     "0.861",
+     "13.8%",
+     "14.0%",
+     "2.38",
+     "13.29, < .001"
+    ],
+    [
+     "No stopping criterion",
+     "0.073",
+     "0.976",
+     "0.063",
+     "0.3%",
+     "97.5%",
+     "3.20",
+     "22.61, < .001"
+    ],
+    [
+     "SRG (baseline)",
+     "0.148",
+     "0.092",
+     "0.998",
+     "2.0%",
+     "0.0%",
+     "—",
+     "—"
+    ]
+   ],
+   "widths": [
+    2,
+    0.9,
+    0.9,
+    1,
+    0.9,
+    0.9,
+    0.9,
+    1.4
+   ],
+   "note": "All rows use the same planted seeds. Each ablated configuration removes exactly one enhancement from full ESRG. Mean rank is the average rank of the configuration’s DSC among the four ESRG configurations on each slice (1 = best) from the Friedman test (Equation 4.16): χ²(3, *N* = 954) = 714.39, *p* < .001, Kendall’s *W* = .25. The pairwise *Z* compares the ablated configuration with full ESRG on DSC (positive = full ESRG higher), Holm-adjusted over the three comparisons. The baseline is listed for reference and is not part of the Friedman test."
+  },
+  {
+   "t": "p",
+   "text": "Table 4.20 summarizes the ablation (Experiment E4). The four ESRG configurations differ significantly (χ²(3, *N* = 954) = 714.39, *p* < .001, Kendall’s *W* = .25), and full ESRG has the best mean rank (1.70). Removing any single enhancement lowers DSC significantly. The largest loss comes from removing the stopping criterion (mean DSC 0.073), followed by restoring the global measure (0.193) and switching off the log transform (0.275). The enhancements are complementary: the local log-domain measure lets the region reach the tumor boundary, and the stopping criterion keeps it from crossing it."
+  },
+  {
+   "t": "h3",
+   "text": "4.2.5 Computational Efficiency"
+  },
+  {
+   "t": "table",
+   "num": "4.21",
+   "title": "Processing Time per Slice Under Automatic Seeding (Experiment E6)",
+   "header": [
+    "Tumor class",
+    "SRG *M* (*SD*), s",
+    "SRG *Mdn*, s",
+    "ESRG *M* (*SD*), s",
+    "ESRG *Mdn*, s",
+    "Reduction (*Mdn*)",
+    "*Z*",
+    "*r*"
+   ],
+   "rows": [
+    [
+     "Glioma",
+     "14.64 (3.88)",
+     "14.57",
+     "10.25 (5.05)",
+     "8.69",
+     "40.4%",
+     "−4.98",
+     "−.64"
+    ],
+    [
+     "Meningioma",
+     "9.86 (5.32)",
+     "10.76",
+     "6.25 (4.29)",
+     "6.43",
+     "40.2%",
+     "−5.51",
+     "−.71"
+    ],
+    [
+     "Pituitary",
+     "5.03 (4.52)",
+     "3.48",
+     "2.49 (2.25)",
+     "1.68",
+     "51.7%",
+     "−6.64",
+     "−.86"
+    ],
+    [
+     "All classes",
+     "9.84 (6.04)",
+     "10.76",
+     "6.33 (5.12)",
+     "5.73",
+     "46.7%",
+     "−9.06",
+     "−.68"
+    ]
+   ],
+   "widths": [
+    1.2,
+    1.35,
+    0.8,
+    1.35,
+    0.8,
+    0.95,
+    0.7,
+    0.5
+   ],
+   "note": "*N* = 180 slices, a stratified random subsample of 20 slices per stratum. Wall-clock time from loading the slice to the final mask, excluding the computation of the metrics, measured in a separate sequential pass (one process, nothing else running, one discarded warm-up run, order of SRG and ESRG alternated per slice) on 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz with Python 3.14.4 on battery power. Reduction is 1 − *Mdn*_{ESRG}/*Mdn*_{SRG}. A negative *Z* means ESRG was faster (Wilcoxon signed-rank test); after Holm adjustment over the three classes every *p* is < .001."
+  },
+  {
+   "t": "p",
+   "text": "Table 4.21 shows the processing time measured in the sequential pass (Experiment E6). The median time per slice is 10.76 s for SRG and 5.73 s for ESRG (*Z* = −9.06, *p* < .001, *r* = −.68), a 46.7% reduction; ESRG was faster on 86.7% of slices. The enhanced algorithm is therefore faster as well as more accurate. The baseline partitions the whole head among hundreds of background seeds, whereas ESRG grows a single region and stops at its boundary. By class, ESRG takes longest on glioma slices (median 8.69 s), where weak margins let the region grow larger before the bound halts it. Running first or second made no material difference (mean 6.33 against 6.34 s for ESRG and 9.82 against 9.87 s for SRG), so the alternation removed any warm-cache advantage. At a median of 5.73 s per slice on a laptop CPU without a GPU, running on battery power, the enhanced algorithm is fast enough for interactive use."
+  },
+  {
+   "t": "table",
+   "num": "4.22",
+   "title": "Processing Time per Pipeline Stage",
+   "header": [
+    "Stage",
+    "SRG *M* (*SD*), s",
+    "SRG *Mdn*, s",
+    "ESRG *M* (*SD*), s",
+    "ESRG *Mdn*, s"
+   ],
+   "rows": [
+    [
+     "1 · Input",
+     "0.006 (0.003)",
+     "0.006",
+     "0.006 (0.003)",
+     "0.006"
+    ],
+    [
+     "2 · Head mask",
+     "1.757 (1.147)",
+     "1.953",
+     "1.745 (1.148)",
+     "1.879"
+    ],
+    [
+     "3 · Log domain",
+     "0.006 (0.004)",
+     "0.007",
+     "0.006 (0.004)",
+     "0.007"
+    ],
+    [
+     "4–5 · Seed selection",
+     "2.614 (1.949)",
+     "1.710",
+     "2.606 (1.960)",
+     "1.726"
+    ],
+    [
+     "6 · Region growing",
+     "5.350 (3.346)",
+     "5.752",
+     "1.858 (3.499)",
+     "0.359"
+    ],
+    [
+     "7 · Post-processing",
+     "0.045 (0.027)",
+     "0.056",
+     "0.043 (0.025)",
+     "0.055"
+    ]
+   ],
+   "widths": [
+    2.2,
+    1.6,
+    1.1,
+    1.6,
+    1.1
+   ],
+   "note": "Stage times from the same sequential pass as Table 4.21. Stages 1–5 are shared by both algorithms, so their times differ only by measurement noise; the difference in total time comes from Stage 6. The remainder of the total (noise-floor estimation and bookkeeping) is not shown.",
+   "align": [
+    "l",
+    "c",
+    "c",
+    "c",
+    "c"
+   ]
+  },
+  {
+   "t": "figure",
+   "num": "4.7",
+   "img": "figures/fig4_7_processing_time.png",
+   "title": "Mean Processing Time per Slice, by Pipeline Stage",
+   "note": "Stacked bars are the mean stage times of Table 4.22 from the sequential timing pass.",
+   "w": 1920,
+   "h": 840
+  },
+  {
+   "t": "p",
+   "text": "Table 4.22 and Figure 4.7 show where the time goes. Stages 1 to 5 are identical for both algorithms; the difference lies in region growing, which takes a mean 5.35 s for SRG and 1.86 s for ESRG. The most expensive shared stage is seed selection (2.61 s), which ranks every candidate component; it is also the stage that limits accuracy under automatic seeding, so it is the natural target for further optimization."
+  },
+  {
+   "t": "h2",
+   "text": "4.3 Summary of Findings"
+  },
+  {
+   "t": "p",
+   "text": "Table 4.23 summarizes the evaluation per objective. Each objective is judged by the metric that measures its problem directly, against the configuration without the corresponding enhancement."
+  },
+  {
+   "t": "table",
+   "num": "4.23",
+   "title": "Summary of the Evaluation per Objective",
+   "header": [
+    "Metric",
+    "Reference",
+    "ESRG",
+    "Test",
+    "Table"
+   ],
+   "rows": [
+    {
+     "group": "Objective 1: automated seed selection"
+    },
+    [
+     "Seed hit rate",
+     "No automatic seed",
+     "43.7%",
+     "95% CI [40.6, 46.9]",
+     "4.9"
+    ],
+    [
+     "Within-slice *SD* of DSC",
+     "0.051 (operator)",
+     "0.000 (automatic)",
+     "Deterministic in two runs",
+     "4.11"
+    ],
+    {
+     "group": "Objective 2: undersegmentation (planted seed)"
+    },
+    [
+     "Recall *M*",
+     "0.092",
+     "0.416",
+     "*r* = .64, *p* < .001",
+     "4.13"
+    ],
+    [
+     "Recall *M*, global vs. local measure",
+     "0.157",
+     "0.416",
+     "*r* = .79, *p* < .001",
+     "4.13"
+    ],
+    [
+     "Recall *M*, log off vs. on",
+     "0.325",
+     "0.416",
+     "*r* = .40, *p* < .001",
+     "4.13"
+    ],
+    {
+     "group": "Objective 3: boundary leakage (planted seed)"
+    },
+    [
+     "Precision *M*, no stopping vs. adaptive",
+     "0.063",
+     "0.860",
+     "*r* = .86, *p* < .001",
+     "4.15"
+    ],
+    [
+     "Leakage rate, no stopping vs. adaptive",
+     "97.5%",
+     "14.4%",
+     "*p* < .001",
+     "4.15"
+    ],
+    {
+     "group": "Overall (automatic seed) and efficiency"
+    },
+    [
+     "DSC *M*",
+     "0.148",
+     "0.319",
+     "*r* = .56, *p* < .001",
+     "4.6"
+    ],
+    [
+     "Success rate",
+     "1.7%",
+     "29.4%",
+     "*p* < .001",
+     "4.6"
+    ],
+    [
+     "Time per slice, *Mdn*",
+     "10.76 s",
+     "5.73 s",
+     "*r* = −.68, *p* < .001",
+     "4.21"
+    ]
+   ],
+   "widths": [
+    3,
+    1.6,
+    1.3,
+    2.2,
+    0.7
+   ],
+   "align": [
+    "l",
+    "c",
+    "c",
+    "c",
+    "c"
+   ],
+   "note": "“Reference” is the configuration without the enhancement (the baseline SRG, or ESRG with one enhancement removed); for the within-slice *SD* it is the enhanced grower seeded by an operator. Objectives 2 and 3 are measured with a planted seed so that seed placement does not affect them."
+  },
+  {
+   "t": "p",
+   "text": "Objective 1 is met in the sense intended: the system now provides an automatic, deterministic seed that removes the dependence on the operator, which the evaluation showed to be substantial for the enhanced grower (inconsistent outcome on 50.0% of slices). Its seed hit rate of 43.7% is high for meningioma and low for glioma, so automatic seeding is dependable for well-circumscribed tumors while the manual option remains necessary for the others. Objective 2 is met: the local log-domain measure raises recall from 0.092 to 0.416 with a planted seed, and both of its parts contribute significantly. Objective 3 is met: the adaptive stopping criterion lowers the leakage rate from 97.5% to 14.4% and raises precision from 0.063 to 0.860. Combined, the enhancements more than double the mean DSC of the original algorithm under automatic seeding (0.148 to 0.319) and with a planted seed (0.148 to 0.387). The remaining errors are concentrated in seed selection for pituitary tumors and gliomas and in the weak margins of gliomas."
+  },
+  {
+   "t": "h2",
+   "text": "References Added in Chapter 4"
+  },
+  {
+   "t": "ref",
+   "text": "Brown, L. D., Cai, T. T., & DasGupta, A. (2001). Interval estimation for a binomial proportion. *Statistical Science, 16*(2), 101–133. https://doi.org/10.1214/ss/1009213286"
+  },
+  {
+   "t": "ref",
+   "text": "Cochran, W. G. (1977). *Sampling techniques* (3rd ed.). John Wiley & Sons."
+  },
+  {
+   "t": "ref",
+   "text": "Demšar, J. (2006). Statistical comparisons of classifiers over multiple data sets. *Journal of Machine Learning Research, 7*, 1–30."
+  },
+  {
+   "t": "ref",
+   "text": "Fan, J., Zeng, G., Body, M., & Hacid, M.-S. (2005). Seeded region growing: An extensive and comparative study. *Pattern Recognition Letters, 26*(8), 1139–1156. https://doi.org/10.1016/j.patrec.2004.10.010"
+  },
+  {
+   "t": "ref",
+   "text": "Hoefler, T., & Belli, R. (2015). Scientific benchmarking of parallel computing systems: Twelve ways to tell the masses when reporting performance results. In *Proceedings of the International Conference for High Performance Computing, Networking, Storage and Analysis (SC ’15)* (Article 73). ACM. https://doi.org/10.1145/2807591.2807644"
+  },
+  {
+   "t": "ref",
+   "text": "Joskowicz, L., Cohen, D., Caplan, N., & Sosna, J. (2019). Inter-observer variability of manual contour delineation of structures in CT. *European Radiology, 29*(3), 1391–1399. https://doi.org/10.1007/s00330-018-5695-5"
+  },
+  {
+   "t": "ref",
+   "text": "Kerby, D. S. (2014). The simple difference formula: An approach to teaching nonparametric correlation. *Comprehensive Psychology, 3*, Article 1. https://doi.org/10.2466/11.IT.3.1"
+  },
+  {
+   "t": "ref",
+   "text": "Kruskal, W. H., & Wallis, W. A. (1952). Use of ranks in one-criterion variance analysis. *Journal of the American Statistical Association, 47*(260), 583–621. https://doi.org/10.1080/01621459.1952.10483441"
+  },
+  {
+   "t": "ref",
+   "text": "Lohr, S. L. (2021). *Sampling: Design and analysis* (3rd ed.). CRC Press."
+  },
+  {
+   "t": "ref",
+   "text": "Mann, H. B., & Whitney, D. R. (1947). On a test of whether one of two random variables is stochastically larger than the other. *The Annals of Mathematical Statistics, 18*(1), 50–60. https://doi.org/10.1214/aoms/1177730491"
+  },
+  {
+   "t": "ref",
+   "text": "McNemar, Q. (1947). Note on the sampling error of the difference between correlated proportions or percentages. *Psychometrika, 12*(2), 153–157. https://doi.org/10.1007/BF02295996"
+  },
+  {
+   "t": "ref",
+   "text": "Menze, B. H., Jakab, A., Bauer, S., Kalpathy-Cramer, J., Farahani, K., Kirby, J., … Van Leemput, K. (2015). The multimodal brain tumor image segmentation benchmark (BRATS). *IEEE Transactions on Medical Imaging, 34*(10), 1993–2024. https://doi.org/10.1109/TMI.2014.2377694"
+  },
+  {
+   "t": "ref",
+   "text": "Moschidis, E., & Graham, J. (2010). A systematic performance evaluation of interactive image segmentation methods based on simulated user interaction. In *2010 IEEE International Symposium on Biomedical Imaging: From Nano to Macro* (pp. 928–931). IEEE. https://doi.org/10.1109/ISBI.2010.5490139"
+  },
+  {
+   "t": "ref",
+   "text": "Reinke, A., Tizabi, M. D., Baumgartner, M., Eisenmann, M., Heckmann-Nötzel, D., Kavur, A. E., … Maier-Hein, L. (2024). Understanding metric-related pitfalls in image analysis validation. *Nature Methods, 21*(2), 182–194. https://doi.org/10.1038/s41592-023-02150-0"
+  },
+  {
+   "t": "ref",
+   "text": "Shapiro, S. S., & Wilk, M. B. (1965). An analysis of variance test for normality (complete samples). *Biometrika, 52*(3–4), 591–611. https://doi.org/10.1093/biomet/52.3-4.591"
+  },
+  {
+   "t": "ref",
+   "text": "Udupa, J. K., LeBlanc, V. R., Zhuge, Y., Imielinska, C., Schmidt, H., Currie, L. M., Hirsch, B. E., & Woodburn, J. (2006). A framework for evaluating image segmentation algorithms. *Computerized Medical Imaging and Graphics, 30*(2), 75–87. https://doi.org/10.1016/j.compmedimag.2005.12.001"
+  },
+  {
+   "t": "ref",
+   "text": "Visser, M., Müller, D. M. J., van Duijn, R. J. M., Smits, M., Verburg, N., Hendriks, E. J., … De Witt Hamer, P. C. (2019). Inter-rater agreement in glioma segmentations on longitudinal MRI. *NeuroImage: Clinical, 22*, Article 101727. https://doi.org/10.1016/j.nicl.2019.101727"
+  },
+  {
+   "t": "ref",
+   "text": "Wilson, E. B. (1927). Probable inference, the law of succession, and statistical inference. *Journal of the American Statistical Association, 22*(158), 209–212. https://doi.org/10.1080/01621459.1927.10502953"
+  },
+  {
+   "t": "ref",
+   "text": "Yeghiazaryan, V., & Voiculescu, I. (2018). Family of boundary overlap metrics for the evaluation of medical image segmentation. *Journal of Medical Imaging, 5*(1), Article 015006. https://doi.org/10.1117/1.JMI.5.1.015006"
+  },
+  {
+   "t": "ref",
+   "text": "Zijdenbos, A. P., Dawant, B. M., Margolin, R. A., & Palmer, A. C. (1994). Morphometric analysis of white matter lesions in MR images: Method and validation. *IEEE Transactions on Medical Imaging, 13*(4), 716–724. https://doi.org/10.1109/42.363096"
+  },
+  {
+   "t": "ref",
+   "text": "Zou, K. H., Warfield, S. K., Bharatha, A., Tempany, C. M. C., Kaus, M. R., Haker, S. J., Wells, W. M., Jolesz, F. A., & Kikinis, R. (2004). Statistical validation of image segmentation quality based on a spatial overlap index. *Academic Radiology, 11*(2), 178–189. https://doi.org/10.1016/S1076-6332(03)00671-8"
+  }
+ ]
+}

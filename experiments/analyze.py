@@ -1,16 +1,23 @@
 """
-analyze.py — Statistics, figures, and the raw-results workbook for Chapter 4.
+analyze.py — Statistics and figures for Chapter 4.
 
-Purpose : Turn the raw per-image rows written by evaluate.py into every number,
-          table, and figure reported in Chapter 4, so that each value traces back
-          to the raw results.
-Function : Descriptive statistics per configuration; paired Wilcoxon signed-rank
-          tests with Z, r = Z/sqrt(N), and Holm adjustment; exact McNemar tests for
-          paired rates; Wilson intervals; chi-square, Mann-Whitney, Kruskal-Wallis,
-          and Friedman tests. Writes results.json, PNG figures, and an .xlsx
-          workbook holding the sample, every raw row, and a column dictionary.
-Notes   : Pairs with a missing value (e.g. HD95 of an empty mask) are dropped per
-          test. CLI: python experiments/analyze.py [--dir outputs/evaluation]
+Purpose : Turn the raw per-slice rows written by evaluate.py into every number,
+          table, and figure reported in Chapter 4, so each value traces back to a
+          per-slice row of the appendix workbooks.
+Function : analyze() computes, per evaluation:
+            E1  Objective 1 — seed hit rate, seed localization, operator variability,
+                determinism of the automatic seed, effect of a hit on delineation;
+            E2  Objective 2 — recall (and the missed share) against the baseline and
+                the ablated measures; robustness to a synthetic bias field;
+            E3  Objective 3 — precision, leakage rate, area ratio, HD95, ASSD
+                against the configuration without the stopping criterion;
+            E4  overall delineation (DSC, IoU, success) by class and plane, the
+                ablation (Friedman), population-weighted estimates;
+            E5  failure attribution; E6  sequential processing time.
+          figures() draws the Chapter 4 figures; results.json keeps every value.
+Notes   : Paired tests are Wilcoxon signed-rank (Z, r = Z/sqrt(N), Holm-adjusted
+          within each family); paired rates use the exact McNemar test.
+          CLI: python experiments/analyze.py [--dir outputs/evaluation]
 """
 import argparse
 import json
@@ -20,370 +27,402 @@ import sys
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from experiments.evaluate import CONFIGS, FIELDS, SAMPLE_FRAC, SAMPLE_SIZE, SAMPLE_SEED, INU
 from experiments.attribution import BUCKET_LABEL
+from experiments.evaluate import CONFIGS, INU, N_CLICKS, SUCCESS_DSC
+from experiments.stats import (chi2, desc, friedman, holm, kruskal, mannwhitney, mcnemar,
+                               shapiro, stratified_mean, wilcoxon, wilson)
 
-CLASSES = ["meningioma", "pituitary", "glioma"]
+CLASSES = ["glioma", "meningioma", "pituitary"]
 PLANES = ["axial", "coronal", "sagittal"]
-METRICS = ["dsc", "iou", "precision", "recall", "hd95"]
-LABEL = {"dsc": "DSC", "iou": "IoU", "precision": "Precision", "recall": "Recall", "hd95": "HD95 (px)"}
+LEVELS = CLASSES + ["all"]
+O_SRG = [f"O_SRG_{k}" for k in range(1, N_CLICKS + 1)]
+O_ESRG = [f"O_ESRG_{k}" for k in range(1, N_CLICKS + 1)]
+BOOL_COLS = ("leaked", "success", "seed_hit", "biased")
 
 
-# ─── Statistics ──────────────────────────────────────────────────────────────
-def desc(v):
-    v = pd.to_numeric(pd.Series(v), errors="coerce").dropna().to_numpy(float)
-    if v.size == 0:
-        return {"n": 0}
-    return {"n": int(v.size), "mean": float(v.mean()),
-            "sd": float(v.std(ddof=1)) if v.size > 1 else 0.0,
-            "median": float(np.median(v)), "q1": float(np.percentile(v, 25)),
-            "q3": float(np.percentile(v, 75)),
-            "ci95": float(stats.t.ppf(0.975, v.size - 1) * v.std(ddof=1) / math.sqrt(v.size)) if v.size > 1 else 0.0}
+# ─── Data ────────────────────────────────────────────────────────────────────
+def _bool(s):
+    return s.map(lambda v: True if v in (True, "True", 1, "1") else
+                 False if v in (False, "False", 0, "0") else None)
 
 
-def wilcoxon(x, y):
-    """
-    Paired Wilcoxon signed-rank test of y against x (d = y - x). Zero differences
-    are dropped (Wilcoxon's method); ranks of |d| use average ranks for ties.
-    Z = (W+ - n'(n'+1)/4) / sqrt(n'(n'+1)(2n'+1)/24 - sum(t^3 - t)/48), two-sided
-    p from the normal distribution, and r = Z / sqrt(N) with N the complete pairs.
-    """
-    x = pd.to_numeric(pd.Series(x), errors="coerce").to_numpy(float)
-    y = pd.to_numeric(pd.Series(y), errors="coerce").to_numpy(float)
-    ok = ~(np.isnan(x) | np.isnan(y))
-    d = (y - x)[ok]
-    N = int(ok.sum())
-    nz = d[d != 0]
-    n = nz.size
-    out = {"N": N, "n_nonzero": int(n), "n_pos": int((nz > 0).sum()), "n_neg": int((nz < 0).sum())}
-    if n == 0:
-        return {**out, "W_plus": 0.0, "Z": 0.0, "p": 1.0, "r": 0.0}
-    ranks = stats.rankdata(np.abs(nz))
-    w_plus = float(ranks[nz > 0].sum())
-    _, t = np.unique(np.abs(nz), return_counts=True)
-    var = n * (n + 1) * (2 * n + 1) / 24 - float(((t ** 3) - t).sum()) / 48
-    z = (w_plus - n * (n + 1) / 4) / math.sqrt(var) if var > 0 else 0.0
-    p = float(2 * stats.norm.sf(abs(z)))
-    return {**out, "W_plus": w_plus, "Z": float(z), "p": p, "r": float(z / math.sqrt(N))}
+def load(d):
+    df = pd.read_csv(os.path.join(d, "raw_results.csv"), low_memory=False)
+    sample = pd.read_csv(os.path.join(d, "sample.csv"))
+    df = df[df.file.isin(set(sample.file))].copy()
+    for c in BOOL_COLS:
+        df[c] = _bool(df[c])
+    return df, sample
 
 
-def holm(ps):
-    """Holm step-down adjusted p-values (same order as input)."""
-    m = len(ps)
-    order = sorted(range(m), key=lambda i: ps[i])
-    adj, run = [0.0] * m, 0.0
-    for k, i in enumerate(order):
-        run = max(run, min(1.0, (m - k) * ps[i]))
-        adj[i] = run
-    return adj
+def wide(df, cfg, col):
+    return df[df.config == cfg].set_index("file")[col]
 
 
-def mcnemar(a, b):
-    """Exact McNemar test on paired booleans a (reference) and b (compared)."""
-    a, b = np.asarray(a, bool), np.asarray(b, bool)
-    n10, n01 = int((a & ~b).sum()), int((~a & b).sum())
-    p = float(stats.binomtest(min(n10, n01), n10 + n01, 0.5).pvalue) if n10 + n01 else 1.0
-    return {"only_ref": n10, "only_cmp": n01, "p": p}
+def pair(df, a, b, col, files=None):
+    x, y = wide(df, a, col), wide(df, b, col)
+    idx = x.index.intersection(y.index)
+    if files is not None:
+        idx = idx.intersection(pd.Index(files))
+    return x.loc[idx], y.loc[idx]
 
 
-def wilson(k, n, z=1.959964):
-    if n == 0:
-        return (float("nan"), float("nan"))
-    p = k / n
-    den = 1 + z * z / n
-    c = (p + z * z / (2 * n)) / den
-    h = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / den
-    return (100 * (c - h), 100 * (c + h))
+def files_of(df, level, key="tumor"):
+    s = df[df.config == "A_ESRG"]
+    return s.file if level == "all" else s[s[key] == level].file
 
 
 def rate(v):
     v = [bool(x) for x in v if x is not None and not (isinstance(x, float) and math.isnan(x))]
-    return 100.0 * sum(v) / len(v) if v else float("nan")
+    return {"k": sum(v), "n": len(v), "pct": 100.0 * sum(v) / len(v) if v else float("nan"),
+            "ci": wilson(sum(v), len(v))}
 
 
-# ─── Data ────────────────────────────────────────────────────────────────────
-def load(d):
-    df = pd.read_csv(os.path.join(d, "raw_results.csv"))
-    df = df[df.file.isin(set(pd.read_csv(os.path.join(d, "sample.csv")).file))]
-    for c in ("leaked", "success", "seed_hit", "biased"):
-        df[c] = df[c].map({True: True, False: False, "True": True, "False": False})
-    return df
-
-
-def wide(df, cfg, col):
-    s = df[df.config == cfg].set_index("file")[col]
-    return s
-
-
-def paired(df, a, b, col, mask=None):
-    x, y = wide(df, a, col), wide(df, b, col)
-    idx = x.index.intersection(y.index)
-    if mask is not None:
-        idx = idx.intersection(mask)
-    return x.loc[idx], y.loc[idx]
-
-
-def compare(df, base, enh, rows_idx=None, holm_family=True):
-    """Overall table: descriptives of both configs, mean difference, Wilcoxon, McNemar."""
-    out, ps = [], []
-    for m in METRICS:
-        x, y = paired(df, base, enh, m, rows_idx)
-        w = wilcoxon(x, y)
-        out.append({"metric": m, "base": desc(x), "enh": desc(y),
-                    "diff_mean": desc(y)["mean"] - desc(x)["mean"] if desc(x)["n"] else None, **w})
-        ps.append(w["p"])
-    for m in ("success", "leaked"):
-        x, y = paired(df, base, enh, m, rows_idx)
+def compare(df, base, enh, metrics, rates=("success", "leaked"), files=None, worst_case=True):
+    """Descriptives of both configurations, Wilcoxon per metric, McNemar per rate; Holm over all."""
+    rows, ps = [], []
+    for m in metrics:
+        x, y = pair(df, base, enh, m, files)
+        rows.append({"metric": m, "base": desc(x), "enh": desc(y), **wilcoxon(x, y),
+                     "shapiro_diff": shapiro(x, y)})
+        ps.append(rows[-1]["p"])
+    for m in rates:
+        x, y = pair(df, base, enh, m, files)
         x, y = x.fillna(False).astype(bool), y.fillna(False).astype(bool)
-        mc = mcnemar(x, y)
-        out.append({"metric": m, "base_rate": 100 * x.mean(), "enh_rate": 100 * y.mean(),
-                    "base_k": int(x.sum()), "enh_k": int(y.sum()), "N": int(len(x)),
-                    "diff_pp": 100 * (y.mean() - x.mean()), **mc})
-        ps.append(mc["p"])
-    if holm_family:
-        for row, pa in zip(out, holm(ps)):
-            row["p_holm"] = pa
+        rows.append({"metric": m, **mcnemar(x, y), "ci_ref": wilson(int(x.sum()), len(x)),
+                     "ci_cmp": wilson(int(y.sum()), len(y))})
+        ps.append(rows[-1]["p"])
+    for r, pa in zip(rows, holm(ps)):
+        r["p_holm"] = pa
+    return rows
+
+
+def by_class_tests(df, refs, enh, col):
+    """Full ESRG (enh) against each reference configuration, per class; Holm across refs within a class."""
+    out = {}
+    for lv in LEVELS:
+        f = files_of(df, lv)
+        row = {"enh": desc(wide(df, enh, col).loc[f])}
+        tests = {r: wilcoxon(*pair(df, r, enh, col, f)) for r in refs}
+        for r, pa in zip(refs, holm([tests[r]["p"] for r in refs])):
+            tests[r]["p_holm"] = pa
+            tests[r]["ref"] = desc(wide(df, r, col).loc[f])
+        row["tests"] = tests
+        out[lv] = row
     return out
 
 
-def per_class_tests(df, base, enh, col, classes=CLASSES):
-    res, ps = {}, []
-    for c in classes:
-        idx = df[(df.config == enh) & (df.tumor == c)].file
-        x, y = paired(df, base, enh, col, pd.Index(idx))
-        w = wilcoxon(x, y)
-        res[c] = {"base": desc(x), "enh": desc(y), **w}
-        ps.append(w["p"])
-    for c, pa in zip(classes, holm(ps)):
-        res[c]["p_holm"] = pa
-    x, y = paired(df, base, enh, col)
-    res["all"] = {"base": desc(x), "enh": desc(y), **wilcoxon(x, y)}
-    res["all"]["p_holm"] = res["all"]["p"]
-    return res
-
-
-def analyze(d):
-    df = load(d)
-    sample = pd.read_csv(os.path.join(d, "sample.csv"))
-    strata = pd.read_csv(os.path.join(d, "sample_strata.csv"))
-    R = {"meta": {"n_sample": int(len(sample)), "N_population": int(strata.N_h.sum()),
-                  "frac": SAMPLE_FRAC, "size": SAMPLE_SIZE, "seed": SAMPLE_SEED, "inu": INU,
-                  "n_rows": int(len(df)), "n_errors": int((df.status == "ERROR").sum()),
-                  "errors": df[df.status == "ERROR"][["file", "config", "error"]].to_dict("records")}}
-    R["strata"] = strata.to_dict("records")
-    R["configs"] = [{"id": k, "desc": v[0], "seeding": v[2], "biased": v[3],
-                     "overrides": v[1], "n": int((df.config == k).sum()),
-                     "n_no_candidate": int(((df.config == k) & (df.status == "NO TUMOR CANDIDATE")).sum()),
-                     "n_leak_warn": int(((df.config == k) & (df.status == "WARN")).sum())}
-                    for k, v in CONFIGS.items()]
-
-    # Summary of every configuration (E4 ablation overview)
-    summ = {}
-    for k in CONFIGS:
-        s = df[df.config == k]
-        summ[k] = {**{m: desc(s[m]) for m in METRICS},
-                   "success": rate(s.success), "leaked": rate(s.leaked),
-                   "area_ratio_median": float(s.area_ratio.median()),
-                   "seed_area_median": float(s.seed_area.median()),
-                   "sigma_A_initial_median": float(s.sigma_A_initial.median()) if s.sigma_A_initial.notna().any() else None,
-                   "seconds_parallel": desc(s.seconds)}
-    R["summary"] = summ
-
-    # 4.1 overall comparisons
-    R["overall_auto"] = compare(df, "A_SRG", "A_ESRG")
-    R["overall_planted"] = compare(df, "P_SRG", "P_ESRG")
-    # median area ratio (predicted / true area) per seeding
-    R["area_ratio"] = {k: float(df[df.config == k].area_ratio.median()) for k in CONFIGS}
-
-    # 4.2.1 Objective 1 — seed hit rate
+# ─── E1: Objective 1 ─────────────────────────────────────────────────────────
+def e1(df):
     a = df[df.config == "A_ESRG"].copy()
     a["seeded"] = a.seed_area > 0
-    obj1 = {}
-    for grp, key in [("class", "tumor"), ("plane", "plane")]:
-        levels = CLASSES if key == "tumor" else PLANES
+    R = {}
+    for grp, key, levels in (("class", "tumor", CLASSES), ("plane", "plane", PLANES)):
         tab = {}
         for lv in levels + ["all"]:
             s = a if lv == "all" else a[a[key] == lv]
-            seeded = s[s.seeded]
-            k = int(seeded.seed_hit.fillna(False).astype(bool).sum())
-            ns = int(len(seeded))
-            hit = seeded[seeded.seed_hit == True]
-            miss = s[~(s.seed_hit == True)]
-            tab[lv] = {"n": int(len(s)), "N_S": ns, "no_candidate": int((~s.seeded).sum()),
-                       "hits": k, "rate": 100 * k / ns if ns else float("nan"), "ci": wilson(k, ns),
-                       "dsc_hit_median": float(hit.dsc.median()) if len(hit) else None,
-                       "dsc_miss_median": float(miss.dsc.median()) if len(miss) else None,
-                       "success_hit": rate(hit.success), "success_miss": rate(miss.success),
-                       "seed_in_gt_mean": float(seeded.seed_in_gt_frac.mean())}
-        cont = [[tab[lv]["hits"], tab[lv]["N_S"] - tab[lv]["hits"]] for lv in levels]
-        try:
-            chi2, p, dof, _ = stats.chi2_contingency(cont, correction=False)
-            tab["chi2"] = {"chi2": float(chi2), "p": float(p), "dof": int(dof)}
-        except ValueError:                       # a level with no seeded slices
-            tab["chi2"] = None
-        obj1[grp] = tab
-    hit_d = a[a.seed_hit == True].dsc.dropna()
-    miss_d = a[~(a.seed_hit == True)].dsc.dropna()
-    mw = stats.mannwhitneyu(hit_d, miss_d, alternative="two-sided")
-    obj1["mannwhitney"] = {"U": float(mw.statistic), "p": float(mw.pvalue),
-                           "n_hit": int(hit_d.size), "n_miss": int(miss_d.size),
-                           "r_rb": float(2 * mw.statistic / (hit_d.size * miss_d.size) - 1)}
-    # automatic vs planted DSC per class for ESRG
-    obj1["auto_vs_planted"] = per_class_tests(df, "P_ESRG", "A_ESRG", "dsc")
-    R["obj1"] = obj1
+            sd = s[s.seeded]
+            k = int((sd.seed_hit == True).sum())
+            tab[lv] = {"n": int(len(s)), "no_candidate": int((~s.seeded).sum()),
+                       "N_S": int(len(sd)), "hits": k,
+                       "rate": 100 * k / len(sd) if len(sd) else float("nan"), "ci": wilson(k, len(sd)),
+                       "rate_all": 100 * k / len(s) if len(s) else float("nan"), "ci_all": wilson(k, len(s)),
+                       "seed_dist": desc(sd.seed_distance), "inside_frac": desc(sd.seed_in_gt_frac),
+                       "seed_area": desc(sd.seed_area)}
+        tab["test"] = chi2([[tab[lv]["hits"], tab[lv]["N_S"] - tab[lv]["hits"]] for lv in levels])
+        R[grp] = tab
+    # class x plane hit rate grid
+    R["class_plane"] = {f"{c}|{p}": rate(a[(a.tumor == c) & (a.plane == p) & a.seeded].seed_hit == True)
+                        for c in CLASSES for p in PLANES}
 
-    # E5 failure attribution
-    buckets = {}
-    for lv in CLASSES + ["all"]:
-        s = a if lv == "all" else a[a.tumor == lv]
-        vc = s.bucket.value_counts()
-        buckets[lv] = {b: {"k": int(vc.get(b, 0)), "pct": 100 * vc.get(b, 0) / len(s)} for b in BUCKET_LABEL}
-        buckets[lv]["n"] = int(len(s))
-    R["buckets"] = buckets
-    R["bucket_labels"] = BUCKET_LABEL
+    # effect of the seed outcome on delineation
+    hit, miss = a[a.seed_hit == True], a[a.seed_hit != True]
+    R["hit_vs_miss"] = {"hit": {"dsc": desc(hit.dsc), "success": rate(hit.success)},
+                        "miss": {"dsc": desc(miss.dsc), "success": rate(miss.success)},
+                        "test": mannwhitney(hit.dsc, miss.dsc)}
 
-    # 4.2.2 Objective 2 — recall ablation (planted)
-    obj2 = {}
-    for cmp_cfg in ("P_SRG", "P_ESRG_global", "P_ESRG_nolog"):
-        obj2[cmp_cfg] = {m: per_class_tests(df, cmp_cfg, "P_ESRG", m) for m in ("recall", "dsc", "precision")}
-    # Holm across the three comparisons, per class, on recall
-    for lv in CLASSES + ["all"]:
-        ps = [obj2[c]["recall"][lv]["p"] for c in ("P_SRG", "P_ESRG_global", "P_ESRG_nolog")]
-        for c, pa in zip(("P_SRG", "P_ESRG_global", "P_ESRG_nolog"), holm(ps)):
-            obj2[c]["recall"][lv]["p_holm3"] = pa
-    R["obj2"] = obj2
-
-    # E2 bias robustness: clean vs biased, same planted seed
-    e2, ps = {}, []
-    for clean, biased in [("P_SRG", "B_SRG"), ("P_ESRG", "B_ESRG"),
-                          ("P_ESRG_global", "B_ESRG_global"), ("P_ESRG_nolog", "B_ESRG_nolog")]:
-        e2[biased] = {}
-        for m in ("recall", "dsc", "precision"):
-            x, y = paired(df, clean, biased, m)
-            e2[biased][m] = {"clean": desc(x), "biased": desc(y), **wilcoxon(x, y),
-                             "mean_abs_change": float(np.nanmean(np.abs(y.to_numpy(float) - x.to_numpy(float))))}
-        e2[biased]["leaked"] = {"clean": rate(wide(df, clean, "leaked")), "biased": rate(wide(df, biased, "leaked"))}
-        ps.append(e2[biased]["recall"]["p"])
-    for k, pa in zip(e2, holm(ps)):
-        e2[k]["recall"]["p_holm"] = pa
-    x, y = paired(df, "B_SRG", "B_SRG_N4", "recall")
-    e2["n4_vs_srg_biased"] = {"recall": {"srg": desc(x), "srg_n4": desc(y), **wilcoxon(x, y)},
-                              "dsc": {"srg": desc(wide(df, "B_SRG", "dsc")), "srg_n4": desc(wide(df, "B_SRG_N4", "dsc"))}}
-    x, y = paired(df, "B_SRG_N4", "B_ESRG", "recall")
-    e2["esrg_vs_n4_biased"] = {"recall": wilcoxon(x, y)}
-    R["e2"] = e2
-
-    # 4.2.3 Objective 3 — stopping criterion (planted)
-    obj3 = {"precision": per_class_tests(df, "P_ESRG_nostop", "P_ESRG", "precision"),
-            "dsc": per_class_tests(df, "P_ESRG_nostop", "P_ESRG", "dsc"),
-            "recall": per_class_tests(df, "P_ESRG_nostop", "P_ESRG", "recall"), "leak": {}}
-    for lv in CLASSES + ["all"]:
-        idx = df[(df.config == "P_ESRG") & ((df.tumor == lv) if lv != "all" else True)].file
-        x, y = paired(df, "P_ESRG_nostop", "P_ESRG", "leaked", pd.Index(idx))
-        x, y = x.fillna(False).astype(bool), y.fillna(False).astype(bool)
-        xr, yr = paired(df, "P_ESRG_nostop", "P_ESRG", "area_ratio", pd.Index(idx))
-        obj3["leak"][lv] = {"nostop": 100 * x.mean(), "esrg": 100 * y.mean(), **mcnemar(x, y),
-                            "ratio_nostop": float(xr.median()), "ratio_esrg": float(yr.median()),
-                            "n": int(len(x))}
-    obj3["precision_median_esrg"] = float(wide(df, "P_ESRG", "precision").median())
-    R["obj3"] = obj3
-
-    # Seed purification trade-off (planted, ESRG)
-    pur = compare(df, "P_ESRG_nopurify", "P_ESRG")
-    R["purify"] = {"table": pur,
-                   "seed_area": {"nopurify": float(wide(df, "P_ESRG_nopurify", "seed_area").median()),
-                                 "purify": float(wide(df, "P_ESRG", "seed_area").median())},
-                   "sigma_A": {"nopurify": desc(wide(df, "P_ESRG_nopurify", "sigma_A_initial")),
-                               "purify": desc(wide(df, "P_ESRG", "sigma_A_initial"))},
-                   "sigma_floor_binding": {
-                       k: 100 * float((df[df.config == k].sigma_A_initial <= df[df.config == k].sigma_floor + 1e-9).mean())
-                       for k in ("P_ESRG", "P_ESRG_nopurify", "A_ESRG")}}
-
-    # 4.2.4 DSC by class and plane
-    byc = {}
-    for lv in CLASSES + ["all"]:
+    # operator variability: five simulated operator clicks per slice
+    ov = {}
+    for name, cfgs in (("srg", O_SRG), ("esrg", O_ESRG)):
+        m = pd.concat([wide(df, c, "dsc").rename(c) for c in cfgs], axis=1)
+        sm = pd.concat([wide(df, c, "success").rename(c) for c in cfgs], axis=1).fillna(False).astype(bool)
+        per = pd.DataFrame({"mean": m.mean(axis=1), "sd": m.std(axis=1, ddof=1),
+                            "range": m.max(axis=1) - m.min(axis=1),
+                            "n_success": sm.sum(axis=1)})
+        per["inconsistent"] = (per.n_success > 0) & (per.n_success < len(cfgs))
+        ov[name] = {"per": per}
+    auto = wide(df, "A_ESRG", "dsc")
+    out = {}
+    for lv in LEVELS:
+        f = files_of(df, lv)
         row = {}
-        for k in ("A_SRG", "A_ESRG", "P_SRG", "P_ESRG"):
-            s = df[(df.config == k) & ((df.tumor == lv) if lv != "all" else True)]
-            row[k] = {"median": float(s.dsc.median()), "mean": float(s.dsc.mean()),
-                      "success": rate(s.success), "hd95_median": float(s.hd95.median()),
-                      "dsc0": 100 * float((s.dsc == 0).mean()), "n": int(len(s))}
-        byc[lv] = row
-    R["dsc_by_class"] = byc
-    R["dsc_tests_auto"] = per_class_tests(df, "A_SRG", "A_ESRG", "dsc")
-    R["dsc_tests_planted"] = per_class_tests(df, "P_SRG", "P_ESRG", "dsc")
-    R["hd95_tests_auto"] = per_class_tests(df, "A_SRG", "A_ESRG", "hd95")
-    kw = {}
-    for k in ("A_ESRG", "P_ESRG"):
-        s = df[df.config == k]
-        kw[k] = {}
-        for name, col, levels in (("class", "tumor", CLASSES), ("plane", "plane", PLANES)):
-            groups = [g for g in (s[s[col] == lv].dsc.dropna() for lv in levels) if len(g)]
-            h = stats.kruskal(*groups) if len(groups) > 1 else None
-            kw[k][name] = {"H": float(h.statistic), "p": float(h.pvalue)} if h else None
-    R["kruskal"] = kw
-    byp = {}
+        for name in ("srg", "esrg"):
+            p = ov[name]["per"].loc[f]
+            row[name] = {"sd": desc(p.sd), "range": desc(p["range"]), "mean_dsc": desc(p["mean"]),
+                         "inconsistent": rate(p.inconsistent)}
+        row["sd_test"] = wilcoxon(ov["srg"]["per"].loc[f].sd, ov["esrg"]["per"].loc[f].sd)
+        row["auto_vs_operator_esrg"] = wilcoxon(ov["esrg"]["per"].loc[f]["mean"], auto.loc[f])
+        row["auto_vs_operator_srg"] = wilcoxon(ov["srg"]["per"].loc[f]["mean"], auto.loc[f])
+        row["auto_dsc"] = desc(auto.loc[f])
+        out[lv] = row
+    R["operator"] = out
+    R["operator_per"] = {k: v["per"].reset_index().to_dict("records") for k, v in ov.items()}
+    # clicks lie inside the tumor by construction: report how deep they were
+    oc = df[df.config.isin(O_ESRG)]
+    R["operator_clicks"] = {"depth": desc(oc.click_depth), "n": int(len(oc))}
+    return R
+
+
+def determinism(df, timing):
+    """Same slice, same configuration, two independent runs (parallel run vs timing pass)."""
+    if timing is None or "dsc" not in timing:
+        return None
+    out = {}
+    for cfg in ("A_SRG", "A_ESRG"):
+        t = timing[timing.config == cfg].set_index("file")
+        r = wide(df, cfg, "dsc")
+        ra = wide(df, cfg, "pred_area")
+        idx = t.index.intersection(r.index)
+        d = (pd.to_numeric(t.loc[idx, "dsc"]) - r.loc[idx]).abs()
+        da = (pd.to_numeric(t.loc[idx, "pred_area"]) - ra.loc[idx]).abs()
+        same = ((d.fillna(0) == 0) & (da.fillna(0) == 0))
+        out[cfg] = {"n": int(len(idx)), "identical": int(same.sum()), "max_abs_dsc_diff": float(d.max()),
+                    "pct_identical": 100 * float(same.mean()) if len(idx) else None}
+    return out
+
+
+# ─── E2: Objective 2 ─────────────────────────────────────────────────────────
+def e2(df):
+    R = {"recall": by_class_tests(df, ["P_SRG", "P_ESRG_global", "P_ESRG_nolog"], "P_ESRG", "recall"),
+         "precision": by_class_tests(df, ["P_SRG", "P_ESRG_global", "P_ESRG_nolog"], "P_ESRG", "precision"),
+         "dsc": by_class_tests(df, ["P_SRG", "P_ESRG_global", "P_ESRG_nolog"], "P_ESRG", "dsc")}
+    for c in ("P_SRG", "P_ESRG_global", "P_ESRG_nolog", "P_ESRG"):
+        s = df[df.config == c]
+        R.setdefault("missed", {})[c] = desc(1 - s.recall)
+        R.setdefault("recall_ge_50", {})[c] = rate(s.recall >= 0.5)
+    # automatic seeding, restricted to slices whose seed hit the tumor (same seed for both)
+    hits = df[(df.config == "A_ESRG") & (df.seed_hit == True)].file
+    R["auto_on_hits"] = {m: {"srg": desc(wide(df, "A_SRG", m).loc[hits]),
+                             "esrg": desc(wide(df, "A_ESRG", m).loc[hits]),
+                             **wilcoxon(*pair(df, "A_SRG", "A_ESRG", m, hits))}
+                         for m in ("recall", "dsc", "precision")}
+    R["auto_on_hits"]["n"] = int(len(hits))
+    # bias field
+    bias, ps = {}, []
+    for clean, biased in (("P_SRG", "B_SRG"), ("P_ESRG_global", "B_ESRG_global"),
+                          ("P_ESRG_nolog", "B_ESRG_nolog"), ("P_ESRG", "B_ESRG")):
+        x, y = pair(df, clean, biased, "recall")
+        dx, dy = pair(df, clean, biased, "dsc")
+        bias[biased] = {"clean": desc(x), "biased": desc(y), **wilcoxon(x, y),
+                        "mean_abs_change": float(np.nanmean(np.abs(y.to_numpy(float) - x.to_numpy(float)))),
+                        "dsc_clean": desc(dx), "dsc_biased": desc(dy)}
+        ps.append(bias[biased]["p"])
+    for k, pa in zip(list(bias), holm(ps)):
+        bias[k]["p_holm"] = pa
+    bias["B_SRG_N4"] = {"biased": desc(wide(df, "B_SRG_N4", "recall")),
+                        "dsc_biased": desc(wide(df, "B_SRG_N4", "dsc")),
+                        "vs_B_SRG": wilcoxon(*pair(df, "B_SRG", "B_SRG_N4", "recall")),
+                        "B_ESRG_vs": wilcoxon(*pair(df, "B_SRG_N4", "B_ESRG", "recall"))}
+    R["bias"] = bias
+    gt = wide(df, "P_ESRG", "gt_area")
+    diam = 2 * np.sqrt(gt / np.pi)
+    R["bias_context"] = {"gt_diam_median": float(diam.median()),
+                         "change_over_median_tumor_pct": float(100 * INU * diam.median() / (math.sqrt(2) * 512))}
+    return R
+
+
+# ─── E3: Objective 3 ─────────────────────────────────────────────────────────
+def e3(df):
+    R = {}
+    for col in ("precision", "dsc", "recall", "hd95_wc", "assd_wc"):
+        R[col] = by_class_tests(df, ["P_ESRG_nostop", "P_SRG"], "P_ESRG", col)
+    leak = {}
+    for lv in LEVELS:
+        f = files_of(df, lv)
+        row = {}
+        for ref in ("P_ESRG_nostop", "P_SRG"):
+            x, y = pair(df, ref, "P_ESRG", "leaked", f)
+            row[ref] = mcnemar(x.fillna(False).astype(bool), y.fillna(False).astype(bool))
+        row["ratio"] = {c: desc(wide(df, c, "area_ratio").loc[f]) for c in ("P_ESRG_nostop", "P_SRG", "P_ESRG")}
+        row["fp"] = {c: desc(wide(df, c, "fp").loc[f]) for c in ("P_ESRG_nostop", "P_SRG", "P_ESRG")}
+        row["leak_ci"] = {c: rate(wide(df, c, "leaked").loc[f]) for c in ("P_ESRG_nostop", "P_SRG", "P_ESRG")}
+        leak[lv] = row
+    R["leak"] = leak
+    st = df[df.config == "P_ESRG"].stop_reason.fillna("").str.replace(r"[0-9.]+", "#", regex=True)
+    R["stop_reasons"] = st.value_counts().to_dict()
+    R["passes"] = df[df.config == "P_ESRG"].n_passes.value_counts().sort_index().to_dict()
+    # seed purification: the bound is set by the seed's spread (Eq. 3.28)
+    pur = compare(df, "P_ESRG_nopurify", "P_ESRG", ["dsc", "recall", "precision", "hd95_wc"])
+    R["purify"] = {"table": pur,
+                   "seed_area": {c: desc(wide(df, c, "seed_area")) for c in ("P_ESRG_nopurify", "P_ESRG")},
+                   "sigma_A": {c: desc(wide(df, c, "sigma_A_initial")) for c in ("P_ESRG_nopurify", "P_ESRG")},
+                   "floor_binding": {c: 100 * float((df[df.config == c].sigma_A_initial
+                                                     <= df[df.config == c].sigma_floor + 1e-9).mean())
+                                     for c in ("P_ESRG_nopurify", "P_ESRG", "A_ESRG")}}
+    # automatic seeding, seed-hit slices: leakage of SRG vs ESRG
+    hits = df[(df.config == "A_ESRG") & (df.seed_hit == True)].file
+    x, y = pair(df, "A_SRG", "A_ESRG", "leaked", hits)
+    R["auto_on_hits"] = {"leak": mcnemar(x.fillna(False).astype(bool), y.fillna(False).astype(bool)),
+                         "precision": wilcoxon(*pair(df, "A_SRG", "A_ESRG", "precision", hits)),
+                         "precision_desc": {c: desc(wide(df, c, "precision").loc[hits]) for c in ("A_SRG", "A_ESRG")}}
+    a = df[df.config == "A_ESRG"]
+    lk = a[a.leaked == True]
+    R["auto_leaks"] = {"n": int(len(lk)), "seed_miss": int((lk.seed_hit != True).sum())}
+    return R
+
+
+# ─── E4: overall delineation and ablation ────────────────────────────────────
+def e4(df, strata):
+    M = ["dsc", "iou", "precision", "recall", "hd95_wc", "assd_wc"]
+    R = {"auto": compare(df, "A_SRG", "A_ESRG", M), "planted": compare(df, "P_SRG", "P_ESRG", M)}
+    by = {}
+    for lv in LEVELS:
+        f = files_of(df, lv)
+        row = {}
+        for c in ("A_SRG", "A_ESRG", "P_SRG", "P_ESRG"):
+            s = df[(df.config == c) & df.file.isin(f)]
+            row[c] = {"dsc": desc(s.dsc), "iou": desc(s.iou), "success": rate(s.success),
+                      "dsc0": 100 * float((s.dsc == 0).mean())}
+        row["auto_test"] = wilcoxon(*pair(df, "A_SRG", "A_ESRG", "dsc", f))
+        row["planted_test"] = wilcoxon(*pair(df, "P_SRG", "P_ESRG", "dsc", f))
+        by[lv] = row
+    for key in ("auto_test", "planted_test"):
+        for lv, pa in zip(CLASSES, holm([by[c][key]["p"] for c in CLASSES])):
+            by[lv][key]["p_holm"] = pa
+        by["all"][key]["p_holm"] = by["all"][key]["p"]
+    R["by_class"] = by
+    grid = {}
     for c in CLASSES + ["all"]:
         for p in PLANES + ["all"]:
             row = {}
             for k in ("A_ESRG", "P_ESRG"):
                 s = df[(df.config == k) & ((df.tumor == c) if c != "all" else True)
                        & ((df.plane == p) if p != "all" else True)]
-                row[k] = {"median": float(s.dsc.median()), "success": rate(s.success), "n": int(len(s))}
-            byp[f"{c}|{p}"] = row
-    R["dsc_by_class_plane"] = byp
-
-    # E4 Friedman across the planted ESRG ablation arms (DSC)
+                row[k] = {"dsc": desc(s.dsc), "success": rate(s.success)}
+            grid[f"{c}|{p}"] = row
+    R["class_plane"] = grid
+    R["kruskal"] = {k: {"class": kruskal([df[(df.config == k) & (df.tumor == c)].dsc for c in CLASSES]),
+                        "plane": kruskal([df[(df.config == k) & (df.plane == p)].dsc for p in PLANES])}
+                    for k in ("A_ESRG", "P_ESRG")}
+    # ablation (E4): four ESRG arms from the same planted seed
     arms = ["P_ESRG", "P_ESRG_global", "P_ESRG_nolog", "P_ESRG_nostop"]
-    mat = pd.concat([wide(df, k, "dsc").rename(k) for k in arms], axis=1).dropna()
-    fr = stats.friedmanchisquare(*[mat[k] for k in arms])
-    R["friedman"] = {"arms": arms, "chi2": float(fr.statistic), "p": float(fr.pvalue), "n": int(len(mat)),
-                     "mean_rank": {k: float(v) for k, v in mat.rank(axis=1, ascending=False).mean().items()}}
-
-    # Pairwise follow-up to Friedman: full ESRG vs each ablated arm (DSC), Holm over 3
+    mat = pd.concat([wide(df, k, "dsc").rename(k) for k in arms], axis=1)
+    fr = friedman(mat)
     pw = {k: wilcoxon(mat[k], mat["P_ESRG"]) for k in arms[1:]}
     for k, pa in zip(pw, holm([pw[k]["p"] for k in pw])):
         pw[k]["p_holm"] = pa
-    R["friedman"]["pairwise"] = pw
+    fr["pairwise"] = pw
+    fr["summary"] = {k: {"dsc": desc(wide(df, k, "dsc")), "recall": desc(wide(df, k, "recall")),
+                         "precision": desc(wide(df, k, "precision")), "success": rate(wide(df, k, "success")),
+                         "leaked": rate(wide(df, k, "leaked"))} for k in arms + ["P_SRG"]}
+    R["ablation"] = fr
+    # population-weighted estimates (equal allocation -> reweight to the population)
+    N_h = {f"{r.tumor}|{r.plane}": int(r.N_h) for r in strata.itertuples()}
+    R["weighted"] = {c: {m: stratified_mean(df[df.config == c], m, "stratum", N_h) for m in ("dsc", "recall", "precision")}
+                     for c in ("A_SRG", "A_ESRG", "P_SRG", "P_ESRG")}
+    R["unweighted"] = {c: {m: desc(wide(df, c, m)) for m in ("dsc", "recall", "precision")}
+                       for c in ("A_SRG", "A_ESRG", "P_SRG", "P_ESRG")}
+    # tuning-overlap check: slices drawn from the training split vs the test split
+    a = df[df.config == "A_ESRG"]
+    R["split_check"] = {c: {"train": desc(df[(df.config == c) & (df.split == "train")].dsc),
+                            "test": desc(df[(df.config == c) & (df.split == "test")].dsc),
+                            "test_mw": mannwhitney(df[(df.config == c) & (df.split == "train")].dsc,
+                                                   df[(df.config == c) & (df.split == "test")].dsc),
+                            "seed_hit_train": rate(a[a.split == "train"].seed_hit == True) if c == "A_ESRG" else None,
+                            "seed_hit_test": rate(a[a.split == "test"].seed_hit == True) if c == "A_ESRG" else None}
+                        for c in ("A_ESRG", "P_ESRG")}
+    R["dsc_hist"] = {c: np.histogram(wide(df, c, "dsc").dropna(), bins=np.linspace(0, 1, 21))[0].tolist()
+                     for c in ("A_SRG", "A_ESRG", "P_SRG", "P_ESRG")}
+    return R
 
-    # Supporting facts cited in the discussion
-    ae = df[df.config == "A_ESRG"]
-    leak = ae[ae.leaked == True]
-    gt = df[df.config == "P_ESRG"].gt_area
-    diam = 2 * np.sqrt(gt / np.pi)
-    R["extra"] = {
-        "auto_leak_n": int(len(leak)), "auto_leak_seed_miss": int((leak.seed_hit != True).sum()),
-        "auto_dsc0_srg": 100 * float((df[df.config == "A_SRG"].dsc == 0).mean()),
-        "auto_dsc0_esrg": 100 * float((ae.dsc == 0).mean()),
-        "gt_area_median": float(gt.median()), "gt_diam_median": float(diam.median()),
-        # A linear field changes by INU over the image diagonal (~sqrt(2) * 512 px at most)
-        "bias_change_over_median_tumor_pct": float(100 * INU * diam.median() / (math.sqrt(2) * 512)),
-        "stop_reasons_P_ESRG": df[df.config == "P_ESRG"].stop_reason.str.replace(r"[0-9.]+", "#", regex=True)
-                               .value_counts().to_dict(),
-    }
 
-    # E6 processing time — sequential pass
+# ─── E5: failure attribution ─────────────────────────────────────────────────
+def e5(df):
+    a = df[df.config == "A_ESRG"]
+    out = {}
+    for lv in LEVELS:
+        s = a if lv == "all" else a[a.tumor == lv]
+        vc = s.bucket.value_counts()
+        out[lv] = {b: {"k": int(vc.get(b, 0)), "pct": 100 * float(vc.get(b, 0)) / max(len(s), 1)}
+                   for b in BUCKET_LABEL}
+        out[lv]["n"] = int(len(s))
+    out["test"] = chi2([[out[c][b]["k"] for b in ("G", "B", "C")] + [out[c]["n"] - sum(out[c][b]["k"] for b in ("G", "B", "C"))]
+                        for c in CLASSES])
+    return out
+
+
+# ─── E6: processing time ─────────────────────────────────────────────────────
+STAGES = ["t_input", "t_mask", "t_log", "t_candidates", "t_growth", "t_final"]
+
+
+def e6(timing):
+    if timing is None:
+        return None
+    out = {}
+    for lv in LEVELS:
+        s = timing if lv == "all" else timing[timing.tumor == lv]
+        x = s[s.config == "A_SRG"].set_index("file").seconds
+        y = s[s.config == "A_ESRG"].set_index("file").seconds
+        idx = x.index.intersection(y.index)
+        out[lv] = {"srg": desc(x.loc[idx]), "esrg": desc(y.loc[idx]), **wilcoxon(x.loc[idx], y.loc[idx]),
+                   "reduction_pct_mean": 100 * (1 - y.loc[idx].mean() / x.loc[idx].mean()),
+                   "reduction_pct_median": 100 * (1 - y.loc[idx].median() / x.loc[idx].median()),
+                   "faster_share": 100 * float((y.loc[idx] < x.loc[idx]).mean())}
+    for lv, pa in zip(CLASSES, holm([out[c]["p"] for c in CLASSES])):
+        out[lv]["p_holm"] = pa
+    out["all"]["p_holm"] = out["all"]["p"]
+    out["stages"] = {c: {st: desc(timing[timing.config == c][st]) for st in STAGES}
+                     for c in ("A_SRG", "A_ESRG")}
+    out["order_effect"] = {c: {"first": desc(timing[(timing.config == c) & (timing.order == 1)].seconds),
+                               "second": desc(timing[(timing.config == c) & (timing.order == 2)].seconds)}
+                           for c in ("A_SRG", "A_ESRG")}
+    return out
+
+
+def analyze(d):
+    df, sample = load(d)
+    strata = pd.read_csv(os.path.join(d, "sample_strata.csv"))
+    size = pd.read_csv(os.path.join(d, "sample_size.csv"))
     tp = os.path.join(d, "timing_sequential.csv")
-    t = pd.read_csv(tp) if os.path.isfile(tp) else df[df.config.isin(["A_SRG", "A_ESRG"])]
-    R["timing_source"] = "sequential" if os.path.isfile(tp) else "parallel run (10 worker processes)"
-    if True:
-        tt = {}
-        for lv in CLASSES + ["all"]:
-            s = t if lv == "all" else t[t.tumor == lv]
-            xs = s[s.config == "A_SRG"].set_index("file").seconds
-            ys = s[s.config == "A_ESRG"].set_index("file").seconds
-            idx = xs.index.intersection(ys.index)
-            tt[lv] = {"srg": desc(xs.loc[idx]), "esrg": desc(ys.loc[idx]), **wilcoxon(xs.loc[idx], ys.loc[idx])}
-        R["timing"] = tt
-    return df, R
+    timing = pd.read_csv(tp) if os.path.isfile(tp) else None
+    if timing is not None:
+        timing = timing[timing.file.isin(set(sample.file))]
+    env_p = os.path.join(d, "timing_environment.json")
+    R = {"meta": {"n_sample": int(len(sample)), "N_population": int(strata.N_h.sum()),
+                  "n_rows": int(len(df)), "n_configs": int(df.config.nunique()),
+                  "n_errors": int((df.status == "ERROR").sum()),
+                  "errors": df[df.status == "ERROR"][["file", "config", "error"]].to_dict("records"),
+                  "status_counts": df.status.value_counts().to_dict(),
+                  "split_counts": sample.split.value_counts().to_dict(),
+                  "inu": INU, "n_clicks": N_CLICKS, "success_dsc": SUCCESS_DSC,
+                  "environment": json.load(open(env_p)) if os.path.isfile(env_p) else None},
+         "strata": strata.to_dict("records"), "sample_size": size.to_dict("records"),
+         "configs": [{"id": k, "desc": v[0], "seeding": v[2], "biased": v[3], "overrides": v[1],
+                      "n": int((df.config == k).sum()),
+                      "no_candidate": int(((df.config == k) & (df.status == "NO TUMOR CANDIDATE")).sum())}
+                     for k, v in CONFIGS.items()]}
+    R["summary"] = {k: {**{m: desc(df[df.config == k][m]) for m in
+                           ("dsc", "iou", "precision", "recall", "hd95", "hd95_wc", "assd_wc", "area_ratio", "seconds")},
+                        "success": rate(df[df.config == k].success), "leaked": rate(df[df.config == k].leaked)}
+                    for k in CONFIGS}
+    R["e1"] = e1(df)
+    R["e1"]["determinism"] = determinism(df, timing)
+    R["e2"] = e2(df)
+    R["e3"] = e3(df)
+    R["e4"] = e4(df, strata)
+    R["e5"] = e5(df)
+    R["e5_labels"] = BUCKET_LABEL
+    R["e6"] = e6(timing)
+    R["empty_pred"] = {k: int(((df.config == k) & (df.pred_area == 0)).sum()) for k in CONFIGS}
+    return df, timing, R
 
 
 # ─── Figures ─────────────────────────────────────────────────────────────────
-C_ESRG, C_SRG, C_A3, C_A4, C_A5 = "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"
+C_ESRG, C_SRG, C_A3, C_A4, C_A5 = "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#c4458a"
 INK, INK2, GRID = "#0b0b0b", "#52514e", "#e4e3df"
+CLS_LABEL = {"glioma": "Glioma", "meningioma": "Meningioma", "pituitary": "Pituitary", "all": "All classes"}
 
 
 def _style(plt):
@@ -395,109 +434,128 @@ def _style(plt):
 
 
 def _bars(ax, groups, series, values, errs, colors, ylim=(0, 1), fmt="{:.2f}"):
-    n = len(series)
-    w = 0.8 / n
+    w = 0.8 / len(series)
     x = np.arange(len(groups))
     for i, (s, col) in enumerate(zip(series, colors)):
         pos = x - 0.4 + w * (i + 0.5)
-        ax.bar(pos, values[i], w * 0.92, color=col, label=s, yerr=errs[i] if errs else None,
+        e = errs[i] if errs else None
+        ax.bar(pos, values[i], w * 0.92, color=col, label=s, yerr=e,
                error_kw={"elinewidth": 0.9, "capsize": 2.5, "ecolor": INK2})
-        for p, v, e in zip(pos, values[i], errs[i] if errs else [0] * len(pos)):
-            ax.text(p, v + (e or 0) + 0.015 * (ylim[1] - ylim[0]), fmt.format(v), ha="center",
-                    va="bottom", fontsize=7, color=INK2)
+        for j, (p, v) in enumerate(zip(pos, values[i])):
+            top = v + ((e[1][j] if isinstance(e, list) and len(e) == 2 and isinstance(e[0], list) else e[j]) if e else 0)
+            ax.text(p, top + 0.015 * (ylim[1] - ylim[0]), fmt.format(v), ha="center", va="bottom",
+                    fontsize=7, color=INK2)
     ax.set_xticks(x, groups)
     ax.set_ylim(*ylim)
 
 
-def figures(df, R, outdir):
+def figures(df, timing, R, outdir):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     _style(plt)
     os.makedirs(outdir, exist_ok=True)
     S = R["summary"]
-    mets = ["dsc", "iou", "precision", "recall"]
+    groups = [CLS_LABEL[c] for c in LEVELS]
 
-    # Figure 4.1 — overall means, auto and planted
-    fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.1), sharey=True)
-    for ax, (b, e, title) in zip(axes, [("A_SRG", "A_ESRG", "(a) Automatic seeding"),
-                                        ("P_SRG", "P_ESRG", "(b) Seed planted inside the tumor")]):
-        vals = [[S[b][m]["mean"] for m in mets], [S[e][m]["mean"] for m in mets]]
-        errs = [[S[b][m]["ci95"] for m in mets], [S[e][m]["ci95"] for m in mets]]
-        _bars(ax, [LABEL[m] for m in mets], ["SRG (baseline)", "ESRG (enhanced)"], vals, errs, [C_SRG, C_ESRG], (0, 1.12))
-        ax.set_yticks(np.arange(0, 1.01, 0.2))
-        ax.set_title(title, fontsize=10, loc="left", color=INK)
-    axes[0].set_ylabel("Mean score (95% CI)")
-    h, l = axes[0].get_legend_handles_labels()
-    fig.legend(h, l, loc="lower center", ncol=2, fontsize=9)
-    fig.tight_layout(rect=(0, 0.08, 1, 1))
-    fig.savefig(os.path.join(outdir, "fig4_1_overall.png"), dpi=300)
-    plt.close(fig)
+    def save(fig, name):
+        fig.tight_layout()
+        fig.savefig(os.path.join(outdir, name), dpi=300)
+        plt.close(fig)
 
-    # Figure 4.2 — seed hit rate by class, Wilson CI
-    t = R["obj1"]["class"]
-    lv = CLASSES + ["all"]
-    vals = [t[k]["rate"] for k in lv]
-    lo = [t[k]["rate"] - t[k]["ci"][0] for k in lv]
-    hi = [t[k]["ci"][1] - t[k]["rate"] for k in lv]
-    fig, ax = plt.subplots(figsize=(5.0, 3.0))
-    x = np.arange(len(lv))
-    ax.bar(x, vals, 0.55, color=C_ESRG, yerr=[lo, hi], error_kw={"elinewidth": 0.9, "capsize": 3, "ecolor": INK2})
-    for i, v in enumerate(vals):
-        ax.text(i, v + hi[i] + 1.5, f"{v:.1f}%", ha="center", fontsize=8, color=INK2)
-    ax.set_xticks(x, ["Meningioma", "Pituitary", "Glioma", "All"])
-    ax.set_ylim(0, 100)
-    ax.set_ylabel("Seed hit rate, % (95% CI)")
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "fig4_2_seed_hit.png"), dpi=300)
-    plt.close(fig)
+    # Figure 4.2 — seed hit rate by class and plane (Wilson CI)
+    fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.0), sharey=True, gridspec_kw={"width_ratios": [4, 4]})
+    for ax, grp, lv, lab in ((axes[0], "class", LEVELS, groups),
+                             (axes[1], "plane", PLANES + ["all"], ["Axial", "Coronal", "Sagittal", "All planes"])):
+        t = R["e1"][grp]
+        v = [t[k]["rate"] for k in lv]
+        lo = [t[k]["rate"] - t[k]["ci"][0] for k in lv]
+        hi = [t[k]["ci"][1] - t[k]["rate"] for k in lv]
+        x = np.arange(len(lv))
+        ax.bar(x, v, 0.55, color=C_ESRG, yerr=[lo, hi], error_kw={"elinewidth": 0.9, "capsize": 3, "ecolor": INK2})
+        for i, val in enumerate(v):
+            ax.text(i, val + hi[i] + 1.5, f"{val:.1f}%", ha="center", fontsize=8, color=INK2)
+        ax.set_xticks(x, lab, fontsize=8.5)
+        ax.set_ylim(0, 105)
+    axes[0].set_title("(a) By tumor class", fontsize=10, loc="left")
+    axes[1].set_title("(b) By imaging plane", fontsize=10, loc="left")
+    axes[0].set_ylabel("Seed hit rate, % (95% CI)")
+    save(fig, "fig4_2_seed_hit_rate.png")
 
-    # Figure 4.3 — Objective 2 recall ablation and Objective 3 precision
-    def cls_means(cfg, m):
-        out, err = [], []
-        for c in CLASSES + ["all"]:
-            s = df[(df.config == cfg) & ((df.tumor == c) if c != "all" else True)][m]
-            dd = desc(s)
-            out.append(dd["mean"]); err.append(dd["ci95"])
-        return out, err
-    fig, axes = plt.subplots(2, 1, figsize=(7.2, 6.4))
-    groups = ["Meningioma", "Pituitary", "Glioma", "All"]
-    cfgs = [("P_SRG", "SRG", C_SRG), ("P_ESRG_global", "ESRG, global measure", C_A3),
-            ("P_ESRG_nolog", "ESRG, log transform off", C_A4), ("P_ESRG", "ESRG (full)", C_ESRG)]
-    v, e = zip(*[cls_means(c, "recall") for c, _, _ in cfgs])
-    _bars(axes[0], groups, [n for _, n, _ in cfgs], v, e, [c for _, _, c in cfgs], (0, 1.15))
+    # Figure 4.3 — operator variability: within-slice SD of DSC over five clicks
+    fig, ax = plt.subplots(figsize=(7.2, 3.0))
+    per = {k: pd.DataFrame(v).set_index("file") for k, v in R["e1"]["operator_per"].items()}
+    cls = df[df.config == "A_ESRG"].set_index("file").tumor
+    data, pos, cols = [], [], []
+    for i, c in enumerate(LEVELS):
+        f = cls.index if c == "all" else cls[cls == c].index
+        for j, (k, col) in enumerate((("srg", C_SRG), ("esrg", C_ESRG))):
+            data.append(per[k].loc[f].sd.dropna().to_numpy())
+            pos.append(i * 3 + j)
+            cols.append(col)
+    bp = ax.boxplot(data, positions=pos, widths=0.7, patch_artist=True, showfliers=False,
+                    medianprops={"color": INK})
+    for b, col in zip(bp["boxes"], cols):
+        b.set_facecolor(col)
+        b.set_alpha(0.85)
+    ax.set_xticks([i * 3 + 0.5 for i in range(len(LEVELS))], groups)
+    ax.set_ylabel("Within-slice SD of DSC")
+    from matplotlib.patches import Patch
+    ax.legend(handles=[Patch(color=C_SRG, label="SRG, operator click"),
+                       Patch(color=C_ESRG, label="ESRG, operator click")],
+              loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=2, fontsize=8)
+    save(fig, "fig4_3_operator_variability.png")
+
+    # Figure 4.4 — Objective 2 recall (a) and Objective 3 precision (b), planted seed
+    def cls_stat(cfg, m):
+        v, e = [], []
+        for c in LEVELS:
+            dd = desc(df[(df.config == cfg) & ((df.tumor == c) if c != "all" else True)][m])
+            v.append(dd["mean"])
+            e.append(dd["ci95"])
+        return v, e
+    fig, axes = plt.subplots(2, 1, figsize=(7.2, 6.2))
+    c2 = [("P_SRG", "SRG (baseline)", C_SRG), ("P_ESRG_global", "ESRG, global measure", C_A3),
+          ("P_ESRG_nolog", "ESRG, log transform off", C_A4), ("P_ESRG", "ESRG (full)", C_ESRG)]
+    v, e = zip(*[cls_stat(c, "recall") for c, _, _ in c2])
+    _bars(axes[0], groups, [n for _, n, _ in c2], v, e, [c for _, _, c in c2], (0, 1.15))
     axes[0].set_title("(a) Objective 2: recall", fontsize=10, loc="left")
     axes[0].set_ylabel("Mean recall (95% CI)")
     axes[0].legend(loc="upper left", ncol=2, fontsize=8)
-    cfgs3 = [("P_ESRG_nostop", "ESRG, no stopping criterion", C_A5), ("P_ESRG", "ESRG (full)", C_ESRG)]
-    v, e = zip(*[cls_means(c, "precision") for c, _, _ in cfgs3])
-    _bars(axes[1], groups, [n for _, n, _ in cfgs3], v, e, [c for _, _, c in cfgs3], (0, 1.3))
+    c3 = [("P_ESRG_nostop", "ESRG, no stopping criterion", C_A5), ("P_ESRG", "ESRG (full)", C_ESRG)]
+    v, e = zip(*[cls_stat(c, "precision") for c, _, _ in c3])
+    _bars(axes[1], groups, [n for _, n, _ in c3], v, e, [c for _, _, c in c3], (0, 1.3))
     axes[1].set_title("(b) Objective 3: precision", fontsize=10, loc="left")
     axes[1].set_ylabel("Mean precision (95% CI)")
     axes[1].legend(loc="upper left", ncol=2, fontsize=8)
     for ax in axes:
         ax.set_yticks(np.arange(0, 1.01, 0.2))
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "fig4_3_obj2_obj3.png"), dpi=300)
-    plt.close(fig)
+    save(fig, "fig4_4_recall_precision.png")
 
-    # Figure 4.4 — bias robustness: recall clean vs biased
+    # Figure 4.5 — bias robustness
     pairs = [("P_SRG", "B_SRG", "SRG"), ("P_ESRG_global", "B_ESRG_global", "ESRG,\nglobal measure"),
              ("P_ESRG_nolog", "B_ESRG_nolog", "ESRG,\nlog off"), ("P_ESRG", "B_ESRG", "ESRG (full)")]
-    fig, ax = plt.subplots(figsize=(6.2, 3.1))
-    clean = [S[a]["recall"]["mean"] for a, _, _ in pairs]
-    biased = [S[b]["recall"]["mean"] for _, b, _ in pairs]
-    ce = [S[a]["recall"]["ci95"] for a, _, _ in pairs]
-    be = [S[b]["recall"]["ci95"] for _, b, _ in pairs]
-    _bars(ax, [n for _, _, n in pairs], ["Without bias field", f"With {int(INU*100)}% bias field"],
-          [clean, biased], [ce, be], ["#9ec5ef", C_ESRG], (0, 0.8))
+    fig, ax = plt.subplots(figsize=(6.4, 3.0))
+    _bars(ax, [n for _, _, n in pairs], ["Without bias field", f"With {int(INU * 100)}% bias field"],
+          [[S[a]["recall"]["mean"] for a, _, _ in pairs], [S[b]["recall"]["mean"] for _, b, _ in pairs]],
+          [[S[a]["recall"]["ci95"] for a, _, _ in pairs], [S[b]["recall"]["ci95"] for _, b, _ in pairs]],
+          ["#9ec5ef", C_ESRG], (0, 0.9))
     ax.set_ylabel("Mean recall (95% CI)")
     ax.legend(loc="upper left", fontsize=8)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "fig4_4_bias.png"), dpi=300)
-    plt.close(fig)
+    save(fig, "fig4_5_bias_field.png")
 
-    # Figure 4.5 — DSC distributions (bimodality)
+    # Figure 4.6 — leakage rate with and without the stopping criterion
+    fig, ax = plt.subplots(figsize=(6.4, 3.0))
+    L = R["e3"]["leak"]
+    vals = [[L[c]["leak_ci"][k]["pct"] for c in LEVELS] for k in ("P_ESRG_nostop", "P_ESRG")]
+    errs = [[[L[c]["leak_ci"][k]["pct"] - L[c]["leak_ci"][k]["ci"][0] for c in LEVELS],
+             [L[c]["leak_ci"][k]["ci"][1] - L[c]["leak_ci"][k]["pct"] for c in LEVELS]] for k in ("P_ESRG_nostop", "P_ESRG")]
+    _bars(ax, groups, ["ESRG, no stopping criterion", "ESRG (full)"], vals, errs, [C_A5, C_ESRG], (0, 115), fmt="{:.1f}")
+    ax.set_ylabel("Leakage rate, % (95% CI)")
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=2, fontsize=8)
+    save(fig, "fig4_6_leakage_rate.png")
+
+    # Figure 4.1 — DSC distributions
     fig, axes = plt.subplots(1, 2, figsize=(7.2, 2.9), sharey=True)
     bins = np.linspace(0, 1, 21)
     for ax, (b, e, title) in zip(axes, [("A_SRG", "A_ESRG", "(a) Automatic seeding"),
@@ -506,100 +564,30 @@ def figures(df, R, outdir):
             v = df[df.config == cfg].dsc.dropna()
             ax.hist(v, bins=bins, weights=np.full(len(v), 100 / len(v)), histtype="step",
                     linewidth=2, color=col, label=name)
+        ax.axvline(SUCCESS_DSC, color=INK2, linestyle=":", linewidth=1)
         ax.set_title(title, fontsize=10, loc="left")
         ax.set_xlabel("DSC")
     axes[0].set_ylabel("Share of slices (%)")
     axes[0].legend(fontsize=8)
-    fig.tight_layout()
-    fig.savefig(os.path.join(outdir, "fig4_5_dsc_distribution.png"), dpi=300)
-    plt.close(fig)
+    save(fig, "fig4_1_dsc_distribution.png")
 
-
-# ─── Workbook ────────────────────────────────────────────────────────────────
-COLUMN_DOC = {
-    "file": "Slice filename in the BRISC 2025 test split",
-    "tumor": "Tumor class parsed from the filename (glioma, meningioma, pituitary)",
-    "plane": "Imaging plane parsed from the filename (axial, coronal, sagittal)",
-    "index": "Slice number in the BRISC filename",
-    "config": "Configuration id (see the Configurations sheet)",
-    "method": "Region-growing algorithm: esrg (enhanced) or srg (Adams & Bischof baseline)",
-    "seeding": "auto = automated seed selection; planted = click at the deepest ground-truth pixel",
-    "biased": "True when a synthetic 40% linear bias field was multiplied into the slice (E2)",
-    "status": "Pipeline status: OK, WARN (mask > 40% of head), NO TUMOR CANDIDATE, or ERROR",
-    "dsc": "Dice Similarity Coefficient, 2TP/(2TP+FP+FN) (Eq. 3.32)",
-    "iou": "Intersection over Union, TP/(TP+FP+FN) (Eq. 3.33)",
-    "precision": "TP/(TP+FP) (Eq. 3.34); empty when nothing was predicted",
-    "recall": "TP/(TP+FN) (Eq. 3.35)",
-    "hd95": "95th-percentile Hausdorff distance in pixels (Eq. 3.37); empty when a mask is empty",
-    "assd": "Average symmetric surface distance in pixels (recorded, not reported)",
-    "tp": "True-positive pixels", "fp": "False-positive pixels", "fn": "False-negative pixels",
-    "pred_area": "Predicted tumor area |M| in pixels", "gt_area": "Ground-truth tumor area |G| in pixels",
-    "area_ratio": "|M| / |G|",
-    "leaked": "True when |M| > 2|G| (Eq. 3.39, lambda = 2)",
-    "success": "True when DSC >= 0.70",
-    "seed_hit": "True when the whole seed core lies inside the ground truth (Eq. 3.38); empty if no seed",
-    "seed_area": "Seed core area in pixels after purification (ESRG) or as planted (SRG)",
-    "seed_in_gt_frac": "Share of the seed core inside the ground truth",
-    "planted_row": "Row of the planted click (deepest ground-truth pixel), planted seeding only",
-    "planted_col": "Column of the planted click, planted seeding only",
-    "sigma_floor": "Noise floor sigma_floor of the slice (Eq. 3.21)",
-    "sigma_A_initial": "sigma_A used in pass 1, max(s_A of the seed, sigma_floor) (Eq. 3.28); ESRG only",
-    "k_local": "k_L used by the run", "stop_reason": "Why region growing ended",
-    "n_passes": "Number of growing passes executed (ESRG)",
-    "bias_theta_deg": "Direction of the synthetic bias gradient in degrees (E2 only)",
-    "bucket": "Failure-attribution bucket (E5), A_ESRG only",
-    "bucket_reason": "Measured value that placed the slice in its bucket",
-    "seconds": "Processing time in seconds, measured during the parallel run (see Timing sheet for E6)",
-    "error": "Exception text when status = ERROR",
-}
-
-
-def workbook(df, R, d, path):
-    from openpyxl.styles import Font, Alignment, PatternFill
-    with pd.ExcelWriter(path, engine="openpyxl") as xw:
-        readme = pd.DataFrame({"Item": [
-            "Study", "Data", "Sample", "Random seed", "Configurations", "Rows",
-            "Errors", "How to read", "Reproduce"], "Value": [
-            "Enhanced Seeded Region Growing (ESRG) vs. Adams & Bischof (1994) SRG — Chapter 4 raw results",
-            "BRISC 2025 segmentation task, test split (860 slices, all with a tumor mask)",
-            f"Proportional stratified random sample of {R['meta']['n_sample']} slices "
-            f"(n_h = 500 x N_h / 860 per tumor class x plane stratum; Strata sheet)",
-            str(SAMPLE_SEED),
-            f"{len(CONFIGS)} configurations per slice (Configurations sheet)",
-            f"{R['meta']['n_rows']} rows in Raw_results (one per slice x configuration)",
-            f"{R['meta']['n_errors']} rows with status ERROR",
-            "Every Chapter 4 value is computed from Raw_results (and Timing_sequential for E6) by experiments/analyze.py",
-            "python experiments/evaluate.py; python experiments/evaluate.py --timing; python experiments/analyze.py"]})
-        readme.to_excel(xw, sheet_name="README", index=False)
-        pd.DataFrame([{"config": c["id"], "description": c["desc"], "seeding": c["seeding"],
-                       "bias field": c["biased"], "parameter overrides": json.dumps(c["overrides"]),
-                       "rows": c["n"]} for c in R["configs"]]).to_excel(xw, sheet_name="Configurations", index=False)
-        pd.DataFrame({"column": list(COLUMN_DOC), "meaning": list(COLUMN_DOC.values())}).to_excel(xw, sheet_name="Column_dictionary", index=False)
-        pd.read_csv(os.path.join(d, "sample_strata.csv")).to_excel(xw, sheet_name="Strata", index=False)
-        pd.read_csv(os.path.join(d, "sample.csv")).to_excel(xw, sheet_name="Sample", index=False)
-        df.sort_values(["file", "config"])[[c for c in FIELDS if c in df]].to_excel(xw, sheet_name="Raw_results", index=False)
-        tp = os.path.join(d, "timing_sequential.csv")
-        if os.path.isfile(tp):
-            pd.read_csv(tp).sort_values(["file", "config"]).to_excel(xw, sheet_name="Timing_sequential", index=False)
-        rows = []
-        for k, s in R["summary"].items():
-            rows.append({"config": k, **{f"{m}_mean": s[m].get("mean") for m in METRICS},
-                         **{f"{m}_median": s[m].get("median") for m in METRICS},
-                         "success_%": s["success"], "leakage_%": s["leaked"],
-                         "area_ratio_median": s["area_ratio_median"]})
-        pd.DataFrame(rows).to_excel(xw, sheet_name="Summary_by_config", index=False)
-        for ws in xw.book.worksheets:
-            for cell in ws[1]:
-                cell.font = Font(bold=True)
-                cell.fill = PatternFill("solid", fgColor="E7E6E6")
-            for col in ws.columns:
-                width = min(60, max(len(str(c.value)) if c.value is not None else 0 for c in col) + 2)
-                ws.column_dimensions[col[0].column_letter].width = max(10, width)
-            ws.freeze_panes = "A2"
-        for ws in (xw.book["README"], xw.book["Column_dictionary"], xw.book["Configurations"]):
-            for row in ws.iter_rows(min_row=2):
-                for c in row:
-                    c.alignment = Alignment(wrap_text=True, vertical="top")
+    # Figure 4.7 — processing time per stage
+    if R["e6"]:
+        fig, ax = plt.subplots(figsize=(6.4, 2.8))
+        names = ["Input", "Head mask", "Log domain", "Seed selection", "Region growing", "Post-processing"]
+        y = np.arange(2)
+        left = np.zeros(2)
+        pal = ["#cfd8e3", "#9ec5ef", "#1baf7a", "#eda100", "#eb6834", "#c4458a"]
+        for st, nm, col in zip(STAGES, names, pal):
+            vals = np.array([R["e6"]["stages"][c][st].get("mean", 0) or 0 for c in ("A_SRG", "A_ESRG")])
+            ax.barh(y, vals, left=left, color=col, label=nm, height=0.5)
+            left += vals
+        ax.set_yticks(y, ["SRG", "ESRG"])
+        ax.set_xlabel("Mean time per slice (s)")
+        ax.grid(axis="x", color=GRID)
+        ax.grid(axis="y", visible=False)
+        ax.legend(ncol=3, fontsize=7.5, loc="upper center", bbox_to_anchor=(0.5, -0.32))
+        save(fig, "fig4_7_processing_time.png")
 
 
 def _clean(o):
@@ -619,10 +607,13 @@ def _clean(o):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default="outputs/evaluation")
+    ap.add_argument("--no-appendix", action="store_true")
     args = ap.parse_args()
-    df, R = analyze(args.dir)
+    df, timing, R = analyze(args.dir)
     with open(os.path.join(args.dir, "results.json"), "w") as f:
         json.dump(_clean(R), f, indent=1)
-    figures(df, R, os.path.join(args.dir, "figures"))
-    workbook(df, R, args.dir, os.path.join(args.dir, "ESRG_Chapter4_raw_evaluation_results.xlsx"))
-    print("results.json, figures/, and the workbook written to", args.dir)
+    figures(df, timing, R, os.path.join(args.dir, "figures"))
+    if not args.no_appendix:
+        from experiments.appendix import write_all
+        write_all(df, timing, R, args.dir)
+    print("results.json, figures/ and appendix/ written to", args.dir)

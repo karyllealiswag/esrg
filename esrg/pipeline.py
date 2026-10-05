@@ -235,6 +235,7 @@ def _attach_scores(result, mask_path, image_path, cfg, core):
     result.gt = gt
     result.scores = metrics.evaluate(result.mask, gt, cfg)
     result.scores["seed_hit"] = metrics.seed_hit(core, gt)
+    result.scores["seed_distance"] = metrics.seed_distance(core, gt)
     result.scores["seconds"] = result.meta.get("seconds")
     result.meta["ground_truth"] = mp
     return result

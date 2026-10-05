@@ -1,0 +1,15 @@
+{
+  "cpu": "11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz",
+  "logical_cpus": 12,
+  "ram_gb": "7.8",
+  "battery_status": "1",
+  "power_scheme": "Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)",
+  "source": "battery",
+  "os": "Windows 11 (10.0.26200)",
+  "python": "3.14.4",
+  "numpy": "2.4.5",
+  "scipy": "1.17.1",
+  "scikit_image": "0.26.0",
+  "timer": "time.perf_counter",
+  "processes": 1
+}

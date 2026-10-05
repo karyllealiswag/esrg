@@ -1,0 +1,7 @@
+{
+  "name": "esrg-chapter4",
+  "private": true,
+  "description": "Renders the Chapter 4 specification (chapter4_spec.json) to .docx",
+  "scripts": { "render": "node render_docx.js ../../outputs/evaluation/chapter4_spec.json ../../Chapter4_Results_and_Discussion.docx" },
+  "dependencies": { "docx": "^9.0.0" }
+}

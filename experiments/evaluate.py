@@ -1,31 +1,44 @@
 """
 evaluate.py — Automated batch evaluation for Chapter 4 (Experiments E1–E6).
 
-Purpose : Run every configuration of the study on one stratified sample of the
-          BRISC 2025 test split and record the raw per-image results.
-Function : draw_sample() takes a proportional stratified random sample (tumor
-          class x imaging plane) of SAMPLE_SIZE slices from a split; each sampled slice is processed under
-          the configurations in CONFIGS, and one row per (slice, configuration) is
-          appended to the raw-results CSV. Rows already in the CSV are skipped, so
-          an interrupted run resumes where it stopped. A separate sequential pass
-          (--timing) re-measures processing time without parallel contention.
-Notes   : Seeding conditions: "auto" uses the automated seed selection (Objective 1);
-          "planted" places one click at the deepest pixel of the ground-truth tumor
-          (dilated like a manual click), isolating region growing from seeding.
+Purpose : Run every configuration of the study on the fixed stratified sample
+          (experiments/sampling.py) and record one raw row per (slice, configuration).
+Function : process() runs all configurations of CONFIGS on one slice and returns
+          the per-slice measurements (confusion counts, overlap and boundary
+          metrics, seed measurements, stage times); run_all() distributes the slices
+          over worker processes and appends rows to raw_results.csv, skipping rows
+          already present so an interrupted run resumes; timing_pass() re-measures
+          processing time sequentially (one process, warm-up run discarded, the
+          order of SRG and ESRG alternated per slice) for Experiment E6, on a
+          stratified random subsample: the first TIMING_PER_STRATUM slices of every
+          stratum in the random draw order of sampling.py.
+Notes   : Seeding conditions —
+            auto     automated seed selection (Objective 1);
+            planted  one click at the deepest ground-truth pixel, dilated like a
+                     manual click, isolating region growing from seeding;
+            operator five simulated operator clicks per slice, each at a random
+                     ground-truth pixel deep enough for the click disk to lie inside
+                     the tumor (Objective 1, operator variability).
           "biased" multiplies a synthetic linear bias field (40% INU) into the slice
           before normalization (Experiment E2). Parameters are the frozen defaults.
-          CLI: python experiments/evaluate.py --root segmentation_task/test
+          CLI: python experiments/evaluate.py            (parallel accuracy run)
+               python experiments/evaluate.py --timing   (sequential timing pass)
 """
 import argparse
 import csv
+import json
 import math
 import os
+import platform
 import random
 import sys
 import time
+import warnings
+import zlib
 from multiprocessing import Pool
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")   # one BLAS thread per worker process
+warnings.filterwarnings("ignore", category=FutureWarning)
 import numpy as np
 from scipy import ndimage as ndi
 from skimage import morphology
@@ -33,87 +46,86 @@ from skimage import morphology
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from esrg import Config, run
-from esrg.io_utils import list_pairs, load_image, load_mask, parse_brisc_name
+from esrg.io_utils import load_image, load_mask
 from experiments.attribution import attribute
+from experiments.sampling import read_manifest
 
-SAMPLE_FRAC = 0.80             # first-stage draw (the sampling frame of the subsample)
-SAMPLE_SIZE = 500              # slices evaluated
-SAMPLE_SEED = 2026
+OUT = "outputs/evaluation"
 INU = 0.40                     # bias field spans 1 - INU/2 .. 1 + INU/2 (BrainWeb "40% INU")
+N_CLICKS = 5                   # simulated operators per slice
+SUCCESS_DSC = 0.70             # success threshold (Zijdenbos et al., 1994)
+TIMING_PER_STRATUM = 20        # slices per stratum in the sequential timing pass (E6)
 
-# id: (description, config overrides, seeding condition, biased)
+# id: (description, config overrides, seeding condition, biased, click number)
 CONFIGS = {
-    "A_SRG":           ("SRG, automatic seeding",                     dict(method="srg"), "auto", False),
-    "A_ESRG":          ("ESRG, automatic seeding",                    dict(),             "auto", False),
-    "P_SRG":           ("SRG, planted seed",                          dict(method="srg"), "planted", False),
-    "P_ESRG":          ("ESRG (full), planted seed",                  dict(),             "planted", False),
-    "P_ESRG_global":   ("ESRG, global measure, planted seed",         dict(use_log_local=False), "planted", False),
-    "P_ESRG_nolog":    ("ESRG, log transform off, planted seed",      dict(use_log=False), "planted", False),
-    "P_ESRG_nostop":   ("ESRG, no stopping criterion, planted seed",  dict(use_stopping=False), "planted", False),
-    "P_ESRG_nopurify": ("ESRG, unpurified click disk, planted seed",  dict(purify_manual_seed=False), "planted", False),
-    "B_SRG":           ("SRG, planted seed, bias field",              dict(method="srg"), "planted", True),
-    "B_SRG_N4":        ("SRG + N4, planted seed, bias field",         dict(method="srg", use_n4=True), "planted", True),
-    "B_ESRG":          ("ESRG (full), planted seed, bias field",      dict(), "planted", True),
-    "B_ESRG_global":   ("ESRG, global measure, planted seed, bias field", dict(use_log_local=False), "planted", True),
-    "B_ESRG_nolog":    ("ESRG, log transform off, planted seed, bias field", dict(use_log=False), "planted", True),
+    "A_SRG":           ("SRG, automatic seeding",                     dict(method="srg"), "auto", False, None),
+    "A_ESRG":          ("ESRG, automatic seeding",                    dict(),             "auto", False, None),
+    "P_SRG":           ("SRG, planted seed",                          dict(method="srg"), "planted", False, None),
+    "P_ESRG":          ("ESRG (full), planted seed",                  dict(),             "planted", False, None),
+    "P_ESRG_global":   ("ESRG, global measure, planted seed",         dict(use_log_local=False), "planted", False, None),
+    "P_ESRG_nolog":    ("ESRG, log transform off, planted seed",      dict(use_log=False), "planted", False, None),
+    "P_ESRG_nostop":   ("ESRG, no stopping criterion, planted seed",  dict(use_stopping=False), "planted", False, None),
+    "P_ESRG_nopurify": ("ESRG, unpurified click disk, planted seed",  dict(purify_manual_seed=False), "planted", False, None),
+    "B_SRG":           ("SRG, planted seed, bias field",              dict(method="srg"), "planted", True, None),
+    "B_SRG_N4":        ("SRG + N4, planted seed, bias field",         dict(method="srg", use_n4=True), "planted", True, None),
+    "B_ESRG":          ("ESRG (full), planted seed, bias field",      dict(), "planted", True, None),
+    "B_ESRG_global":   ("ESRG, global measure, planted seed, bias field", dict(use_log_local=False), "planted", True, None),
+    "B_ESRG_nolog":    ("ESRG, log transform off, planted seed, bias field", dict(use_log=False), "planted", True, None),
 }
+for _k in range(1, N_CLICKS + 1):
+    CONFIGS[f"O_SRG_{_k}"] = (f"SRG, simulated operator click {_k}", dict(method="srg"), "operator", False, _k)
+for _k in range(1, N_CLICKS + 1):
+    CONFIGS[f"O_ESRG_{_k}"] = (f"ESRG, simulated operator click {_k}", dict(), "operator", False, _k)
 
-FIELDS = ["file", "tumor", "plane", "index", "config", "method", "seeding", "biased",
-          "status", "dsc", "iou", "precision", "recall", "hd95", "assd",
-          "tp", "fp", "fn", "pred_area", "gt_area", "area_ratio", "leaked", "success",
-          "seed_hit", "seed_area", "seed_in_gt_frac", "planted_row", "planted_col",
+STAGE_KEYS = ["input", "mask", "log", "candidates", "growth", "final"]
+FIELDS = ["file", "split", "tumor", "plane", "stratum", "index", "config", "method", "seeding",
+          "biased", "click", "status",
+          "tp", "fp", "fn", "pred_area", "gt_area",
+          "dsc", "iou", "precision", "recall", "hd95", "assd", "hd95_wc", "assd_wc", "diag",
+          "n_boundary_pred", "n_boundary_gt", "area_ratio", "leaked", "success",
+          "seed_area", "seed_in_gt_px", "seed_in_gt_frac", "seed_hit", "seed_distance",
+          "click_row", "click_col", "click_depth",
           "sigma_floor", "sigma_A_initial", "k_local", "stop_reason", "n_passes",
-          "bias_theta_deg", "bucket", "bucket_reason", "seconds", "error"]
-
-
-# ─── Sampling ────────────────────────────────────────────────────────────────
-def _allocate(sizes, n):
-    """Proportional allocation n_h = n * N_h / N, rounded by the largest-remainder method."""
-    N = sum(sizes.values())
-    quota = {h: n * v / N for h, v in sizes.items()}
-    alloc = {h: math.floor(q) for h, q in quota.items()}
-    for h in sorted(quota, key=lambda h: quota[h] - alloc[h], reverse=True)[:n - sum(alloc.values())]:
-        alloc[h] += 1
-    return alloc
-
-
-def draw_sample(root, n=SAMPLE_SIZE, frac=SAMPLE_FRAC, seed=SAMPLE_SEED):
-    """
-    Proportional stratified random sample of n slices. Each tumor x plane stratum h
-    of size N_h receives n_h = n * N_h / N slices (largest-remainder rounding). The
-    n_h slices are drawn at random, with a fixed seed, from a first-stage stratified
-    draw of frac * N_h slices, so every slice of a stratum has the same chance of
-    selection. Returns (sample, strata) where strata maps (tumor, plane) -> (N_h, n_h).
-    """
-    cells = {}
-    for ip, mp in list_pairs(root):
-        if mp:
-            k = parse_brisc_name(ip)
-            cells.setdefault((k["tumor"], k["plane"]), []).append((ip, mp))
-    sizes = {h: len(v) for h, v in cells.items()}
-    first = _allocate(sizes, round(frac * sum(sizes.values())))
-    final = _allocate(sizes, n)
-    rng, rng2 = random.Random(seed), random.Random(seed + 1)
-    sample = []
-    for h in sorted(cells):
-        frame = rng.sample(sorted(cells[h]), first[h])
-        sample += rng2.sample(sorted(frame), final[h])
-    return sorted(sample), {h: (sizes[h], final[h]) for h in sorted(cells)}
+          "bias_theta_deg", "bucket", "bucket_reason", "seconds"] \
+         + [f"t_{k}" for k in STAGE_KEYS] + ["error"]
+SCORE_KEYS = ("tp", "fp", "fn", "pred_area", "gt_area", "dsc", "iou", "precision", "recall",
+              "hd95", "assd", "hd95_wc", "assd_wc", "diag", "n_boundary_pred", "n_boundary_gt",
+              "area_ratio", "leaked", "seed_hit", "seed_distance", "seconds")
 
 
 # ─── Seeds and bias field ────────────────────────────────────────────────────
+def _disk(shape, r, c, radius):
+    core = np.zeros(shape, bool)
+    core[r, c] = True
+    return morphology.dilation(core, morphology.disk(radius))
+
+
 def planted_core(gt, cfg):
     """One click at the deepest ground-truth pixel, dilated exactly like a manual click."""
     dt = ndi.distance_transform_edt(gt)
     r, c = np.unravel_index(int(np.argmax(dt)), dt.shape)
-    core = np.zeros(gt.shape, bool)
-    core[r, c] = True
-    return morphology.dilation(core, morphology.disk(cfg.manual_seed_radius)), (int(r), int(c))
+    return _disk(gt.shape, r, c, cfg.manual_seed_radius), (int(r), int(c), float(dt[r, c]))
 
 
-def bias_hook(index):
+def operator_clicks(gt, cfg, name, k=N_CLICKS):
+    """
+    k simulated operator clicks: distinct ground-truth pixels drawn uniformly (fixed
+    per-slice seed) among those whose distance to the tumor boundary exceeds the
+    click radius, so each dilated click lies inside the tumor as a careful operator
+    would place it. Tumors too thin for that fall back to any tumor pixel.
+    """
+    dt = ndi.distance_transform_edt(gt)
+    pool = np.argwhere(dt > cfg.manual_seed_radius)
+    if len(pool) < k:
+        pool = np.argwhere(gt)
+    rng = random.Random(zlib.crc32(name.encode()))
+    picks = rng.sample(range(len(pool)), min(k, len(pool)))
+    return [(int(pool[i][0]), int(pool[i][1]), float(dt[pool[i][0], pool[i][1]])) for i in picks]
+
+
+def bias_hook(index, split):
     """Linear multiplicative field from 1 - INU/2 to 1 + INU/2 in a per-slice random direction."""
-    theta = random.Random(10_000 + int(index)).uniform(0, 2 * math.pi)
+    theta = random.Random(zlib.crc32(f"{split}{index}".encode())).uniform(0, 2 * math.pi)
 
     def hook(raw):
         H, W = raw.shape
@@ -125,44 +137,57 @@ def bias_hook(index):
 
 
 # ─── One slice, all configurations ───────────────────────────────────────────
+def _row_from_result(row, res, gt, cfg):
+    sc = res.scores
+    row.update({k: sc.get(k) for k in SCORE_KEYS})
+    row["status"] = res.status
+    row["success"] = bool(sc.get("dsc") is not None and sc["dsc"] >= SUCCESS_DSC)
+    seed = res.stage("seed").image.astype(bool)
+    row["seed_area"] = int(seed.sum())
+    row["seed_in_gt_px"] = int((seed & gt).sum())
+    row["seed_in_gt_frac"] = float((seed & gt).sum() / seed.sum()) if seed.any() else None
+    row["sigma_floor"] = res.stage("log").info.get("noise floor σ")
+    g = res.stage("growth")
+    if g is not None:
+        row["stop_reason"] = g.info.get("stop reason")
+        passes = g.info.get("passes")
+        if isinstance(passes, list) and passes and passes[0].get("sigma") is not None:
+            row["sigma_A_initial"] = passes[0]["sigma"]
+            row["n_passes"] = len(passes)
+            row["k_local"] = cfg.k_local
+    for k in STAGE_KEYS:
+        st = res.stage(k)
+        row[f"t_{k}"] = round(st.seconds, 5) if st is not None else None
+    return row
+
+
 def process(task):
-    ip, mp, cfg_ids = task
+    ip, mp, info, cfg_ids = task
     base = Config()
-    info = parse_brisc_name(ip)
     img, _ = load_image(ip, base.max_side)
     gt = load_mask(mp, img.shape)
-    pcore, (pr, pc) = planted_core(gt, base)
+    pcore, (pr, pc, pd) = planted_core(gt, base)
+    clicks = operator_clicks(gt, base, info["file"])
     rows = []
     for cid in cfg_ids:
-        desc, over, seeding, biased = CONFIGS[cid]
+        desc, over, seeding, biased, click = CONFIGS[cid]
         cfg = base.replace(**over)
-        row = {"file": os.path.basename(ip), "tumor": info["tumor"], "plane": info["plane"],
-               "index": info["index"], "config": cid, "method": cfg.method,
-               "seeding": seeding, "biased": biased}
+        row = {"file": info["file"], "split": info["split"], "tumor": info["tumor"],
+               "plane": info["plane"], "stratum": info["stratum"], "index": info["index"],
+               "config": cid, "method": cfg.method, "seeding": seeding, "biased": biased,
+               "click": click}
         try:
-            hook, theta = bias_hook(info["index"]) if biased else (None, None)
-            res = run(ip, cfg, mask_path=mp,
-                      planted_core=pcore if seeding == "planted" else None, raw_hook=hook)
-            sc = res.scores
-            seed = res.stage("seed").image.astype(bool)
-            row.update({k: sc.get(k) for k in ("dsc", "iou", "precision", "recall", "hd95", "assd",
-                                                "tp", "fp", "fn", "pred_area", "gt_area",
-                                                "area_ratio", "leaked", "seed_hit", "seconds")})
-            row["status"] = res.status
-            row["success"] = bool(sc.get("dsc") is not None and sc["dsc"] >= 0.70)
-            row["seed_area"] = int(seed.sum())
-            row["seed_in_gt_frac"] = float((seed & gt).sum() / seed.sum()) if seed.any() else None
+            hook, theta = bias_hook(info["index"], info["split"]) if biased else (None, None)
+            core = None
             if seeding == "planted":
-                row["planted_row"], row["planted_col"] = pr, pc
-            row["sigma_floor"] = res.stage("log").info.get("noise floor σ")
-            g = res.stage("growth")
-            if g is not None:
-                row["stop_reason"] = g.info.get("stop reason")
-                passes = g.info.get("passes")
-                if isinstance(passes, list) and passes and passes[0].get("sigma") is not None:
-                    row["sigma_A_initial"] = passes[0]["sigma"]
-                    row["n_passes"] = len(passes)
-                    row["k_local"] = cfg.k_local
+                core = pcore
+                row["click_row"], row["click_col"], row["click_depth"] = pr, pc, round(pd, 3)
+            elif seeding == "operator":
+                cr, cc, cd = clicks[(click - 1) % len(clicks)]
+                core = _disk(gt.shape, cr, cc, base.manual_seed_radius)
+                row["click_row"], row["click_col"], row["click_depth"] = cr, cc, round(cd, 3)
+            res = run(ip, cfg, mask_path=mp, planted_core=core, raw_hook=hook)
+            _row_from_result(row, res, gt, cfg)
             if biased:
                 row["bias_theta_deg"] = round(theta, 2)
             if cid == "A_ESRG":
@@ -176,22 +201,26 @@ def process(task):
 def _done_keys(path):
     if not os.path.isfile(path):
         return set()
-    with open(path, newline="") as f:
+    with open(path, newline="", encoding="utf-8") as f:
         return {(r["file"], r["config"]) for r in csv.DictReader(f)}
 
 
-def run_all(sample, out_csv, cfg_ids, workers):
-    done = _done_keys(out_csv)
+def _tasks(sample, cfg_ids, done):
     tasks = []
-    for ip, mp in sample:
-        todo = [c for c in cfg_ids if (os.path.basename(ip), c) not in done]
+    for ip, mp, info in sample:
+        todo = [c for c in cfg_ids if (info["file"], c) not in done]
         if todo:
-            tasks.append((ip, mp, todo))
+            tasks.append((ip, mp, info, todo))
+    return tasks
+
+
+def run_all(sample, out_csv, cfg_ids, workers):
+    tasks = _tasks(sample, cfg_ids, _done_keys(out_csv))
     print(f"{len(sample)} slices, {len(cfg_ids)} configurations; {len(tasks)} slices still to run", flush=True)
     new = not os.path.isfile(out_csv)
     os.makedirs(os.path.dirname(out_csv) or ".", exist_ok=True)
     t0 = time.time()
-    with open(out_csv, "a", newline="") as f:
+    with open(out_csv, "a", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
         if new:
             w.writeheader()
@@ -199,66 +228,116 @@ def run_all(sample, out_csv, cfg_ids, workers):
             for n, rows in enumerate(pool.imap_unordered(process, tasks), 1):
                 w.writerows(rows)
                 f.flush()
-                if n % 25 == 0 or n == len(tasks):
+                if n % 10 == 0 or n == len(tasks):
                     el = time.time() - t0
                     print(f"  {n}/{len(tasks)}  {el/60:.1f} min elapsed, "
                           f"~{el/n*(len(tasks)-n)/60:.1f} min left", flush=True)
 
 
-def timing_pass(sample, out_csv, cfg_ids):
-    """Sequential re-run (one process, nothing else running) that records only seconds."""
+# ─── Sequential timing pass (E6) ─────────────────────────────────────────────
+TIMING_FIELDS = ["file", "split", "tumor", "plane", "stratum", "config", "order", "seconds"] \
+                + [f"t_{k}" for k in STAGE_KEYS] + ["status", "dsc", "pred_area"]
+
+
+def environment():
+    """Hardware/software of the timing pass (reported with Table 3.1)."""
+    import subprocess
+    import numpy, scipy, skimage
+    cpu = platform.processor()
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command",
+                              "(Get-CimInstance Win32_Processor).Name; "
+                              "[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB,1)"],
+                             capture_output=True, text=True, timeout=30).stdout.split("\n")
+        cpu, ram = out[0].strip() or cpu, out[1].strip()
+    except Exception:
+        ram = None
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command",
+                              "(Get-CimInstance Win32_Battery).BatteryStatus; "
+                              "(powercfg /getactivescheme)"], capture_output=True, text=True,
+                             timeout=30).stdout.splitlines()
+        power = {"battery_status": out[0].strip(), "power_scheme": out[1].strip()}
+        power["source"] = ("battery" if power["battery_status"] == "1" else
+                           "AC adapter" if power["battery_status"] else "AC (no battery)")
+    except Exception:
+        power = {}
+    return {"cpu": cpu, "logical_cpus": os.cpu_count(), "ram_gb": ram, **power,
+            "os": f"{platform.system()} {platform.release()} ({platform.version()})",
+            "python": platform.python_version(), "numpy": numpy.__version__,
+            "scipy": scipy.__version__, "scikit_image": skimage.__version__,
+            "timer": "time.perf_counter", "processes": 1}
+
+
+def timing_subsample(sample, k=TIMING_PER_STRATUM):
+    """First k slices of every stratum in the random draw order: a stratified random subsample."""
+    rows = sorted(sample, key=lambda t: (t[2]["stratum"], int(t[2]["draw_order"])))
+    out, seen = [], {}
+    for t in rows:
+        h = t[2]["stratum"]
+        if seen.get(h, 0) < k:
+            out.append(t)
+            seen[h] = seen.get(h, 0) + 1
+    return sorted(out, key=lambda t: t[2]["file"])
+
+
+def timing_pass(sample, out_csv, cfg_ids=("A_SRG", "A_ESRG")):
+    """
+    One process, nothing else running. A warm-up run (discarded) loads libraries
+    and caches; the order of the two configurations alternates between slices so
+    neither systematically benefits from a warm cache.
+    """
     done = _done_keys(out_csv)
     new = not os.path.isfile(out_csv)
-    with open(out_csv, "a", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["file", "tumor", "plane", "config", "seconds"])
+    with open(os.path.join(os.path.dirname(out_csv), "timing_environment.json"), "w") as f:
+        json.dump(environment(), f, indent=2)
+    ip0, mp0, _ = sample[0]
+    for cid in cfg_ids:                              # warm-up, not recorded
+        run(ip0, Config().replace(**CONFIGS[cid][1]), mask_path=mp0)
+    t0 = time.time()
+    with open(out_csv, "a", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=TIMING_FIELDS, extrasaction="ignore")
         if new:
             w.writeheader()
-        for n, (ip, mp) in enumerate(sample, 1):
-            info = parse_brisc_name(ip)
-            for cid in cfg_ids:
-                if (os.path.basename(ip), cid) in done:
+        for n, (ip, mp, info) in enumerate(sample, 1):
+            order = list(cfg_ids) if n % 2 else list(reversed(cfg_ids))
+            for pos, cid in enumerate(order, 1):
+                if (info["file"], cid) in done:
                     continue
-                _, over, seeding, _ = CONFIGS[cid]
-                res = run(ip, Config().replace(**over), mask_path=mp)
-                w.writerow({"file": os.path.basename(ip), "tumor": info["tumor"],
-                            "plane": info["plane"], "config": cid,
-                            "seconds": res.scores.get("seconds")})
+                res = run(ip, Config().replace(**CONFIGS[cid][1]), mask_path=mp)
+                row = {k: info[k] for k in ("file", "split", "tumor", "plane", "stratum")}
+                row.update({"config": cid, "order": pos, "seconds": res.meta.get("seconds"),
+                            "status": res.status, "dsc": res.scores.get("dsc"),
+                            "pred_area": res.scores.get("pred_area")})
+                for k in STAGE_KEYS:
+                    st = res.stage(k)
+                    row[f"t_{k}"] = round(st.seconds, 5) if st is not None else None
+                w.writerow(row)
             f.flush()
-            if n % 50 == 0:
-                print(f"  timing {n}/{len(sample)}", flush=True)
-
-
-def write_sample(sample, strata, path):
-    with open(path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["file", "tumor", "plane", "index", "mask"])
-        for ip, mp in sample:
-            k = parse_brisc_name(ip)
-            w.writerow([os.path.basename(ip), k["tumor"], k["plane"], k["index"], os.path.basename(mp)])
-    with open(path.replace(".csv", "_strata.csv"), "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["tumor", "plane", "N_h", "n_h"])
-        for (t, p), (N, n) in strata.items():
-            w.writerow([t, p, N, n])
+            if n % 25 == 0 or n == len(sample):
+                el = time.time() - t0
+                print(f"  timing {n}/{len(sample)}  {el/60:.1f} min elapsed, "
+                      f"~{el/n*(len(sample)-n)/60:.1f} min left", flush=True)
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", default="segmentation_task/test")
-    ap.add_argument("--out", default="outputs/evaluation")
+    ap.add_argument("--out", default=OUT)
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 2))
     ap.add_argument("--configs", nargs="*", default=list(CONFIGS))
     ap.add_argument("--timing", action="store_true", help="sequential timing pass for A_SRG and A_ESRG")
     ap.add_argument("--limit", type=int, default=None, help="first N sampled slices only (smoke test)")
-    ap.add_argument("--n", type=int, default=SAMPLE_SIZE, help="sample size")
+    ap.add_argument("--raw", default="raw_results.csv", help="raw-results file name inside --out")
+    ap.add_argument("--per-stratum", type=int, default=TIMING_PER_STRATUM,
+                    help="slices per stratum timed in the sequential pass")
     args = ap.parse_args()
 
-    sample, strata = draw_sample(args.root, n=args.n)
-    os.makedirs(args.out, exist_ok=True)
-    write_sample(sample, strata, os.path.join(args.out, "sample.csv"))
+    sample = read_manifest(args.out)
     if args.limit:
         sample = sample[:args.limit]
     if args.timing:
-        timing_pass(sample, os.path.join(args.out, "timing_sequential.csv"), ["A_SRG", "A_ESRG"])
+        sub = timing_subsample(sample, args.per_stratum)
+        print(f"timing pass on {len(sub)} slices ({args.per_stratum} per stratum)", flush=True)
+        timing_pass(sub, os.path.join(args.out, "timing_sequential.csv"))
     else:
-        run_all(sample, os.path.join(args.out, "raw_results.csv"), args.configs, args.workers)
+        run_all(sample, os.path.join(args.out, args.raw), args.configs, args.workers)

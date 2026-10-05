@@ -19,6 +19,7 @@ from PIL import Image, ImageTk
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from esrg import Config, run
+from esrg import explain as evalx
 from esrg import pixel_report
 from esrg import preprocessing as pre
 from esrg import visualize as viz
@@ -48,6 +49,9 @@ FAIL_CLR    = "#dc2626"
 # region 1 is whichever region the user treats as the structure of interest,
 # region 2+ are the other competing regions. SRG itself does not distinguish them.
 SEED_RGB = viz.SEED_COLORS
+
+DIAG_PANEL_W = 320  # telemetry panel width (px)
+EVAL_PANEL_W = 400  # wider while the Evaluation step shows worked computations
 
 ZOOM_MIN = 0.25
 ZOOM_MAX = 8.0
@@ -126,6 +130,9 @@ class ESRGApp:
         self.compare_overlay = tk.BooleanVar(value=False)
         self._compare_photos = []
         self.diag_visible = tk.BooleanVar(value=True)
+        # Evaluation step: which metrics the telemetry panel computes and explains.
+        self.eval_vars = {k: tk.BooleanVar(value=True) for k, _, _ in evalx.METRICS}
+        self.run_cfg = None  # configuration of the last run (supplies λ for leakage)
 
         self.opacity = tk.DoubleVar(value=0.55)
         self.error_mode = tk.BooleanVar(value=False)
@@ -207,7 +214,7 @@ class ESRGApp:
         center_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self._build_viewer(center_frame)
 
-        self.diagnostics_frame = tk.Frame(body, bg=PANEL_BG, width=320,
+        self.diagnostics_frame = tk.Frame(body, bg=PANEL_BG, width=DIAG_PANEL_W,
                                           highlightthickness=1, highlightbackground=BORDER_CLR)
         self.diagnostics_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 0))
         self.diagnostics_frame.pack_propagate(False)
@@ -422,6 +429,7 @@ class ESRGApp:
         tab_canvas.bind("<Button-4>", _tab_scroll)
         tab_canvas.bind("<Button-5>", _tab_scroll)
         self._tab_scroll = _tab_scroll
+        self._tab_canvas = tab_canvas
 
         self._init_empty_stage_tabs()
 
@@ -511,11 +519,32 @@ class ESRGApp:
     def _build_diagnostics(self, p):
         head = tk.Frame(p, bg=PANEL_BG, padx=10, pady=8)
         head.pack(fill=tk.X)
-        tk.Label(head, text="SEED TELEMETRY", bg=PANEL_BG, fg=PRIMARY,
-                 font=FONT_BOLD).pack(side=tk.LEFT)
+        self.diag_title = tk.Label(head, text="SEED TELEMETRY", bg=PANEL_BG, fg=PRIMARY,
+                                   font=FONT_BOLD)
+        self.diag_title.pack(side=tk.LEFT)
+
+        # Metric picker, shown only while the Evaluation step is selected.
+        self.eval_picker = tk.Frame(p, bg=PANEL_BG, padx=8)
+        pick_head = tk.Frame(self.eval_picker, bg=PANEL_BG)
+        pick_head.pack(fill=tk.X, pady=(0, 2))
+        tk.Label(pick_head, text="Select metrics to compute:", bg=PANEL_BG,
+                 fg=TEXT_MUTED, font=FONT_SM).pack(side=tk.LEFT)
+        for text, val in (("None", False), ("All", True)):
+            FlatButton(pick_head, text=text, command=lambda v=val: self._set_all_metrics(v),
+                       bg=PANEL_ALT, fg=TEXT_MUTED, hover_bg=BORDER_CLR,
+                       font=FONT_SM, padx=6, pady=1).pack(side=tk.RIGHT, padx=(4, 0))
+        grid = tk.Frame(self.eval_picker, bg=PANEL_BG)
+        grid.pack(fill=tk.X, pady=(0, 6))
+        for i, (key, label, _) in enumerate(evalx.METRICS):
+            tk.Checkbutton(grid, text=label, variable=self.eval_vars[key],
+                           command=self._refresh_telemetry, bg=PANEL_BG, fg=TEXT_MAIN,
+                           selectcolor=PANEL_ALT, activebackground=PANEL_BG, font=FONT_SM,
+                           highlightthickness=0, anchor="w").grid(row=i // 3, column=i % 3,
+                                                                  sticky="w", padx=(0, 4))
 
         container = tk.Frame(p, bg=PANEL_BG, padx=8)
         container.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+        self.diag_container = container
 
         sb = ttk.Scrollbar(container)
         sb.pack(side=tk.RIGHT, fill=tk.Y)
@@ -529,6 +558,11 @@ class ESRGApp:
         self.diag.tag_config("head", foreground=PRIMARY, font=FONT_MONO + ("bold",))
         self.diag.tag_config("muted", foreground=TEXT_MUTED)
         self.diag.tag_config("avg", foreground=TEXT_MAIN, font=FONT_MONO + ("bold",))
+        self.diag.tag_config("metric", foreground=TEXT_MAIN, font=(FONT_MONO[0], 11, "bold"))
+        self.diag.tag_config("sub", foreground=PRIMARY, font=FONT_MONO + ("bold",))
+        self.diag.tag_config("good", foreground=OK_CLR, font=FONT_MONO + ("bold",))
+        self.diag.tag_config("bad", foreground=FAIL_CLR, font=FONT_MONO + ("bold",))
+        self.diag.tag_config("indent", lmargin1=18, lmargin2=18)
         self._refresh_telemetry()
 
     def _telemetry_groups(self):
@@ -552,12 +586,21 @@ class ESRGApp:
     def _refresh_telemetry(self):
         """Lists the coordinate and grayscale value of every seed pixel, with the
         mean of each region when it holds more than one pixel."""
-        groups, msg = self._telemetry_groups()
+        evaluating = self.result is not None and self.current == "evaluation"
+        self._sync_eval_picker(evaluating)
         d = self.diag
         top = d.yview()[0]
         d.config(state=tk.NORMAL)
         d.delete("1.0", tk.END)
+        if evaluating:
+            # Checked before the seed groups: an Evaluation view exists for
+            # every run, including manual runs that have no auto seed to list.
+            self._write_eval_telemetry()
+            d.yview_moveto(top)
+            d.config(state=tk.DISABLED)
+            return
 
+        groups, msg = self._telemetry_groups()
         if msg:
             d.insert(tk.END, msg + "\n", "muted")
         elif self.result and self.current == "log":
@@ -626,6 +669,63 @@ class ESRGApp:
                          f"1.4826 × MAD  = {nf['raw_sigma']:.6f}\n")
         d.insert(tk.END, f"σ_floor = max({nf['raw_sigma']:.6f}, {nf['min_value']:g})\n"
                          f"        = {nf['sigma_floor']:.6f}\n", "avg")
+
+    def _sync_eval_picker(self, evaluating):
+        """Show the metric picker and retitle the panel in the Evaluation step."""
+        self.diag_title.config(text="EVALUATION METRICS" if evaluating else "SEED TELEMETRY")
+        # Worked computations need a wider panel than the seed-pixel tables.
+        self.diagnostics_frame.config(width=EVAL_PANEL_W if evaluating else DIAG_PANEL_W)
+        if evaluating and not self.eval_picker.winfo_ismapped():
+            self.eval_picker.pack(fill=tk.X, before=self.diag_container)
+        elif not evaluating and self.eval_picker.winfo_ismapped():
+            self.eval_picker.pack_forget()
+
+    def _set_all_metrics(self, value):
+        for v in self.eval_vars.values():
+            v.set(value)
+        self._refresh_telemetry()
+
+    def _write_eval_telemetry(self):
+        """Evaluation step: for each selected metric, its result, then where
+        every variable comes from, the equation, and the worked computation."""
+        d, res = self.diag, self.result
+        lam = self.run_cfg.leak_ratio if self.run_cfg else self.cfg.leak_ratio
+        entries = evalx.explain(res, lam)
+        meta = res.meta
+        d.insert(tk.END, f"{os.path.basename(meta.get('path') or '')}\n", "head")
+        d.insert(tk.END, f"{str(meta.get('method', '')).upper()} · {meta.get('seed_mode')} seeding"
+                         f" · status {res.status}\n", "muted")
+        gt = meta.get("ground_truth")
+        d.insert(tk.END, ("Ground truth: " + os.path.basename(gt)) if gt
+                 else "No ground truth: only time is measurable", "muted")
+        d.insert(tk.END, "\nEvery value below is recomputed from\n"
+                         "the masks of this run (Eq. 3.32–3.39).\n", "muted")
+
+        chosen = [k for k, _, _ in evalx.METRICS if self.eval_vars[k].get()]
+        if not chosen:
+            d.insert(tk.END, "\nNo metric selected — tick one above.\n", "muted")
+            return
+        for k in chosen:
+            e = entries[k]
+            v = e["value"]
+            defined = v is not None and not (isinstance(v, float) and np.isnan(v))
+            good = defined and not any(w in e["verdict"] for w in
+                                       ("MISS", "LEAKED", "below", "undefined", "requires"))
+            d.insert(tk.END, "\n" + "━" * 38 + "\n")
+            d.insert(tk.END, f"{e['label']}  {evalx.value_text(e)}\n", "metric")
+            d.insert(tk.END, e["objective"] + "\n", "muted")
+            d.insert(tk.END, "→ " + e["verdict"] + "\n", "good" if good else "bad")
+            if e["sources"]:
+                d.insert(tk.END, "\nSOURCES OF THE VARIABLES\n", "sub")
+                for sym, val, origin in e["sources"]:
+                    d.insert(tk.END, f"{sym:<2} {val}\n")
+                    d.insert(tk.END, origin + "\n", ("muted", "indent"))
+            if e["formula"]:
+                d.insert(tk.END, "\nEQUATION\n", "sub")
+                d.insert(tk.END, "\n".join(e["formula"]) + "\n")
+            d.insert(tk.END, "\nCOMPUTATION\n", "sub")
+            d.insert(tk.END, "\n".join(e["steps"]) + "\n")
+            d.insert(tk.END, f"Result: {e['label']} = {evalx.value_text(e)}\n", "avg")
 
     def _toggle_diagnostics(self):
         self.diag_visible.set(not self.diag_visible.get())
@@ -711,6 +811,7 @@ class ESRGApp:
             return
 
         cfg = self._current_config()
+        self.run_cfg = cfg
         self.run_btn.config(state="disabled", text="Processing…", cursor="arrow")
         self.run_btn.set_style(bg=BORDER_MED, fg=TEXT_MAIN, border=BORDER_MED)
         self.status_lbl.config(text="Segmenting slice…", fg=PRIMARY)
@@ -796,6 +897,25 @@ class ESRGApp:
             btn.bind("<Button-5>", self._tab_scroll, add="+")
             self.stage_buttons["compare"] = btn
 
+        # Evaluation step: always offered after a run (time is measurable
+        # even without a ground truth; the panel explains what is missing).
+        btn = FlatButton(
+            self.stage_bar,
+            text="Evaluation ●",
+            command=lambda: self._select("evaluation"),
+            bg=PANEL_ALT,
+            fg=TEXT_MUTED,
+            hover_bg=BORDER_CLR,
+            font=FONT_BOLD,
+            padx=10,
+            pady=4
+        )
+        btn.pack(side=tk.LEFT, padx=(0, 4))
+        btn.bind("<MouseWheel>", self._tab_scroll, add="+")
+        btn.bind("<Button-4>", self._tab_scroll, add="+")
+        btn.bind("<Button-5>", self._tab_scroll, add="+")
+        self.stage_buttons["evaluation"] = btn
+
     def _select(self, key):
         self.current = key
         for k, b in self.stage_buttons.items():
@@ -807,8 +927,24 @@ class ESRGApp:
                 color = status_colors.get(st.status, TEXT_MUTED) if st else TEXT_MUTED
                 b.set_style(bg=PANEL_ALT, fg=color, border=BORDER_CLR)
 
+        self._scroll_tab_into_view(self.stage_buttons.get(key))
         self._refresh_telemetry()
         self._redraw()
+
+    def _scroll_tab_into_view(self, btn):
+        """Scroll the stage strip so the selected tab (e.g. Evaluation, the last
+        one) is visible when the strip is narrower than its tabs."""
+        if btn is None:
+            return
+        self.root.update_idletasks()
+        total = max(self.stage_bar.winfo_reqwidth(), 1)
+        view_w = self._tab_canvas.winfo_width()
+        left, right = btn.winfo_x(), btn.winfo_x() + btn.winfo_width()
+        x0 = self._tab_canvas.xview()[0] * total
+        if left < x0:
+            self._tab_canvas.xview_moveto(left / total)
+        elif right > x0 + view_w:
+            self._tab_canvas.xview_moveto(max(0, right - view_w) / total)
 
     # ── Zoom & Pan ────────────────────────────────────────────────────────────
     def _has_image(self):
@@ -980,6 +1116,9 @@ class ESRGApp:
         elif self._is_compare_active():
             self._redraw_compare_overlay(cw, ch)
             return
+        elif self.current == "evaluation":
+            self._redraw_evaluation(cw, ch)
+            return
         else:
             st = self.result.stage(self.current) or self.result.stages[-1]
             base = self.result.stage("input").image
@@ -1026,6 +1165,28 @@ class ESRGApp:
         self.canvas.create_image(ox, oy, anchor=tk.NW, image=photo)
         label = ("OVERLAY — TP green / FP red / FN orange" if self.error_mode.get()
                  else "OVERLAY — ESRG prediction (red fill) vs ground truth (green outline)")
+        self.canvas.create_text(cw / 2, 14, text=label, fill=TEXT_FAINT, font=FONT_SM)
+
+    def _redraw_evaluation(self, cw, ch):
+        """Evaluation view: the pixels each metric counts. TP green, FP red,
+        FN orange (or the prediction alone without a ground truth), with the
+        seed core S of Objective 1 outlined in cyan."""
+        base = self.result.stage("input").image
+        pred = self.result.mask.astype(bool)
+        gt = self.result.gt
+        rgb = viz.overlay_result(base, pred, gt, self.opacity.get(), error_mode=gt is not None)
+        seed = self.result.stage("seed")
+        if seed is not None and seed.image.any():
+            core = seed.image.astype(bool)
+            # Small cores are filled so they stay visible; larger ones are outlined.
+            rgb[core if core.sum() < 30 else viz.outline(core)] = (34, 211, 238)
+        w, h, s, ox, oy = self._geometry()
+        img = Image.fromarray(rgb.astype(np.uint8)).resize(
+            (max(1, int(w * s)), max(1, int(h * s))), Image.NEAREST)
+        self._photo = ImageTk.PhotoImage(img)
+        self.canvas.create_image(ox, oy, anchor=tk.NW, image=self._photo)
+        label = ("EVALUATION — TP green · FP red · FN orange · seed core cyan" if gt is not None
+                 else "EVALUATION — prediction red · seed core cyan (no ground truth)")
         self.canvas.create_text(cw / 2, 14, text=label, fill=TEXT_FAINT, font=FONT_SM)
 
     def _redraw_compare_split(self):

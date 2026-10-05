@@ -1709,6 +1709,32 @@ footer{
     Adding a diagnostic anywhere in the pipeline makes it appear here with no GUI change.
   </p>
 
+  <h3>The Evaluation step</h3>
+  <p>
+    After every run the stage strip ends with an <strong>Evaluation</strong> tab. Selecting it
+    retitles the panel <strong>EVALUATION METRICS</strong>, widens it, and shows a checklist of the
+    nine metrics used in Chapter 4: DSC, IoU, Recall, Precision, Leakage, HD95, ASSD, Seed hit and
+    Time (<em>All</em> / <em>None</em> toggle them together). For each ticked metric the panel prints,
+    in order:
+  </p>
+  <ol class="body">
+    <li>The result for the loaded slice, the objective it evaluates, and a one-line verdict
+        (e.g. <em>below the 0.70 success threshold</em>, <em>LEAKED</em>, <em>HIT</em>).</li>
+    <li><strong>Sources of the variables</strong> — where every symbol comes from: <code>M</code> is the
+        Stage 7 mask, <code>G</code> the ground-truth file found next to the image, <code>S</code> the
+        Stage 5 seed core, and the image grid that is compared pixel by pixel.</li>
+    <li><strong>Equation</strong> — the formula with its Chapter 3/4 equation number.</li>
+    <li><strong>Computation</strong> — the counted values (TP, FP, FN, boundary pixels, sorted distance
+        ranks, stage durations), the substitution into the equation, and the result.</li>
+  </ol>
+  <p>
+    The viewer shows the pixels those metrics count: true positives green, false positives red,
+    false negatives orange, and the seed core in cyan. Every value is recomputed by
+    <span class="path">esrg/explain.py</span> with the same definitions as
+    <span class="path">esrg/metrics.py</span>, so the panel agrees with the batch evaluation to the
+    last digit. Without a ground-truth mask only processing time is measurable, and the panel says so.
+  </p>
+
   <h3>Timing</h3>
   <p>
     Every stage is wrapped by a timer in <code>pipeline.run</code>, so the duration is that stage
