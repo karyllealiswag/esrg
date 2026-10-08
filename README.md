@@ -59,7 +59,8 @@ esrg/
   explain.py          Traceable per-slice computation of every metric (GUI Evaluation step).
   visualize.py        Stage rendering and annotated overlays.
   pipeline.py         Stage orchestration; retains every intermediate.
-gui/app.py            Desktop app with one inspection button per stage.
+gui/app.py            CustomTkinter desktop app: stage tabs over Original | Segmented panes,
+                      collapsible seed-telemetry table, one-line metrics footer.
 experiments/          sampling, evaluate, analyze, stats, appendix (Chapter 4 pipeline);
                       chapter4/ (tables + .docx builder); run_batch, attribution, ablation.
 segmentation_task/    The 954 sampled BRISC slices (train/ and test/, images + masks).

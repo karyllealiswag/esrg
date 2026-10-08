@@ -4,4 +4,5 @@ scikit-image>=0.22
 pillow>=10.0
 pandas>=2.1
 matplotlib>=3.7
+customtkinter>=5.2.2,<6   # GUI (gui/app.py)
 SimpleITK>=2.3    # optional: N4 ablation arm only

@@ -2,17 +2,24 @@
 app.py — Desktop GUI for the ESRG pipeline.
 
 Purpose : Load an MRI slice, run the pipeline, inspect any stage, and read
-          evaluation scores with a modern clinical workstation interface.
-Function : Tkinter app with a clinical control sidebar, a high-contrast MRI
-          viewer with stage navigation tabs, a diagnostics inspector, and a
-          results metric bar. Runs off the UI thread and exports all stage masks.
+          evaluation scores in a flat, light, clinical-workstation interface.
+Function : CustomTkinter app in a header / 3-column / footer grid. Left: input,
+          method, seeding, ablation and hyperparameter controls. Centre: stage
+          tabs over two equal panes (Original | Segmented Output) with zoom / pan
+          controls. Right: collapsible seed-telemetry table (plus a Details view
+          with the log-domain and evaluation worked computations). Footer: one
+          line of evaluation metrics. The pipeline runs off the UI thread.
+Notes   : Strictly flat: no gradients, bevels or shadows; every widget is square
+          (corner_radius=0) apart from the radio buttons' circular indicators.
 """
 import os
 import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from tkinter import font as tkfont
 
+import customtkinter as ctk
 import numpy as np
 from PIL import Image, ImageTk
 
@@ -25,100 +32,106 @@ from esrg import preprocessing as pre
 from esrg import visualize as viz
 from esrg.io_utils import find_mask_for, load_image
 
-# ── Clinical Light Theme Tokens ──────────────────────────────────────────────
-APP_BG      = "#f1f5f9"  
-PANEL_BG    = "#ffffff"  
-PANEL_ALT   = "#f8fafc"  
-BORDER_CLR  = "#e2e8f0"  
-BORDER_MED  = "#cbd5e1"  
+# ── Clinical Flat Theme Tokens ───────────────────────────────────────────────
+WHITE       = "#FFFFFF"   # header, centre column, footer, telemetry
+PANEL       = "#F4F5F7"   # control panels
+BORDER      = "#DFE1E6"   # 1px rules and idle-control outlines
+BORDER_DARK = "#B3BAC5"   # checkbox / radio rings, scrollbar thumbs
+OBJ_IDLE    = "#E4E6EA"   # header OBJ buttons at rest
+VIEWPORT    = "#000000"   # MRI panes
 
-TEXT_MAIN   = "#0f172a"  
-TEXT_MUTED  = "#475569"  
-TEXT_FAINT  = "#94a3b8"  
+TEXT        = "#172B4D"
+MUTED       = "#5E6C84"
+FAINT       = "#97A0AF"
+ON_BLACK    = "#9AA3B2"   # hint text drawn on the black panes
 
-PRIMARY     = "#0284c7"  
-PRIMARY_HOV = "#0369a1"  
-VIEWPORT_BG = "#090d16"  
+BLUE        = "#0066CC"
+BLUE_HOV    = "#0052A3"
 
-# Status Badges
-OK_CLR      = "#16a34a"
-WARN_CLR    = "#d97706"
-FAIL_CLR    = "#dc2626"
+OK_CLR      = "#1E8E3E"
+WARN_CLR    = "#B26A00"
+FAIL_CLR    = "#C5221F"
 
 # Manual seed regions share the tessellation palette (esrg.visualize.SEED_COLORS):
 # region 1 is whichever region the user treats as the structure of interest,
 # region 2+ are the other competing regions. SRG itself does not distinguish them.
 SEED_RGB = viz.SEED_COLORS
 
-DIAG_PANEL_W = 320  # telemetry panel width (px)
-EVAL_PANEL_W = 400  # wider while the Evaluation step shows worked computations
+DIAG_PANEL_W = 380  # telemetry panel width (px)
+EVAL_PANEL_W = 430  # wider while the Evaluation step shows worked computations
+RAIL_W       = 34   # width of the strip left behind when telemetry is collapsed
+LEFT_W       = 232  # default width of the control panel; drag its right edge to resize
+LEFT_MIN     = 218  # narrowest that still fits the longest checkbox label
+LEFT_MAX     = 420
+CENTER_MIN   = 420  # the viewer never gets squeezed below this by the splitter
 
 ZOOM_MIN = 0.25
 ZOOM_MAX = 8.0
 
-# Typography
-FONT_TITLE  = ("Segoe UI", 11, "bold")
-FONT_SUB    = ("Segoe UI", 9)
-FONT_BOLD   = ("Segoe UI", 8, "bold")
-FONT_UI     = ("Segoe UI", 9)
-FONT_SM     = ("Segoe UI", 8)
-FONT_MONO   = ("Consolas", 9) if sys.platform == "win32" else ("Menlo", 8)
+# Header OBJ buttons jump to the stage that shows each thesis objective's output.
+OBJ_STAGE = {1: "seed", 2: "log", 3: "growth"}
+
+# Footer metrics: (label, key in Result.scores, format)
+FOOTER_METRICS = (
+    ("Dice Coefficient", "dsc", "{:.3f}"),
+    ("Jaccard Index", "iou", "{:.3f}"),
+    ("Precision", "precision", "{:.3f}"),
+    ("Recall", "recall", "{:.3f}"),
+    ("Boundary Error (HD95)", "hd95", "{:.2f} px"),
+)
+
+# Typography. CTk widgets take pixel sizes; plain Tk widgets (Text, Treeview) take points.
+F_TITLE = ("Segoe UI", 17, "bold")
+F_BODY  = ("Segoe UI", 13)
+F_BOLD  = ("Segoe UI", 13, "bold")
+F_SMALL = ("Segoe UI", 12)
+F_CAP   = ("Segoe UI", 11, "bold")
+F_RUN   = ("Segoe UI", 14, "bold")
+TK_UI   = ("Segoe UI", 9)
+TK_BOLD = ("Segoe UI", 9, "bold")
+TK_MONO = ("Consolas", 9) if sys.platform == "win32" else ("Menlo", 8)
 
 
-# ── Custom Cross-Platform Flat Button ────────────────────────────────────────
-class FlatButton(tk.Label):
-    def __init__(self, master, text, command, bg, fg, hover_bg, **kwargs):
-        self.border_clr = kwargs.pop('border_color', BORDER_CLR)
-        kwargs.setdefault('highlightthickness', 1)
-        kwargs.setdefault('highlightbackground', self.border_clr)
-        
-        super().__init__(master, text=text, bg=bg, fg=fg, cursor="hand2", **kwargs)
-        self.default_bg = bg
-        self.hover_bg = hover_bg
-        self.command = command
-        
-        self.bind("<Enter>", self._on_enter)
-        self.bind("<Leave>", self._on_leave)
-        self.bind("<Button-1>", self._on_click)
+def _rule(parent, vertical=False):
+    """1px flat divider (plain Tk frame so DPI scaling never thickens it)."""
+    if vertical:
+        return tk.Frame(parent, bg=BORDER, width=1)
+    return tk.Frame(parent, bg=BORDER, height=1)
 
-    def _on_enter(self, e):
-        if str(self.cget("state")) != "disabled":
-            self.config(bg=self.hover_bg)
 
-    def _on_leave(self, e):
-        if str(self.cget("state")) != "disabled":
-            self.config(bg=self.default_bg)
+def _hide(w):
+    """Unmap a gridded CTk widget without losing its Tk grid state.
 
-    def _on_click(self, e):
-        if str(self.cget("state")) != "disabled":
-            self.command()
+    CTk keeps a record of every widget's last geometry call and replays it whenever the window's
+    DPI scale changes (e.g. after a resize onto another monitor), which would re-grid anything
+    that was merely grid_remove()d. grid_forget() clears that record but also resets the widget's
+    own grid_propagate / row and column weights as a container, so remove it and drop the
+    record by hand. The next show-site calls .grid(...) again, which re-records it."""
+    w.grid_remove()
+    w._last_geometry_manager_call = None
 
-    def set_style(self, bg, fg, border=None):
-        self.default_bg = bg
-        self.config(bg=bg, fg=fg)
-        if border:
-            self.config(highlightbackground=border)
+
+def _gray_rgb(a):
+    g = np.clip(a, 0, 255).astype(np.uint8)
+    return np.stack([g] * 3, axis=-1)
 
 
 class ESRGApp:
     def __init__(self, root):
         self.root = root
-        root.title("Enhanced SRG in MRI Image Segmentation")
-        root.configure(bg=APP_BG)
-        root.geometry("1380x860")
-        root.minsize(1080, 680)
+        ctk.set_appearance_mode("light")
+        root.title("Enhanced Seeded Region Growing Algorithm in MRI Image Segmentation")
+        root.configure(fg_color=WHITE)
+        self._fit_window(1440, 880, 1120, 700)
 
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("TScrollbar", gripcount=0, background=PANEL_ALT,
-                        troughcolor=PANEL_BG, bordercolor=BORDER_CLR, arrowcolor=TEXT_MUTED)
+        self._init_ttk_style()
 
         self.cfg = Config()
         self.image_path = None
         self.result = None
         self.current = "final"
         self.manual_points = []
-        self._photo = None
+        self._run_points = set()  # (row, col, type) clicks the last run actually used
         self.raw_image = None  # grayscale float64 preview shown before the pipeline runs
         self.norm_image = None  # pre.normalize(raw_image): what the pipeline grows on
         self.zoom = 1.0
@@ -127,15 +140,19 @@ class ESRGApp:
         self._pan_start = None
         self._left_press = None
         self._left_dragging = False
-        self.compare_overlay = tk.BooleanVar(value=False)
-        self._compare_photos = []
-        self.diag_visible = tk.BooleanVar(value=True)
-        # Evaluation step: which metrics the telemetry panel computes and explains.
+        self._photos = {}
+        self._pane_cache = (None, None)
+        self._render_pending = False
+        self.tel_visible = True
+        self._left_w = LEFT_W
+        self.pan_tool = tk.BooleanVar(value=False)
+        # Evaluation step: which metrics the Details view computes and explains.
         self.eval_vars = {k: tk.BooleanVar(value=True) for k, _, _ in evalx.METRICS}
         self.run_cfg = None  # configuration of the last run (supplies λ for leakage)
 
         self.opacity = tk.DoubleVar(value=0.55)
         self.error_mode = tk.BooleanVar(value=False)
+        self.compare_overlay = tk.BooleanVar(value=False)
         self.method = tk.StringVar(value="esrg")
         self.seed_mode = tk.StringVar(value="auto")
         self.seed_type = tk.IntVar(value=1)
@@ -146,423 +163,568 @@ class ESRGApp:
         self.k_local = tk.DoubleVar(value=self.cfg.k_local)
         self.radius = tk.IntVar(value=self.cfg.local_radius)
         self.classes = tk.IntVar(value=self.cfg.otsu_classes)
+        self.tel_mode = tk.StringVar(value="Seeds")
 
         self._build()
 
+    @property
+    def _scale(self):
+        """Current DPI scale of the window. Read live: it changes when the window is moved or
+        resized onto a monitor with a different scaling."""
+        return self.root._get_window_scaling()
+
+    def _px(self, n):
+        return int(round(n * self._scale))
+
+    def _fit_window(self, w, h, min_w, min_h):
+        """Open at (w, h) in CTk's DPI-independent units, shrunk to fit the screen with
+        room for the taskbar, and centred horizontally. CTk multiplies the size by the
+        display scale but takes the +x+y offset in physical pixels."""
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        w, h = min(w, int(sw * 0.94)), min(h, int(sh * 0.88))
+        x = max(0, int((sw - w) * self._scale / 2))
+        self.root.geometry(f"{w}x{h}+{x}+{self._px(8)}")
+        self.root.minsize(min(min_w, w), min(min_h, h))
+
+    def _init_ttk_style(self):
+        """Flat Treeview + no bevels: the only ttk widget in the app is the seed table."""
+        style = ttk.Style(self.root)
+        style.theme_use("clam")
+        row_h = tkfont.Font(font=TK_UI).metrics("linespace") + 10
+        style.configure("Seeds.Treeview", background=WHITE, fieldbackground=WHITE,
+                        foreground=TEXT, rowheight=row_h, borderwidth=0, relief="flat",
+                        font=TK_UI)
+        style.configure("Seeds.Treeview.Heading", background=PANEL, foreground=MUTED,
+                        relief="flat", borderwidth=0, font=TK_BOLD, padding=(6, 5))
+        style.map("Seeds.Treeview", background=[("selected", BLUE)],
+                  foreground=[("selected", WHITE)])
+        style.map("Seeds.Treeview.Heading", background=[("active", BORDER)])
+        style.layout("Seeds.Treeview", [("Treeview.treearea", {"sticky": "nswe"})])
+
+    # ── Widget factories ─────────────────────────────────────────────────────
+    def _btn(self, parent, text, command, primary=False, width=None, height=30, font=F_BODY):
+        """Square flat button: idle = PANEL with a 1px rule, primary = solid blue."""
+        kw = dict(text=text, command=command, corner_radius=0, font=font, height=height,
+                  border_width=1)
+        if width:
+            kw["width"] = width
+        if primary:
+            return ctk.CTkButton(parent, fg_color=BLUE, hover_color=BLUE_HOV, text_color=WHITE,
+                                 border_color=BLUE, text_color_disabled=WHITE, **kw)
+        return ctk.CTkButton(parent, fg_color=PANEL, hover_color=BORDER, text_color=TEXT,
+                             border_color=BORDER, **kw)
+
+    @staticmethod
+    def _style_toggle(btn, active):
+        """Selected = solid blue; otherwise the idle flat style."""
+        if active:
+            btn.configure(fg_color=BLUE, hover_color=BLUE, text_color=WHITE, border_color=BLUE)
+        else:
+            btn.configure(fg_color=PANEL, hover_color=BORDER, text_color=TEXT, border_color=BORDER)
+
+    def _check(self, parent, text, var, command=None):
+        return ctk.CTkCheckBox(parent, text=text, variable=var, command=command, font=F_SMALL,
+                               text_color=TEXT, corner_radius=0, border_width=1,
+                               checkbox_width=16, checkbox_height=16, fg_color=BLUE,
+                               hover_color=BLUE_HOV, border_color=BORDER_DARK,
+                               checkmark_color=WHITE)
+
+    def _radio(self, parent, text, var, value, command=None):
+        return ctk.CTkRadioButton(parent, text=text, variable=var, value=value, command=command,
+                                  font=F_SMALL, text_color=TEXT, radiobutton_width=16, radiobutton_height=16,
+                                  border_width_unchecked=1, border_width_checked=5,
+                                  fg_color=BLUE, hover_color=BLUE_HOV, border_color=BORDER_DARK)
+
     # ── Master Layout ────────────────────────────────────────────────────────
     def _build(self):
-        header = tk.Frame(self.root, bg=PANEL_BG, padx=18, pady=10,
-                          highlightthickness=1, highlightbackground=BORDER_CLR)
-        header.pack(side=tk.TOP, fill=tk.X)
+        r = self.root
+        r.grid_columnconfigure(0, weight=1)
+        r.grid_rowconfigure(2, weight=1)
 
-        title_box = tk.Frame(header, bg=PANEL_BG)
-        title_box.pack(side=tk.LEFT)
-        tk.Label(title_box, text="ENHANCED SRG IN MRI IMAGE SEGMENTATION", bg=PANEL_BG,
-                 fg=TEXT_MAIN, font=FONT_TITLE).pack(side=tk.LEFT)
+        self._build_header(r)
+        _rule(r).grid(row=1, column=0, sticky="ew")
 
-        tk.Label(header, text="Enhanced Adams & Bischof (1994) Seeded Region Growing",
-                 bg=PANEL_BG, fg=TEXT_FAINT, font=FONT_SM).pack(side=tk.RIGHT)
+        body = ctk.CTkFrame(r, fg_color=WHITE, corner_radius=0)
+        body.grid(row=2, column=0, sticky="nsew")
+        # cols: 0 left | 1 rule | 2 centre (weight 1) | 3 rule | 4 telemetry or rail
+        body.grid_rowconfigure(0, weight=1)
+        body.grid_columnconfigure(2, weight=1)
 
-        score_strip = tk.Frame(self.root, bg=PANEL_BG, padx=16, pady=8,
-                               highlightthickness=1, highlightbackground=BORDER_CLR)
-        score_strip.pack(side=tk.BOTTOM, fill=tk.X, padx=12, pady=(0, 10))
+        self.left = ctk.CTkFrame(body, fg_color=PANEL, corner_radius=0, width=LEFT_W)
+        self.left.grid(row=0, column=0, sticky="ns")
+        self.left.grid_propagate(False)
+        self._build_left(self.left)
+        self._build_splitter(body)
 
-        # Zoom controls live in the footer (not the stage/compare strip above
-        # the viewer) so they stay put no matter which view is active.
-        zoom_box = tk.Frame(score_strip, bg=PANEL_BG)
-        zoom_box.pack(side=tk.RIGHT, padx=(8, 0))
+        center = ctk.CTkFrame(body, fg_color=WHITE, corner_radius=0)
+        center.grid(row=0, column=2, sticky="nsew")
+        self._build_center(center)
+        _rule(body, True).grid(row=0, column=3, sticky="ns")
 
-        FlatButton(zoom_box, text="Reset", command=self._zoom_reset,
-                   bg=PANEL_ALT, fg=TEXT_MUTED, hover_bg=BORDER_CLR,
-                   font=FONT_SM, padx=8, pady=3).pack(side=tk.RIGHT, padx=(4, 0))
-        FlatButton(zoom_box, text="+", command=self._zoom_in,
-                   bg=PANEL_ALT, fg=TEXT_MAIN, hover_bg=BORDER_CLR,
-                   font=("Segoe UI", 10, "bold"), padx=10, pady=3).pack(side=tk.RIGHT, padx=(4, 0))
-        self.zoom_lbl = tk.Label(zoom_box, text="100%", bg=PANEL_BG, fg=TEXT_MUTED,
-                                 font=FONT_SM, width=5, anchor="center")
-        self.zoom_lbl.pack(side=tk.RIGHT, padx=(4, 0))
-        FlatButton(zoom_box, text="−", command=self._zoom_out,
-                   bg=PANEL_ALT, fg=TEXT_MAIN, hover_bg=BORDER_CLR,
-                   font=("Segoe UI", 10, "bold"), padx=10, pady=3).pack(side=tk.RIGHT)
-        tk.Label(zoom_box, text="ZOOM:", bg=PANEL_BG, fg=TEXT_FAINT,
-                 font=FONT_BOLD).pack(side=tk.RIGHT, padx=(0, 6))
+        self.tel_panel = ctk.CTkFrame(body, fg_color=WHITE, corner_radius=0, width=DIAG_PANEL_W)
+        self.tel_panel.grid(row=0, column=4, sticky="ns")
+        self.tel_panel.grid_propagate(False)
+        self._build_telemetry(self.tel_panel)
 
-        # Lets the Stage Telemetry panel be hidden to reclaim width for the
-        # viewer (e.g. the side-by-side Compare view) on narrower windows.
-        self._diag_toggle_btn = FlatButton(
-            score_strip, text="Telemetry ◂", command=self._toggle_diagnostics,
-            bg=PANEL_ALT, fg=TEXT_MUTED, hover_bg=BORDER_CLR,
-            font=FONT_SM, padx=8, pady=3)
-        self._diag_toggle_btn.pack(side=tk.RIGHT, padx=(8, 0))
+        self.rail = ctk.CTkFrame(body, fg_color=PANEL, corner_radius=0, width=RAIL_W)
+        self.rail.grid_propagate(False)
+        self._btn(self.rail, "|<", self._toggle_telemetry, width=RAIL_W - 8, height=28,
+                  font=F_CAP).place(x=4, y=8)
 
-        tk.Label(score_strip, text="EVALUATION METRICS:", bg=PANEL_BG,
-                 fg=PRIMARY, font=FONT_BOLD).pack(side=tk.LEFT, padx=(0, 8))
-        self.score_lbl = tk.Label(score_strip, text="Load an MRI slice and run the pipeline to view metrics.",
-                                  bg=PANEL_BG, fg=TEXT_MUTED, font=FONT_UI, anchor="w")
-        self.score_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        _rule(r).grid(row=3, column=0, sticky="ew")
+        self._build_footer(r)
+        self._sync_overlay_toggle()
+        self._sync_obj_buttons()
+        self._update_metrics()
 
-        body = tk.Frame(self.root, bg=APP_BG)
-        body.pack(fill=tk.BOTH, expand=True, padx=12, pady=10)
+    # ── Resizable control panel ──────────────────────────────────────────────
+    def _build_splitter(self, body):
+        """Draggable divider between the control panel and the viewer. It looks like the
+        usual 1px rule, but its 5px hit area turns blue on hover. Double-click resets."""
+        self._split = tk.Frame(body, bg=WHITE, width=5, cursor="sb_h_double_arrow")
+        self._split.grid(row=0, column=1, sticky="ns")
+        self._split_line = tk.Frame(self._split, bg=BORDER, width=1)
+        self._split_line.place(x=0, y=0, relheight=1)
+        self._split_drag = None
+        for w in (self._split, self._split_line):
+            w.bind("<Enter>", lambda e: self._split_line.configure(bg=BLUE))
+            w.bind("<Leave>", lambda e: self._split_drag or self._split_line.configure(bg=BORDER))
+            w.bind("<ButtonPress-1>", self._split_press)
+            w.bind("<B1-Motion>", self._split_move)
+            w.bind("<ButtonRelease-1>", self._split_release)
+            w.bind("<Double-Button-1>", lambda e: self._set_left_width(LEFT_W))
 
-        sidebar_frame = tk.Frame(body, bg=PANEL_BG, width=280,
-                                 highlightthickness=1, highlightbackground=BORDER_CLR)
-        sidebar_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
-        sidebar_frame.pack_propagate(False)
-        self._build_sidebar(sidebar_frame)
+    def _split_press(self, event):
+        self._split_drag = (event.x_root, self._left_w)
+        self._split_line.configure(bg=BLUE)
 
-        center_frame = tk.Frame(body, bg=APP_BG)
-        center_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self._build_viewer(center_frame)
+    def _split_move(self, event):
+        if self._split_drag:
+            x0, w0 = self._split_drag
+            # CTk sizes are DPI-independent units; pointer coordinates are physical pixels.
+            self._set_left_width(w0 + (event.x_root - x0) / self._scale)
 
-        self.diagnostics_frame = tk.Frame(body, bg=PANEL_BG, width=DIAG_PANEL_W,
-                                          highlightthickness=1, highlightbackground=BORDER_CLR)
-        self.diagnostics_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 0))
-        self.diagnostics_frame.pack_propagate(False)
-        self._build_diagnostics(self.diagnostics_frame)
+    def _split_release(self, _event):
+        self._split_drag = None
+        self._split_line.configure(bg=BORDER)
 
-    # ── Sidebar & Parameter Controls ─────────────────────────────────────────
-    def _section_header(self, parent, text):
-        hdr = tk.Frame(parent, bg=PANEL_BG)
-        hdr.pack(fill=tk.X, pady=(12, 4))
-        tk.Label(hdr, text=text.upper(), bg=PANEL_BG, fg=PRIMARY,
-                 font=FONT_BOLD, anchor="w").pack(side=tk.LEFT)
-        tk.Frame(hdr, bg=BORDER_CLR, height=1).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 0))
+    def _set_left_width(self, w):
+        """Resize the control panel, keeping the viewer and the telemetry column usable."""
+        right = (self.tel_panel if self.tel_visible else self.rail).cget("width")
+        room = self.root.winfo_width() / self._scale - right - CENTER_MIN
+        w = int(round(max(LEFT_MIN, min(LEFT_MAX, room, w))))
+        if w == self._left_w:
+            return
+        self._left_w = w
+        self.left.configure(width=w)
+        # Wrapped labels follow the panel so they never run under the scrollbar.
+        for lbl in (self.file_lbl, self.status_lbl):
+            lbl.configure(wraplength=w - 50)
 
-    def _build_sidebar(self, p):
-        # 1. Pinned Action Buttons (Always visible at the bottom)
-        action_frame = tk.Frame(p, bg=PANEL_BG, padx=12)
-        action_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
+    # ── Header ───────────────────────────────────────────────────────────────
+    def _build_header(self, parent):
+        bar = ctk.CTkFrame(parent, fg_color=WHITE, corner_radius=0, height=58)
+        bar.grid(row=0, column=0, sticky="ew")
+        bar.pack_propagate(False)
+        ctk.CTkLabel(bar, text="Enhanced Seeded Region Growing Algorithm in MRI Image Segmentation",
+                     font=F_TITLE, text_color=TEXT).pack(side="left", padx=20)
 
-        tk.Frame(action_frame, bg=BORDER_CLR, height=1).pack(fill=tk.X, pady=(0, 10))
+        # Packed right-to-left so they read OBJ 1, OBJ 2, OBJ 3 from the left.
+        self.obj_buttons = {}
+        self._obj_active = None
+        for n in (3, 2, 1):
+            b = ctk.CTkButton(bar, text=f"OBJ {n}", width=74, height=32, corner_radius=0,
+                              font=F_CAP, border_width=0, fg_color=OBJ_IDLE, hover_color=BLUE,
+                              text_color=TEXT, text_color_disabled=FAINT,
+                              command=lambda n=n: self._on_obj(n))
+            b.pack(side="right", padx=(0, 20 if n == 3 else 6))
+            b.bind("<Enter>", lambda e, n=n: self._obj_hover(n, True), add="+")
+            b.bind("<Leave>", lambda e, n=n: self._obj_hover(n, False), add="+")
+            self.obj_buttons[n] = b
 
-        self.run_btn = FlatButton(action_frame, text="RUN", command=self._run,
-                                  bg=PRIMARY, fg="#ffffff", hover_bg=PRIMARY_HOV,
-                                  border_color=PRIMARY, font=("Segoe UI", 10, "bold"), pady=8)
-        self.run_btn.pack(fill=tk.X)
+    def _obj_enabled(self, n):
+        return self.result is not None and self.result.stage(OBJ_STAGE[n]) is not None
 
-        self.status_lbl = tk.Label(action_frame, text="Ready", bg=PANEL_BG, fg=TEXT_MUTED,
-                                   font=FONT_SM, anchor="w", wraplength=235, justify=tk.LEFT)
-        self.status_lbl.pack(fill=tk.X, pady=(4, 8))
+    def _obj_hover(self, n, inside):
+        # CTkButton animates only the fill on hover; swap the label colour here.
+        if not self._obj_enabled(n) or n == self._obj_active:
+            return
+        self.obj_buttons[n].configure(text_color=WHITE if inside else TEXT)
 
-        # 2. Scrollable Parameters (Takes remaining top space)
-        canvas = tk.Canvas(p, bg=PANEL_BG, highlightthickness=0)
-        sb = ttk.Scrollbar(p, orient="vertical", command=canvas.yview)
-        
-        sb.pack(side=tk.RIGHT, fill=tk.Y)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        scroll_content = tk.Frame(canvas, bg=PANEL_BG, padx=12, pady=8)
+    def _on_obj(self, n):
+        if self._obj_enabled(n):
+            self._select(OBJ_STAGE[n])
 
-        scroll_content.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        cw = canvas.create_window((0, 0), window=scroll_content, anchor="nw")
-        canvas.configure(yscrollcommand=sb.set)
-        p.bind("<Configure>", lambda e: canvas.itemconfig(cw, width=e.width - 16))
-
-        # Widgets embedded in a Canvas via create_window (like scroll_content
-        # and everything in it) don't reliably receive real hardware
-        # <MouseWheel> events routed to descendant widgets on macOS/Aqua,
-        # even though per-widget bindings are technically present. Binding
-        # globally via bind_all and gating on cursor position sidesteps that
-        # routing entirely, so hovering anywhere over the sidebar scrolls it.
-        def _on_sidebar_wheel(event):
-            px, py = self.root.winfo_pointerx(), self.root.winfo_pointery()
-            bx, by = p.winfo_rootx(), p.winfo_rooty()
-            bw, bh = p.winfo_width(), p.winfo_height()
-            if bw <= 1 or bh <= 1:
-                return
-            if not (bx <= px < bx + bw and by <= py < by + bh):
-                return
-            if event.num == 4:
-                canvas.yview_scroll(-1, "units")
-            elif event.num == 5:
-                canvas.yview_scroll(1, "units")
+    def _sync_obj_buttons(self):
+        self._obj_active = next(
+            (n for n, k in OBJ_STAGE.items() if self._obj_enabled(n) and self.current == k), None)
+        for n, b in self.obj_buttons.items():
+            if not self._obj_enabled(n):
+                b.configure(state="disabled", fg_color=OBJ_IDLE, text_color=FAINT)
+            elif n == self._obj_active:
+                b.configure(state="normal", fg_color=BLUE, hover_color=BLUE, text_color=WHITE)
             else:
-                canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+                b.configure(state="normal", fg_color=OBJ_IDLE, hover_color=BLUE, text_color=TEXT)
 
-        self.root.bind_all("<MouseWheel>", _on_sidebar_wheel, add="+")
-        self.root.bind_all("<Button-4>", _on_sidebar_wheel, add="+")
-        self.root.bind_all("<Button-5>", _on_sidebar_wheel, add="+")
+    # ── Left column: controls ────────────────────────────────────────────────
+    def _section_header(self, parent, text):
+        hdr = ctk.CTkFrame(parent, fg_color="transparent")
+        hdr.pack(fill="x", pady=(10, 4))
+        ctk.CTkLabel(hdr, text=text.upper(), font=F_CAP, text_color=BLUE,
+                     anchor="w").pack(side="left")
+        _rule(hdr).pack(side="left", fill="x", expand=True, padx=(8, 0))
 
-        # Input Source
-        self._section_header(scroll_content, "Input Data")
-        FlatButton(scroll_content, text="Open MRI Slice…", command=self._load,
-                   bg=PANEL_ALT, fg=TEXT_MAIN, hover_bg=BORDER_CLR, font=FONT_UI, pady=6).pack(fill=tk.X, pady=(4, 2))
+    def _build_left(self, p):
+        p.grid_rowconfigure(0, weight=1)
+        p.grid_columnconfigure(0, weight=1)
 
-        self.file_lbl = tk.Label(scroll_content, text="No MRI scan selected", bg=PANEL_BG,
-                                 fg=TEXT_FAINT, font=FONT_SM, anchor="w", wraplength=235, justify=tk.LEFT)
-        self.file_lbl.pack(fill=tk.X, pady=(2, 6))
+        # Pinned primary action (always visible).
+        action = ctk.CTkFrame(p, fg_color=PANEL, corner_radius=0)
+        action.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 12))
+        _rule(action).pack(fill="x", pady=(0, 10))
+        self.run_btn = self._btn(action, "RUN PIPELINE", self._run, primary=True, height=42,
+                                 font=F_RUN)
+        self.run_btn.pack(fill="x")
+        self.status_lbl = ctk.CTkLabel(action, text="Ready", font=F_SMALL, text_color=MUTED,
+                                       anchor="w", justify="left", wraplength=LEFT_W - 50)
+        self.status_lbl.pack(fill="x", pady=(6, 0))
 
-        # Pipeline Method
-        self._section_header(scroll_content, "Pipeline Method")
+        sc = ctk.CTkScrollableFrame(p, fg_color=PANEL, corner_radius=0,
+                                    scrollbar_button_color=BORDER_DARK,
+                                    scrollbar_button_hover_color=MUTED)
+        sc.grid(row=0, column=0, sticky="nsew", padx=(8, 0), pady=(0, 4))
+
+        self._section_header(sc, "Input Data")
+        self._btn(sc, "Open MRI Slice…", self._load, height=34).pack(fill="x", pady=(0, 4))
+        self.file_lbl = ctk.CTkLabel(sc, text="No MRI scan selected", font=F_SMALL,
+                                     text_color=FAINT, anchor="w", justify="left", wraplength=LEFT_W - 50)
+        self.file_lbl.pack(fill="x")
+
+        self._section_header(sc, "Pipeline Method")
         for val, lab in (("esrg", "ESRG (Enhanced Model)"), ("srg", "SRG Baseline (1994)")):
-            tk.Radiobutton(scroll_content, text=lab, variable=self.method, value=val,
-                           command=self._update_seed_region_visibility,
-                           bg=PANEL_BG, fg=TEXT_MAIN, selectcolor=PANEL_ALT,
-                           activebackground=PANEL_BG, font=FONT_UI, anchor="w",
-                           highlightthickness=0).pack(fill=tk.X, pady=1)
+            self._radio(sc, lab, self.method, val,
+                        self._update_seed_region_visibility).pack(anchor="w", pady=2)
 
-        # Seeding Protocol
-        self._section_header(scroll_content, "Seeding Strategy")
+        self._section_header(sc, "Seeding Strategy")
         for val, lab in (("auto", "Automated Seeding"), ("manual", "Manual Seeding")):
-            tk.Radiobutton(scroll_content, text=lab, variable=self.seed_mode, value=val,
-                           command=self._on_seed_mode_change,
-                           bg=PANEL_BG, fg=TEXT_MAIN, selectcolor=PANEL_ALT,
-                           activebackground=PANEL_BG, font=FONT_UI, anchor="w",
-                           highlightthickness=0).pack(fill=tk.X, pady=1)
+            self._radio(sc, lab, self.seed_mode, val,
+                        self._on_seed_mode_change).pack(anchor="w", pady=2)
 
-        # Seed region palette: clicks are planted as the selected region. It
-        # only matters for Manual Landmark seeding and/or the SRG baseline,
-        # which tessellates the head between all planted regions (region 2+
-        # is what stops the tumor region from swallowing the whole slice) —
-        # hidden otherwise by _update_seed_region_visibility.
-        self.region_box = tk.Frame(scroll_content, bg=PANEL_BG)
-        tk.Label(self.region_box, text="Seed region to plant", bg=PANEL_BG, fg=TEXT_MUTED,
-                 font=FONT_SM, anchor="w").pack(fill=tk.X)
+        # Seed region palette + Clear button: clicks are planted as the selected region.
+        # Only meaningful for Manual seeding (and the SRG baseline, which tessellates the
+        # head between all planted regions — region 2+ is what stops the tumor region from
+        # swallowing the whole slice), so it lives in a slot that collapses to nothing in
+        # Automated mode (see _update_seed_region_visibility).
+        self.region_slot = ctk.CTkFrame(sc, fg_color="transparent", height=1)
+        self.region_slot.pack(fill="x")
+        self.region_box = ctk.CTkFrame(self.region_slot, fg_color="transparent")
+        ctk.CTkLabel(self.region_box, text="Seed region to plant", font=F_SMALL,
+                     text_color=MUTED, anchor="w").pack(fill="x", pady=(4, 0))
         for t in range(1, self.cfg.manual_seed_types + 1):
-            row = tk.Frame(self.region_box, bg=PANEL_BG)
-            row.pack(fill=tk.X)
-            tk.Radiobutton(row, text=f"Region {t}" + (" (tumor)" if t == 1 else ""),
-                           variable=self.seed_type, value=t, bg=PANEL_BG, fg=TEXT_MAIN,
-                           selectcolor=PANEL_ALT, activebackground=PANEL_BG,
-                           font=FONT_UI, anchor="w", highlightthickness=0).pack(side=tk.LEFT)
+            row = ctk.CTkFrame(self.region_box, fg_color="transparent")
+            row.pack(fill="x", pady=1)
+            self._radio(row, f"Region {t}" + (" (tumor)" if t == 1 else ""),
+                        self.seed_type, t).pack(side="left")
             tk.Frame(row, bg="#%02x%02x%02x" % SEED_RGB[(t - 1) % len(SEED_RGB)],
-                     width=14, height=14).pack(side=tk.RIGHT, padx=6, pady=3)
-
-        self._clear_seeds_btn = FlatButton(
-            scroll_content, text="Clear Manual Seeds", command=self._clear_seeds,
-            bg=PANEL_BG, fg=TEXT_MUTED, hover_bg=PANEL_ALT, font=FONT_SM, pady=4)
-        self._clear_seeds_btn.pack(fill=tk.X, pady=(6, 4))
+                     width=14, height=14).pack(side="right", padx=8)
+        self._btn(self.region_box, "Clear Manual Seeds", self._clear_seeds, height=28,
+                  font=F_SMALL).pack(fill="x", pady=(6, 2))
         self._update_seed_region_visibility()
 
-        # Ablation Switches
-        self._section_header(scroll_content, "Ablation Controls")
+        self._section_header(sc, "Ablation Controls")
         for var, lab in ((self.use_log, "Log-Domain Transform (Obj 2)"),
                          (self.use_local, "Local Log Measure (Obj 2)"),
                          (self.use_stop, "Adaptive Termination (Obj 3)"),
                          (self.purify_manual_seed, "Purify Manual Seed (ESRG only)")):
-            tk.Checkbutton(scroll_content, text=lab, variable=var, bg=PANEL_BG,
-                           fg=TEXT_MAIN, selectcolor=PANEL_ALT, activebackground=PANEL_BG,
-                           font=FONT_UI, anchor="w", highlightthickness=0).pack(fill=tk.X, pady=1)
+            self._check(sc, lab, var).pack(anchor="w", pady=3)
 
-        # Hyperparameters
-        self._section_header(scroll_content, "Hyperparameters")
-        self._slider(scroll_content, "k_L — Local Stopping Factor", self.k_local, 0.5, 4.0, 0.1)
-        self._slider(scroll_content, "r — Neighborhood Radius", self.radius, 1, 8, 1)
-        self._slider(scroll_content, "K — Otsu Threshold Classes", self.classes, 2, 5, 1)
+        self._section_header(sc, "Hyperparameters")
+        self._slider(sc, "k_L — Local Stopping Factor", self.k_local, 0.5, 4.0, 0.1, "{:.1f}")
+        self._slider(sc, "r — Neighborhood Radius", self.radius, 1, 8, 1, "{:.0f}")
+        self._slider(sc, "K — Otsu Threshold Classes", self.classes, 2, 5, 1, "{:.0f}")
 
-        # Visualization Options
-        self._section_header(scroll_content, "Display Settings")
-        self._slider(scroll_content, "Overlay Opacity", self.opacity, 0.0, 1.0, 0.05, self._redraw)
-        tk.Checkbutton(scroll_content, text="Show Error Heatmap (TP/FP/FN)",
-                       variable=self.error_mode, bg=PANEL_BG, fg=TEXT_MAIN,
-                       selectcolor=PANEL_ALT, activebackground=PANEL_BG,
-                       font=FONT_UI, anchor="w", highlightthickness=0,
-                       command=self._redraw).pack(fill=tk.X, pady=(2, 6))
+        self._section_header(sc, "Display")
+        self._slider(sc, "Overlay Opacity", self.opacity, 0.0, 1.0, 0.05, "{:.2f}",
+                     self._schedule_render)
+        self._check(sc, "Show Error Heatmap (TP/FP/FN)", self.error_mode,
+                    self._schedule_render).pack(anchor="w", pady=(4, 8))
+
+    def _slider(self, p, label, var, lo, hi, step, fmt, cmd=None):
+        """Flat track, solid square thumb, live numeric readout."""
+        box = ctk.CTkFrame(p, fg_color="transparent")
+        box.pack(fill="x", pady=(2, 6))
+        head = ctk.CTkFrame(box, fg_color="transparent")
+        head.pack(fill="x")
+        ctk.CTkLabel(head, text=label, font=F_SMALL, text_color=MUTED,
+                     anchor="w").pack(side="left")
+        readout = ctk.CTkLabel(head, text=fmt.format(var.get()), font=F_BOLD, text_color=TEXT,
+                               anchor="e")
+        readout.pack(side="right")
+
+        def changed(v):
+            readout.configure(text=fmt.format(v))
+            if cmd:
+                cmd()
+
+        ctk.CTkSlider(box, from_=lo, to=hi, number_of_steps=int(round((hi - lo) / step)),
+                      variable=var, command=changed, height=18, corner_radius=0,
+                      button_corner_radius=2, button_length=4, border_width=6,
+                      fg_color=BORDER_DARK, progress_color=BLUE, button_color=BLUE,
+                      button_hover_color=BLUE_HOV).pack(fill="x", pady=(4, 0))
 
     def _on_seed_mode_change(self):
         self._update_seed_region_visibility()
         self._refresh_telemetry()
 
     def _update_seed_region_visibility(self):
-        """The seed-region palette only matters for Manual Landmark seeding;
-        automatic SRG plants its own background seeds."""
-        show = self.seed_mode.get() == "manual"
-        if show:
-            if not self.region_box.winfo_ismapped():
-                self.region_box.pack(fill=tk.X, pady=(6, 2), before=self._clear_seeds_btn)
+        """The seed-region palette only matters for Manual seeding; automatic SRG
+        plants its own background seeds."""
+        if self.seed_mode.get() == "manual":
+            self.region_box.pack(fill="x")
         else:
             self.region_box.pack_forget()
 
-    def _slider(self, p, label, var, lo, hi, res, cmd=None):
-        box = tk.Frame(p, bg=PANEL_BG)
-        box.pack(fill=tk.X, pady=(2, 4))
-        tk.Label(box, text=label, bg=PANEL_BG, fg=TEXT_MUTED,
-                 font=FONT_SM, anchor="w").pack(fill=tk.X)
-        tk.Scale(box, variable=var, from_=lo, to=hi, resolution=res, orient=tk.HORIZONTAL,
-                 bg=PANEL_BG, fg=TEXT_MAIN, troughcolor=PANEL_ALT, activebackground=PRIMARY,
-                 highlightthickness=0, bd=1, relief=tk.FLAT, font=FONT_SM,
-                 command=(lambda _: cmd()) if cmd else None).pack(fill=tk.X)
+    # ── Centre column: tabs, twin panes, view controls ───────────────────────
+    def _build_center(self, p):
+        p.grid_columnconfigure(0, weight=1)
+        p.grid_rowconfigure(1, weight=1)
 
-    # ── Viewer & Stage Tab Strip ─────────────────────────────────────────────
-    def _build_viewer(self, p):
-        stage_strip_card = tk.Frame(p, bg=PANEL_BG, padx=8, pady=6,
-                                    highlightthickness=1, highlightbackground=BORDER_CLR)
-        stage_strip_card.pack(side=tk.TOP, fill=tk.X, pady=(0, 8))
+        # Stage tabs. The strip is a horizontally scrolling Canvas rather than a plain
+        # Frame: a Frame's natural width (every stage tab + Compare + Evaluation) would
+        # otherwise inflate the centre column's requested width and squeeze the other
+        # columns. A Canvas's requested size is independent of its scrollable content.
+        strip = ctk.CTkFrame(p, fg_color=WHITE, corner_radius=0)
+        strip.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 8))
+        ctk.CTkLabel(strip, text="STAGE", font=F_CAP, text_color=FAINT).pack(side="left", padx=(0, 10))
 
-        tk.Label(stage_strip_card, text="STAGE:", bg=PANEL_BG, fg=TEXT_FAINT,
-                 font=FONT_BOLD).pack(side=tk.LEFT, padx=(4, 8))
-
-        # The tab row is horizontally scrollable rather than a plain Frame:
-        # a plain Frame's natural width (sum of every stage tab + Compare)
-        # otherwise inflates stage_strip_card's requested width, which in
-        # turn inflates center_frame's requested width and can make Tk's
-        # pack manager silently evict the diagnostics panel on the right for
-        # lack of cavity space once enough tabs exist. A Canvas's requested
-        # size is independent of its scrollable content, so this decouples
-        # tab count from the rest of the window's layout entirely (same
-        # pattern already used for the sidebar's vertical parameter scroll).
-        tab_canvas = tk.Canvas(stage_strip_card, bg=PANEL_BG, height=28, highlightthickness=0)
-        tab_canvas.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        self.stage_bar = tk.Frame(tab_canvas, bg=PANEL_BG)
+        # Scroll arrows keep tabs beyond the visible width discoverable.
+        self._btn(strip, "‹", lambda: self._tab_canvas.xview_scroll(-3, "units"), width=26,
+                  font=F_BOLD).pack(side="left", padx=(0, 4))
+        # Compare view only: superimpose the ESRG mask on the ground truth instead of side by side.
+        self.overlay_chk = self._check(strip, "Overlay", self.compare_overlay,
+                                       self._on_overlay_toggle)
+        self.overlay_chk.pack(side="right", padx=(8, 0))
+        self._btn(strip, "›", lambda: self._tab_canvas.xview_scroll(3, "units"), width=26,
+                  font=F_BOLD).pack(side="right", padx=(4, 0))
+        self._tab_canvas = tk.Canvas(strip, bg=WHITE, height=self._px(32), highlightthickness=0)
+        self._tab_canvas.pack(side="left", fill="x", expand=True)
+        self.stage_bar = tk.Frame(self._tab_canvas, bg=WHITE)
         self.stage_buttons = {}
-        tab_window = tab_canvas.create_window((0, 0), window=self.stage_bar, anchor="nw")
-        self.stage_bar.bind(
-            "<Configure>",
-            lambda e: tab_canvas.configure(scrollregion=tab_canvas.bbox("all")))
-        tab_canvas.bind(
-            "<Configure>",
-            lambda e: tab_canvas.itemconfig(tab_window, height=e.height))
+        self._tab_canvas.create_window((0, 0), window=self.stage_bar, anchor="nw")
+        self.stage_bar.bind("<Configure>", self._on_stage_bar_resize)
+        # Resizing the strip (window drag, telemetry collapse, wider Details panel) can push
+        # the selected tab out of view; bring it back without disturbing manual scrolling.
+        self._tab_canvas.bind("<Configure>", lambda e: self.root.after_idle(self._reveal_current_tab))
 
-        def _tab_scroll(event):
+        def tab_scroll(event):
             if getattr(event, "num", None) == 4:
-                tab_canvas.xview_scroll(-1, "units")
+                self._tab_canvas.xview_scroll(-1, "units")
             elif getattr(event, "num", None) == 5:
-                tab_canvas.xview_scroll(1, "units")
+                self._tab_canvas.xview_scroll(1, "units")
             else:
-                tab_canvas.xview_scroll(-1 if event.delta > 0 else 1, "units")
+                self._tab_canvas.xview_scroll(-1 if event.delta > 0 else 1, "units")
 
-        tab_canvas.bind("<MouseWheel>", _tab_scroll)
-        tab_canvas.bind("<Button-4>", _tab_scroll)
-        tab_canvas.bind("<Button-5>", _tab_scroll)
-        self._tab_scroll = _tab_scroll
-        self._tab_canvas = tab_canvas
-
+        self._tab_scroll = tab_scroll
+        for ev in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self._tab_canvas.bind(ev, tab_scroll)
         self._init_empty_stage_tabs()
 
-        # Only meaningful while the COMPARE tab is active, but always visible
-        # so it's easy to find alongside the other viewer controls.
-        tk.Checkbutton(stage_strip_card, text="Overlay", variable=self.compare_overlay,
-                       command=self._redraw, bg=PANEL_BG, fg=TEXT_MAIN,
-                       selectcolor=PANEL_ALT, activebackground=PANEL_BG,
-                       font=FONT_UI, highlightthickness=0).pack(side=tk.RIGHT, padx=(8, 4))
+        # Two equal panes: Original | Segmented Output. Each is a caption over a black canvas.
+        panes = ctk.CTkFrame(p, fg_color=WHITE, corner_radius=0)
+        panes.grid(row=1, column=0, sticky="nsew", padx=14)
+        panes.grid_rowconfigure(0, weight=1)
+        panes.grid_columnconfigure((0, 1), weight=1, uniform="pane")
 
-        viewer_card = tk.Frame(p, bg=VIEWPORT_BG, highlightthickness=1, highlightbackground=BORDER_MED)
-        viewer_card.pack(fill=tk.BOTH, expand=True)
+        self.captions, self.legends, self.canvases = [], [], []
+        for i, title in enumerate(("ORIGINAL", "SEGMENTED OUTPUT")):
+            col = ctk.CTkFrame(panes, fg_color=WHITE, corner_radius=0)
+            col.grid(row=0, column=i, sticky="nsew", padx=(0, 6) if i == 0 else (6, 0))
+            col.grid_rowconfigure(2, weight=1)
+            col.grid_columnconfigure(0, weight=1)
+            cap = ctk.CTkLabel(col, text=title, font=F_CAP, text_color=TEXT, anchor="w", height=18)
+            cap.grid(row=0, column=0, sticky="ew")
+            leg = ctk.CTkLabel(col, text="", font=("Segoe UI", 11), text_color=MUTED, anchor="w",
+                               height=16)
+            leg.grid(row=1, column=0, sticky="ew", pady=(0, 4))
+            cv = tk.Canvas(col, bg=VIEWPORT, highlightthickness=0, width=2, height=2)
+            cv.grid(row=2, column=0, sticky="nsew")
+            self._bind_canvas(cv)
+            self.captions.append(cap)
+            self.legends.append(leg)
+            self.canvases.append(cv)
 
-        self.canvas = tk.Canvas(viewer_card, bg=VIEWPORT_BG, highlightthickness=0)
-        self.canvas.pack(fill=tk.BOTH, expand=True)
-        self.canvas.bind("<Configure>", lambda e: self._redraw())
-        self.canvas.bind("<MouseWheel>", self._on_wheel_zoom)
-        self.canvas.bind("<Button-4>", self._on_wheel_zoom)
-        self.canvas.bind("<Button-5>", self._on_wheel_zoom)
-        # macOS synthesizes Control+MouseWheel (and Control+Button-4/5 on
-        # X11-style setups) for trackpad pinch gestures in non-native-gesture
-        # Tk apps, so pinch-to-zoom needs an explicit binding of its own.
-        self.canvas.bind("<Control-MouseWheel>", self._on_wheel_zoom)
-        self.canvas.bind("<Control-Button-4>", self._on_wheel_zoom)
-        self.canvas.bind("<Control-Button-5>", self._on_wheel_zoom)
-        # Right-click drag (desktop mouse) or left-click-and-hold drag
-        # (trackpad-friendly, no right-click gesture needed) both pan around
-        # the zoomed-in image. A plain left click with no meaningful drag
-        # still places a manual seed, via the click/drag disambiguation in
-        # _on_left_press/_on_left_drag/_on_left_release.
-        self.canvas.bind("<ButtonPress-1>", self._on_left_press)
-        self.canvas.bind("<B1-Motion>", self._on_left_drag)
-        self.canvas.bind("<ButtonRelease-1>", self._on_left_release)
-        self.canvas.bind("<ButtonPress-3>", self._on_pan_start)
-        self.canvas.bind("<B3-Motion>", self._on_pan_move)
+        # View controls: zoom (- 100% +), Pan tool, Reset.
+        ctl = ctk.CTkFrame(p, fg_color=WHITE, corner_radius=0)
+        ctl.grid(row=2, column=0, pady=(10, 12))
+        self._btn(ctl, "−", self._zoom_out, width=36, font=F_BOLD).pack(side="left")
+        self.zoom_lbl = ctk.CTkLabel(ctl, text="100%", font=F_BOLD, text_color=TEXT, width=64)
+        self.zoom_lbl.pack(side="left")
+        self._btn(ctl, "+", self._zoom_in, width=36, font=F_BOLD).pack(side="left")
+        self.pan_btn = self._btn(ctl, "Pan", self._toggle_pan, width=72)
+        self.pan_btn.pack(side="left", padx=(18, 0))
+        self._btn(ctl, "Reset", self._zoom_reset, width=72).pack(side="left", padx=(6, 0))
 
-        # Side-by-side Compare pane: two independently-clipped canvases so a
-        # zoomed-in mask can never bleed across into the other panel (a
-        # single shared canvas only clips to its own outer bounds, not to
-        # sub-regions drawn onto it). Built once, hidden until Compare mode
-        # with "Overlay" unchecked is actually selected (see
-        # _sync_viewer_visibility).
-        self.compare_pane = tk.Frame(viewer_card, bg=VIEWPORT_BG)
+    def _bind_canvas(self, c):
+        c.bind("<Configure>", lambda e: self._schedule_render())
+        for ev in ("<MouseWheel>", "<Button-4>", "<Button-5>", "<Control-MouseWheel>",
+                   "<Control-Button-4>", "<Control-Button-5>"):
+            c.bind(ev, self._on_wheel_zoom)
+        # A plain left click places a manual seed; a left-drag (or any drag while the
+        # Pan tool is on) pans. Right-drag always pans.
+        c.bind("<ButtonPress-1>", self._on_left_press)
+        c.bind("<B1-Motion>", self._on_left_drag)
+        c.bind("<ButtonRelease-1>", self._on_left_release)
+        c.bind("<ButtonPress-3>", self._on_pan_start)
+        c.bind("<B3-Motion>", self._on_pan_move)
 
-        left_box = tk.Frame(self.compare_pane, bg=VIEWPORT_BG)
-        left_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        tk.Label(left_box, text="ESRG SEGMENTATION MASK", bg=VIEWPORT_BG,
-                 fg="#f87171", font=FONT_BOLD).pack(side=tk.TOP, fill=tk.X, pady=(6, 4))
-        self.cmp_canvas_l = tk.Canvas(left_box, bg=VIEWPORT_BG, highlightthickness=0)
-        self.cmp_canvas_l.pack(fill=tk.BOTH, expand=True)
-
-        tk.Frame(self.compare_pane, bg=BORDER_MED, width=2).pack(side=tk.LEFT, fill=tk.Y)
-
-        right_box = tk.Frame(self.compare_pane, bg=VIEWPORT_BG)
-        right_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        tk.Label(right_box, text="GROUND TRUTH MASK", bg=VIEWPORT_BG,
-                 fg="#4ade80", font=FONT_BOLD).pack(side=tk.TOP, fill=tk.X, pady=(6, 4))
-        self.cmp_canvas_r = tk.Canvas(right_box, bg=VIEWPORT_BG, highlightthickness=0)
-        self.cmp_canvas_r.pack(fill=tk.BOTH, expand=True)
-
-        for c in (self.cmp_canvas_l, self.cmp_canvas_r):
-            c.bind("<Configure>", lambda e: self._redraw())
-            c.bind("<MouseWheel>", self._on_wheel_zoom)
-            c.bind("<Button-4>", self._on_wheel_zoom)
-            c.bind("<Button-5>", self._on_wheel_zoom)
-            c.bind("<Control-MouseWheel>", self._on_wheel_zoom)
-            c.bind("<Control-Button-4>", self._on_wheel_zoom)
-            c.bind("<Control-Button-5>", self._on_wheel_zoom)
-            c.bind("<ButtonPress-3>", self._on_pan_start)
-            c.bind("<B3-Motion>", self._on_pan_move)
-            # No seed placement is meaningful on these panels, so plain
-            # left-click-and-drag can pan immediately with no click/drag
-            # disambiguation needed.
-            c.bind("<ButtonPress-1>", self._on_pan_start)
-            c.bind("<B1-Motion>", self._on_pan_move)
+    def _on_stage_bar_resize(self, e):
+        self._tab_canvas.configure(scrollregion=self._tab_canvas.bbox("all"),
+                                   height=max(e.height, self._px(32)))
 
     def _init_empty_stage_tabs(self):
         self._clear_stages()
-        lbl = tk.Label(self.stage_bar, text="No stages processed yet",
-                       bg=PANEL_BG, fg=TEXT_FAINT, font=FONT_SM)
-        lbl.pack(side=tk.LEFT, padx=4)
-        lbl.bind("<MouseWheel>", self._tab_scroll)
-        lbl.bind("<Button-4>", self._tab_scroll)
-        lbl.bind("<Button-5>", self._tab_scroll)
+        ctk.CTkLabel(self.stage_bar, text="No stages processed yet", font=F_SMALL,
+                     text_color=FAINT, height=30).pack(side="left", padx=4)
 
-    # ── Diagnostics & Telemetry Panel ────────────────────────────────────────
-    def _build_diagnostics(self, p):
-        head = tk.Frame(p, bg=PANEL_BG, padx=10, pady=8)
-        head.pack(fill=tk.X)
-        self.diag_title = tk.Label(head, text="SEED TELEMETRY", bg=PANEL_BG, fg=PRIMARY,
-                                   font=FONT_BOLD)
-        self.diag_title.pack(side=tk.LEFT)
+    def _toggle_pan(self):
+        self.pan_tool.set(not self.pan_tool.get())
+        self._style_toggle(self.pan_btn, self.pan_tool.get())
+        for c in self.canvases:
+            c.configure(cursor="fleur" if self.pan_tool.get() else "")
 
-        # Metric picker, shown only while the Evaluation step is selected.
-        self.eval_picker = tk.Frame(p, bg=PANEL_BG, padx=8)
-        pick_head = tk.Frame(self.eval_picker, bg=PANEL_BG)
-        pick_head.pack(fill=tk.X, pady=(0, 2))
-        tk.Label(pick_head, text="Select metrics to compute:", bg=PANEL_BG,
-                 fg=TEXT_MUTED, font=FONT_SM).pack(side=tk.LEFT)
+    def _sync_overlay_toggle(self):
+        """Overlay needs a ground truth to superimpose; otherwise it is greyed out and cleared."""
+        usable = self.result is not None and self.result.gt is not None
+        if not usable:
+            self.compare_overlay.set(False)
+        self.overlay_chk.configure(state="normal" if usable else "disabled")
+
+    def _on_overlay_toggle(self):
+        # Overlay only changes the Compare view, so ticking it from another tab opens Compare.
+        if self.compare_overlay.get() and self.current != "compare":
+            self._select("compare")
+        else:
+            self._render_panes()
+
+    # ── Right column: collapsible seed telemetry ─────────────────────────────
+    def _build_telemetry(self, p):
+        p.grid_columnconfigure(0, weight=1)
+        p.grid_rowconfigure(2, weight=1)
+
+        head = ctk.CTkFrame(p, fg_color=WHITE, corner_radius=0)
+        head.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
+        ctk.CTkLabel(head, text="SEED TELEMETRY", font=F_CAP, text_color=BLUE).pack(side="left")
+        self._btn(head, ">|", self._toggle_telemetry, width=36, height=26,
+                  font=F_CAP).pack(side="right")
+
+        modes = ctk.CTkFrame(p, fg_color=WHITE, corner_radius=0)
+        modes.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 8))
+        self.tel_btns = {}
+        for name in ("Seeds", "Details"):
+            b = self._btn(modes, name, lambda n=name: self._set_tel_mode(n), width=84, height=26,
+                          font=F_SMALL)
+            b.pack(side="left", padx=(0, 4))
+            self.tel_btns[name] = b
+        self._style_toggle(self.tel_btns["Seeds"], True)
+
+        body = ctk.CTkFrame(p, fg_color=WHITE, corner_radius=0)
+        body.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        body.grid_rowconfigure(0, weight=1)
+        body.grid_columnconfigure(0, weight=1)
+
+        # Seeds view: flat table (+ empty-state message shown in its place).
+        self.seed_view = ctk.CTkFrame(body, fg_color=WHITE, corner_radius=0)
+        self.seed_view.grid_rowconfigure(0, weight=1)
+        self.seed_view.grid_columnconfigure(0, weight=1)
+        cols = ("row", "col", "raw", "norm", "status")
+        self.tree = ttk.Treeview(self.seed_view, columns=cols, style="Seeds.Treeview",
+                                 selectmode="browse")
+        self.tree.heading("#0", text="Seed", anchor="w")
+        self.tree.column("#0", width=self._px(112), minwidth=self._px(80), stretch=True)
+        for key, text, w, anchor in (("row", "Row", 40, "e"), ("col", "Col", 40, "e"),
+                                     ("raw", "Raw", 46, "e"), ("norm", "Norm", 56, "e"),
+                                     ("status", "Status", 88, "w")):
+            self.tree.heading(key, text=text, anchor=anchor)
+            self.tree.column(key, width=self._px(w), minwidth=self._px(w), anchor=anchor,
+                             stretch=key == "status")
+        self.tree.tag_configure("group", background=PANEL, font=TK_BOLD)
+        self.tree.tag_configure("good", foreground=OK_CLR)
+        self.tree.tag_configure("warn", foreground=WARN_CLR)
+        self.tree.tag_configure("bad", foreground=FAIL_CLR)
+        self.tree.tag_configure("muted", foreground=MUTED)
+        sb = ctk.CTkScrollbar(self.seed_view, command=self.tree.yview, corner_radius=0,
+                              fg_color=WHITE, button_color=BORDER_DARK,
+                              button_hover_color=MUTED, width=12)
+        self.tree.configure(yscrollcommand=sb.set)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        sb.grid(row=0, column=1, sticky="ns")
+        ctk.CTkLabel(self.seed_view, anchor="w", justify="left", font=("Segoe UI", 11),
+                     text_color=MUTED, wraplength=340,
+                     text="row = y, col = x (0-based) · Raw = file value · Norm = value the "
+                          "algorithm uses (0–255) · group row = mean of its pixels"
+                     ).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        self.seed_msg = ctk.CTkLabel(body, text="", font=F_SMALL, text_color=MUTED, anchor="nw",
+                                     justify="left", wraplength=330)
+
+        # Details view: metric picker (Evaluation only) over the worked-computation text.
+        self.detail_view = ctk.CTkFrame(body, fg_color=WHITE, corner_radius=0)
+        self.detail_view.grid_rowconfigure(1, weight=1)
+        self.detail_view.grid_columnconfigure(0, weight=1)
+        self.eval_picker = ctk.CTkFrame(self.detail_view, fg_color=WHITE, corner_radius=0)
+        pick_head = ctk.CTkFrame(self.eval_picker, fg_color=WHITE, corner_radius=0)
+        pick_head.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(pick_head, text="Select metrics to compute:", font=F_SMALL,
+                     text_color=MUTED).pack(side="left")
         for text, val in (("None", False), ("All", True)):
-            FlatButton(pick_head, text=text, command=lambda v=val: self._set_all_metrics(v),
-                       bg=PANEL_ALT, fg=TEXT_MUTED, hover_bg=BORDER_CLR,
-                       font=FONT_SM, padx=6, pady=1).pack(side=tk.RIGHT, padx=(4, 0))
-        grid = tk.Frame(self.eval_picker, bg=PANEL_BG)
-        grid.pack(fill=tk.X, pady=(0, 6))
+            self._btn(pick_head, text, lambda v=val: self._set_all_metrics(v), width=46, height=22,
+                      font=F_SMALL).pack(side="right", padx=(4, 0))
+        grid = ctk.CTkFrame(self.eval_picker, fg_color=WHITE, corner_radius=0)
+        grid.pack(fill="x", pady=(0, 8))
         for i, (key, label, _) in enumerate(evalx.METRICS):
-            tk.Checkbutton(grid, text=label, variable=self.eval_vars[key],
-                           command=self._refresh_telemetry, bg=PANEL_BG, fg=TEXT_MAIN,
-                           selectcolor=PANEL_ALT, activebackground=PANEL_BG, font=FONT_SM,
-                           highlightthickness=0, anchor="w").grid(row=i // 3, column=i % 3,
-                                                                  sticky="w", padx=(0, 4))
+            self._check(grid, label, self.eval_vars[key], self._refresh_telemetry).grid(
+                row=i // 3, column=i % 3, sticky="w", padx=(0, 10), pady=2)
 
-        container = tk.Frame(p, bg=PANEL_BG, padx=8)
-        container.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
-        self.diag_container = container
-
-        sb = ttk.Scrollbar(container)
-        sb.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self.diag = tk.Text(container, bg=PANEL_ALT, fg=TEXT_MAIN, font=FONT_MONO,
-                            wrap=tk.WORD, relief=tk.SOLID, bd=1, highlightthickness=0,
-                            yscrollcommand=sb.set, padx=10, pady=10)
-        self.diag.pack(fill=tk.BOTH, expand=True)
-        sb.config(command=self.diag.yview)
-
-        self.diag.tag_config("head", foreground=PRIMARY, font=FONT_MONO + ("bold",))
-        self.diag.tag_config("muted", foreground=TEXT_MUTED)
-        self.diag.tag_config("avg", foreground=TEXT_MAIN, font=FONT_MONO + ("bold",))
-        self.diag.tag_config("metric", foreground=TEXT_MAIN, font=(FONT_MONO[0], 11, "bold"))
-        self.diag.tag_config("sub", foreground=PRIMARY, font=FONT_MONO + ("bold",))
-        self.diag.tag_config("good", foreground=OK_CLR, font=FONT_MONO + ("bold",))
-        self.diag.tag_config("bad", foreground=FAIL_CLR, font=FONT_MONO + ("bold",))
+        text_box = ctk.CTkFrame(self.detail_view, fg_color=WHITE, corner_radius=0)
+        text_box.grid(row=1, column=0, sticky="nsew")
+        text_box.grid_rowconfigure(0, weight=1)
+        text_box.grid_columnconfigure(0, weight=1)
+        self.diag = tk.Text(text_box, bg=PANEL, fg=TEXT, font=TK_MONO, wrap=tk.WORD,
+                            relief=tk.FLAT, bd=0, highlightthickness=1,
+                            highlightbackground=BORDER, highlightcolor=BORDER, padx=10, pady=10)
+        dsb = ctk.CTkScrollbar(text_box, command=self.diag.yview, corner_radius=0, fg_color=WHITE,
+                               button_color=BORDER_DARK, button_hover_color=MUTED, width=12)
+        self.diag.configure(yscrollcommand=dsb.set)
+        self.diag.grid(row=0, column=0, sticky="nsew")
+        dsb.grid(row=0, column=1, sticky="ns")
+        self.diag.tag_config("head", foreground=BLUE, font=TK_MONO + ("bold",))
+        self.diag.tag_config("muted", foreground=MUTED)
+        self.diag.tag_config("avg", foreground=TEXT, font=TK_MONO + ("bold",))
+        self.diag.tag_config("metric", foreground=TEXT, font=(TK_MONO[0], 11, "bold"))
+        self.diag.tag_config("sub", foreground=BLUE, font=TK_MONO + ("bold",))
+        self.diag.tag_config("good", foreground=OK_CLR, font=TK_MONO + ("bold",))
+        self.diag.tag_config("bad", foreground=FAIL_CLR, font=TK_MONO + ("bold",))
         self.diag.tag_config("indent", lmargin1=18, lmargin2=18)
+
+        self._refresh_telemetry()
+
+    def _toggle_telemetry(self):
+        """Hide / show the telemetry column. The centre column holds the only grid weight,
+        so it reclaims (or yields) the freed width on its own."""
+        self.tel_visible = not self.tel_visible
+        if self.tel_visible:
+            _hide(self.rail)
+            self.tel_panel.grid(row=0, column=4, sticky="ns")
+        else:
+            _hide(self.tel_panel)
+            self.rail.grid(row=0, column=4, sticky="ns")
+        # Recompute geometry now so the redraw already sees the new canvas size.
+        self.root.update_idletasks()
+        self._render_panes()
+
+    def _set_tel_mode(self, mode):
+        self.tel_mode.set(mode)
+        for name, b in self.tel_btns.items():
+            self._style_toggle(b, name == mode)
         self._refresh_telemetry()
 
     def _telemetry_groups(self):
@@ -583,47 +745,96 @@ class ESRGApp:
             return None, "No tumor candidate — the system selected no seed pixels."
         return groups, None
 
+    def _seed_status(self, label, r, c):
+        """(text, tag) status of one seed pixel, derived only from what the last run did."""
+        res = self.result
+        if self.seed_mode.get() == "auto":
+            if res.gt is not None:
+                return ("In tumor", "good") if res.gt[r, c] else ("Off tumor", "bad")
+            return "Active", "good"
+        region = int(label.split()[1])
+        ran = res is not None and res.meta.get("seed_mode") == "manual"
+        if not ran or (r, c, region) not in self._run_points:
+            return "Placed", "muted"       # no run yet, or clicked after the last run
+        if res.meta.get("method") != "esrg":
+            return "Active", "good"        # SRG grows every planted region over the whole image
+        # ESRG grows only Region 1, inside the head mask.
+        if region != 1:
+            return "Ignored", "muted"
+        if not res.stage("mask").image[r, c]:
+            return "Outside head", "bad"
+        if res.stage("seed").image[r, c]:
+            return "Active", "good"
+        return "Purified out", "warn"
+
     def _refresh_telemetry(self):
-        """Lists the coordinate and grayscale value of every seed pixel, with the
-        mean of each region when it holds more than one pixel."""
-        evaluating = self.result is not None and self.current == "evaluation"
+        details = self.tel_mode.get() == "Details"
+        evaluating = details and self.result is not None and self.current == "evaluation"
         self._sync_eval_picker(evaluating)
+        if details:
+            _hide(self.seed_view)
+            _hide(self.seed_msg)
+            self.detail_view.grid(row=0, column=0, sticky="nsew")
+            self._fill_details()
+        else:
+            _hide(self.detail_view)
+            self._fill_seed_table()
+
+    def _fill_seed_table(self):
+        self.tree.delete(*self.tree.get_children())
+        groups, msg = self._telemetry_groups()
+        if msg:
+            _hide(self.seed_view)
+            self.seed_msg.configure(text=msg)
+            self.seed_msg.grid(row=0, column=0, sticky="nsew", padx=2, pady=4)
+            return
+        _hide(self.seed_msg)
+        self.seed_view.grid(row=0, column=0, sticky="nsew")
+        for g in pixel_report.describe(groups, self.raw_image, self.norm_image):
+            parent = self.tree.insert(
+                "", "end", text=g["label"], open=True, tags=("group",),
+                values=("", "", f"{g['mean_raw']:.1f}", f"{g['mean_norm']:.2f}", f"{g['n']} px"))
+            for i, p in enumerate(g["pixels"], 1):
+                status, tag = self._seed_status(g["label"], p["row"], p["col"])
+                self.tree.insert(parent, "end", text=str(i), tags=(tag,),
+                                 values=(p["row"], p["col"], f"{p['raw']:.0f}",
+                                         f"{p['norm']:.2f}", status))
+
+    def _fill_details(self):
         d = self.diag
         top = d.yview()[0]
         d.config(state=tk.NORMAL)
         d.delete("1.0", tk.END)
-        if evaluating:
-            # Checked before the seed groups: an Evaluation view exists for
-            # every run, including manual runs that have no auto seed to list.
+        if self.result is None:
+            d.insert(tk.END, "Run the pipeline to see the worked computation of each stage.\n",
+                     "muted")
+        elif self.current == "evaluation":
             self._write_eval_telemetry()
-            d.yview_moveto(top)
-            d.config(state=tk.DISABLED)
-            return
-
-        groups, msg = self._telemetry_groups()
-        if msg:
-            d.insert(tk.END, msg + "\n", "muted")
-        elif self.result and self.current == "log":
-            self._write_log_telemetry(groups)
+        elif self.current == "log":
+            groups, msg = self._telemetry_groups()
+            if msg:
+                d.insert(tk.END, msg + "\n", "muted")
+            else:
+                self._write_log_telemetry(groups)
         else:
-            h, w = self.raw_image.shape
-            mode = "Manual" if self.seed_mode.get() == "manual" else "Automated"
-            d.insert(tk.END, f"{w} × {h} px · {mode} seeding\n", "head")
-            d.insert(tk.END, "row = y, col = x (0-based)\n"
-                             "RAW = file value\n"
-                             "NORM = value the algorithm uses (0–255)\n", "muted")
-            for g in pixel_report.describe(groups, self.raw_image, self.norm_image):
-                d.insert(tk.END, "\n" + "─" * 34 + "\n")
-                d.insert(tk.END, f"{g['label']} — {g['n']} px\n", "head")
-                rows = [f"{'row':>5}{'col':>6}{'raw':>7}{'norm':>9}"]
-                rows += [f"{p['row']:>5}{p['col']:>6}{p['raw']:>7.0f}{p['norm']:>9.2f}"
-                         for p in g["pixels"]]
-                d.insert(tk.END, "\n".join(rows) + "\n")
-                if g["n"] > 1:
-                    d.insert(tk.END, f"Average  raw {g['mean_raw']:.2f}  norm {g['mean_norm']:.2f}\n", "avg")
-
+            self._write_stage_info()
         d.yview_moveto(top)
         d.config(state=tk.DISABLED)
+
+    def _write_stage_info(self):
+        d = self.diag
+        st = self.result.stage(self.current)
+        if st is None:
+            d.insert(tk.END, "No stage details for this view.\n", "muted")
+            return
+        d.insert(tk.END, f"{st.name}\n", "head")
+        d.insert(tk.END, f"status {st.status} · {st.seconds * 1000:.0f} ms\n", "muted")
+        for k, v in st.info.items():
+            if k.startswith("_"):
+                continue
+            txt = str(v)
+            d.insert(tk.END, f"\n{k}\n", "sub")
+            d.insert(tk.END, (txt if len(txt) <= 200 else txt[:197] + "…") + "\n")
 
     def _write_log_telemetry(self, groups):
         """Stage 3 view: L(x) of every seed pixel with its arithmetic, and the
@@ -671,14 +882,12 @@ class ESRGApp:
                          f"        = {nf['sigma_floor']:.6f}\n", "avg")
 
     def _sync_eval_picker(self, evaluating):
-        """Show the metric picker and retitle the panel in the Evaluation step."""
-        self.diag_title.config(text="EVALUATION METRICS" if evaluating else "SEED TELEMETRY")
-        # Worked computations need a wider panel than the seed-pixel tables.
-        self.diagnostics_frame.config(width=EVAL_PANEL_W if evaluating else DIAG_PANEL_W)
+        """Show the metric picker and widen the panel while the Evaluation step is explained."""
+        self.tel_panel.configure(width=EVAL_PANEL_W if evaluating else DIAG_PANEL_W)
         if evaluating and not self.eval_picker.winfo_ismapped():
-            self.eval_picker.pack(fill=tk.X, before=self.diag_container)
-        elif not evaluating and self.eval_picker.winfo_ismapped():
-            self.eval_picker.pack_forget()
+            self.eval_picker.grid(row=0, column=0, sticky="ew")
+        elif not evaluating:
+            _hide(self.eval_picker)
 
     def _set_all_metrics(self, value):
         for v in self.eval_vars.values():
@@ -727,19 +936,42 @@ class ESRGApp:
             d.insert(tk.END, "\n".join(e["steps"]) + "\n")
             d.insert(tk.END, f"Result: {e['label']} = {evalx.value_text(e)}\n", "avg")
 
-    def _toggle_diagnostics(self):
-        self.diag_visible.set(not self.diag_visible.get())
-        if self.diag_visible.get():
-            self.diagnostics_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 0))
-            self._diag_toggle_btn.config(text="Telemetry ◂")
+    # ── Footer: one-line metrics ─────────────────────────────────────────────
+    def _build_footer(self, parent):
+        bar = ctk.CTkFrame(parent, fg_color=WHITE, corner_radius=0, height=42)
+        bar.grid(row=4, column=0, sticky="ew")
+        bar.pack_propagate(False)
+        self.metric_vals = {}
+        for i, (label, key, _) in enumerate(FOOTER_METRICS):
+            if i:
+                _rule(bar, True).pack(side="left", fill="y", pady=10)
+            cell = ctk.CTkFrame(bar, fg_color=WHITE, corner_radius=0)
+            cell.pack(side="left", padx=18)
+            ctk.CTkLabel(cell, text=label, font=F_SMALL, text_color=MUTED).pack(side="left")
+            val = ctk.CTkLabel(cell, text="—", font=F_BOLD, text_color=FAINT)
+            val.pack(side="left", padx=(8, 0))
+            self.metric_vals[key] = val
+        self.foot_msg = ctk.CTkLabel(bar, text="", font=F_SMALL, text_color=MUTED, anchor="e")
+        self.foot_msg.pack(side="right", padx=18)
+
+    def _update_metrics(self):
+        res = self.result
+        scores = res.scores if res else {}
+        for _, key, fmt in FOOTER_METRICS:
+            v = scores.get(key)
+            ok = v is not None and not (isinstance(v, float) and np.isnan(v))
+            self.metric_vals[key].configure(text=fmt.format(v) if ok else "—",
+                                            text_color=TEXT if ok else FAINT)
+        if res is None:
+            msg, color = (("Load an MRI slice to begin.", MUTED) if self.raw_image is None
+                          else ("Slice loaded — press RUN PIPELINE.", MUTED))
+        elif res.status == "NO TUMOR CANDIDATE":
+            msg, color = "NO TUMOR CANDIDATE — seeds were filtered during interior checks.", FAIL_CLR
+        elif not scores:
+            msg, color = "No ground truth found — metrics unavailable.", WARN_CLR
         else:
-            self.diagnostics_frame.pack_forget()
-            self._diag_toggle_btn.config(text="Telemetry ▸")
-        # Force Tk to recompute geometry synchronously so the redraw below
-        # already sees the post-toggle canvas size instead of a stale one
-        # (otherwise it only self-corrects on the next natural <Configure>).
-        self.root.update_idletasks()
-        self._redraw()
+            msg, color = f"Run time {scores.get('seconds') or 0:.2f} s", MUTED
+        self.foot_msg.configure(text=msg, text_color=color)
 
     # ── Controller & Backend Invocation ──────────────────────────────────────
     def _load(self):
@@ -748,9 +980,13 @@ class ESRGApp:
             filetypes=[("Medical Images", "*.jpg *.jpeg *.png *.bmp *.tif *.tiff"), ("All Files", "*.*")])
         if not path:
             return
+        self.load_path(path)
+
+    def load_path(self, path):
         self.image_path = path
         self.result = None
         self.manual_points = []
+        self._run_points = set()
 
         try:
             self.raw_image, _ = load_image(path, self.cfg.max_side)
@@ -763,42 +999,45 @@ class ESRGApp:
             return
 
         self._zoom_reset()
-        self._refresh_telemetry()
+        self._set_tel_mode("Seeds")
 
         gt = find_mask_for(path)
-        gt_status = "Ground truth detected" if gt else "No ground truth found"
-        self.file_lbl.config(text=f"{os.path.basename(path)}\n• {gt_status}", fg=TEXT_MUTED)
+        self.file_lbl.configure(
+            text=f"{os.path.basename(path)}\n"
+                 f"• {'Ground truth detected' if gt else 'No ground truth found'}",
+            text_color=MUTED)
         self._init_empty_stage_tabs()
-        self.score_lbl.config(text="MRI slice loaded — verify the preview, then press 'RUN'.", fg=TEXT_MAIN)
-        self._redraw()
+        self._sync_overlay_toggle()
+        self._sync_obj_buttons()
+        self._update_metrics()
+        self._render_panes()
 
     def _clear_seeds(self):
         self.manual_points = []
-        self.status_lbl.config(text="Manual seed coordinates cleared.", fg=TEXT_MUTED)
+        self.status_lbl.configure(text="Manual seed coordinates cleared.", text_color=MUTED)
         self._refresh_telemetry()
-        self._redraw()
+        self._render_panes()
 
     def _on_click(self, event):
         if self.seed_mode.get() != "manual" or not self.image_path:
             return
-        rc = self._canvas_to_image(event.x, event.y)
+        rc = self._canvas_to_image(event.x, event.y, event.widget)
         if rc:
-            t = self.seed_type.get()
-            self.manual_points.append((rc[0], rc[1], t))
+            self.manual_points.append((rc[0], rc[1], self.seed_type.get()))
             n_regions = len({p[2] for p in self.manual_points})
-            self.status_lbl.config(
+            self.status_lbl.configure(
                 text=f"{len(self.manual_points)} seed(s) across {n_regions} region(s) placed.",
-                fg=PRIMARY)
+                text_color=BLUE)
             self._refresh_telemetry()
-            self._redraw()
+            self._render_panes()
 
     def _current_config(self):
         return self.cfg.replace(
             method=self.method.get(), seed_mode=self.seed_mode.get(),
             use_log_local=self.use_local.get(), use_stopping=self.use_stop.get(),
             use_log=self.use_log.get(), purify_manual_seed=self.purify_manual_seed.get(),
-            k_local=float(self.k_local.get()),
-            k_global=max(float(self.k_local.get()) + 1.0, 3.0),
+            k_local=round(float(self.k_local.get()), 1),
+            k_global=max(round(float(self.k_local.get()), 1) + 1.0, 3.0),
             local_radius=int(self.radius.get()), otsu_classes=int(self.classes.get()))
 
     def _run(self):
@@ -812,14 +1051,16 @@ class ESRGApp:
 
         cfg = self._current_config()
         self.run_cfg = cfg
-        self.run_btn.config(state="disabled", text="Processing…", cursor="arrow")
-        self.run_btn.set_style(bg=BORDER_MED, fg=TEXT_MAIN, border=BORDER_MED)
-        self.status_lbl.config(text="Segmenting slice…", fg=PRIMARY)
+        self._run_points = {tuple(p) for p in self.manual_points}
+        self.run_btn.configure(state="disabled", text="PROCESSING…", fg_color=BORDER_DARK,
+                               border_color=BORDER_DARK)
+        self.status_lbl.configure(text="Segmenting slice…", text_color=BLUE)
 
         def worker():
             try:
-                res = run(self.image_path, cfg, manual_points=self.manual_points,
-                          progress=lambda m: self.root.after(0, self.status_lbl.config, {"text": m}))
+                res = run(self.image_path, cfg, manual_points=list(self.manual_points),
+                          progress=lambda m: self.root.after(
+                              0, lambda m=m: self.status_lbl.configure(text=m)))
                 self.root.after(0, self._done, res, None)
             except Exception as e:
                 self.root.after(0, self._done, None, e)
@@ -827,113 +1068,71 @@ class ESRGApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _done(self, res, err):
-        self.run_btn.config(state="normal", text="RUN", cursor="hand2")
-        self.run_btn.set_style(bg=PRIMARY, fg="#ffffff", border=PRIMARY)
-        
+        self.run_btn.configure(state="normal", text="RUN PIPELINE", fg_color=BLUE,
+                               border_color=BLUE)
         if err:
-            self.status_lbl.config(text="Pipeline execution failed.", fg=FAIL_CLR)
+            self.status_lbl.configure(text="Pipeline execution failed.", text_color=FAIL_CLR)
             messagebox.showerror("Execution Error", str(err))
             return
 
         self.result = res
-        self.status_lbl.config(text=f"Status: {res.status}", fg=OK_CLR if res.status == "OK" else WARN_CLR)
+        self.status_lbl.configure(text=f"Status: {res.status}",
+                                  text_color=OK_CLR if res.status == "OK" else WARN_CLR)
         self._build_stage_buttons()
-        self.current = "final"
+        self._sync_overlay_toggle()
+        self._update_metrics()
         self._select("final")
-        self._refresh_telemetry()
 
-        if res.status != "NO TUMOR CANDIDATE":
-            self.score_lbl.config(text=viz.score_line(res.scores), fg=TEXT_MAIN)
-        else:
-            self.score_lbl.config(
-                text="NO TUMOR CANDIDATE DETECTED — Seeds were filtered during interior checks.",
-                fg=FAIL_CLR
-            )
-
+    # ── Stage tabs ───────────────────────────────────────────────────────────
     def _clear_stages(self):
         for w in self.stage_bar.winfo_children():
             w.destroy()
         self.stage_buttons = {}
 
+    def _add_tab(self, key, text):
+        btn = ctk.CTkButton(self.stage_bar, text=text, command=lambda k=key: self._select(k),
+                            height=30, corner_radius=0, border_width=0, font=F_SMALL,
+                            fg_color=PANEL, hover_color=BORDER, text_color=TEXT)
+        btn.pack(side="left", padx=(0, 2))
+        for ev in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            btn.bind(ev, self._tab_scroll, add="+")
+        self.stage_buttons[key] = btn
+
     def _build_stage_buttons(self):
         self._clear_stages()
-        status_colors = {"OK": OK_CLR, "WARN": WARN_CLR, "FAIL": FAIL_CLR}
-
         for st in self.result.stages:
-            badge_color = status_colors.get(st.status, TEXT_MUTED)
-
-            btn = FlatButton(
-                self.stage_bar,
-                text=f"{st.name} ●",
-                command=lambda k=st.key: self._select(k),
-                bg=PANEL_ALT,
-                fg=badge_color,
-                hover_bg=BORDER_CLR,
-                font=FONT_BOLD,
-                padx=10,
-                pady=4
-            )
-            btn.pack(side=tk.LEFT, padx=(0, 4))
-            btn.bind("<MouseWheel>", self._tab_scroll, add="+")
-            btn.bind("<Button-4>", self._tab_scroll, add="+")
-            btn.bind("<Button-5>", self._tab_scroll, add="+")
-            self.stage_buttons[st.key] = btn
-
+            self._add_tab(st.key, st.name)
         if self.result.gt is not None:
-            btn = FlatButton(
-                self.stage_bar,
-                text="Compare ●",
-                command=lambda: self._select("compare"),
-                bg=PANEL_ALT,
-                fg=TEXT_MUTED,
-                hover_bg=BORDER_CLR,
-                font=FONT_BOLD,
-                padx=10,
-                pady=4
-            )
-            btn.pack(side=tk.LEFT, padx=(0, 4))
-            btn.bind("<MouseWheel>", self._tab_scroll, add="+")
-            btn.bind("<Button-4>", self._tab_scroll, add="+")
-            btn.bind("<Button-5>", self._tab_scroll, add="+")
-            self.stage_buttons["compare"] = btn
-
-        # Evaluation step: always offered after a run (time is measurable
-        # even without a ground truth; the panel explains what is missing).
-        btn = FlatButton(
-            self.stage_bar,
-            text="Evaluation ●",
-            command=lambda: self._select("evaluation"),
-            bg=PANEL_ALT,
-            fg=TEXT_MUTED,
-            hover_bg=BORDER_CLR,
-            font=FONT_BOLD,
-            padx=10,
-            pady=4
-        )
-        btn.pack(side=tk.LEFT, padx=(0, 4))
-        btn.bind("<MouseWheel>", self._tab_scroll, add="+")
-        btn.bind("<Button-4>", self._tab_scroll, add="+")
-        btn.bind("<Button-5>", self._tab_scroll, add="+")
-        self.stage_buttons["evaluation"] = btn
+            self._add_tab("compare", "Compare")
+        # Always offered after a run: time is measurable even without a ground
+        # truth, and the Details view explains what is missing.
+        self._add_tab("evaluation", "Evaluation")
 
     def _select(self, key):
         self.current = key
+        status_colors = {"WARN": WARN_CLR, "FAIL": FAIL_CLR}
         for k, b in self.stage_buttons.items():
             if k == key:
-                b.set_style(bg=PRIMARY, fg="#ffffff", border=PRIMARY)
+                b.configure(fg_color=BLUE, hover_color=BLUE, text_color=WHITE)
             else:
                 st = self.result.stage(k)
-                status_colors = {"OK": OK_CLR, "WARN": WARN_CLR, "FAIL": FAIL_CLR}
-                color = status_colors.get(st.status, TEXT_MUTED) if st else TEXT_MUTED
-                b.set_style(bg=PANEL_ALT, fg=color, border=BORDER_CLR)
+                b.configure(fg_color=PANEL, hover_color=BORDER,
+                            text_color=status_colors.get(st.status, TEXT) if st else TEXT)
 
+        self._sync_obj_buttons()
+        # The worked computations belong to the log and evaluation stages. Switching
+        # views can resize the telemetry panel, so settle that before scrolling the tab in.
+        self._set_tel_mode("Details" if key in ("log", "evaluation") else "Seeds")
         self._scroll_tab_into_view(self.stage_buttons.get(key))
-        self._refresh_telemetry()
-        self._redraw()
+        self._render_panes()
+
+    def _reveal_current_tab(self):
+        if self.result is not None:
+            self._scroll_tab_into_view(self.stage_buttons.get(self.current))
 
     def _scroll_tab_into_view(self, btn):
-        """Scroll the stage strip so the selected tab (e.g. Evaluation, the last
-        one) is visible when the strip is narrower than its tabs."""
+        """Scroll the strip so the selected tab (e.g. Evaluation, the last one) is
+        visible when the strip is narrower than its tabs."""
         if btn is None:
             return
         self.root.update_idletasks()
@@ -950,17 +1149,10 @@ class ESRGApp:
     def _has_image(self):
         return self.result is not None or self.raw_image is not None
 
-    def _is_compare_active(self):
-        return (self.result is not None and self.current == "compare"
-                and self.result.gt is not None)
-
-    def _wants_split_compare(self):
-        return self._is_compare_active() and not self.compare_overlay.get()
-
     def _set_zoom(self, z):
         self.zoom = max(ZOOM_MIN, min(ZOOM_MAX, z))
-        self.zoom_lbl.config(text=f"{round(self.zoom * 100)}%")
-        self._redraw()
+        self.zoom_lbl.configure(text=f"{round(self.zoom * 100)}%")
+        self._render_panes()
 
     def _zoom_in(self):
         if self._has_image():
@@ -984,10 +1176,9 @@ class ESRGApp:
 
         # Anchor the zoom on the cursor/pinch position: find the image-space
         # point under the cursor before changing zoom, then solve pan so
-        # that same point stays under the cursor afterwards. Both compare
-        # panels share identical w/h/s and only differ by a constant offset,
-        # so solving in whichever panel the cursor is over and writing the
-        # result into the shared pan keeps them moving in lockstep.
+        # that same point stays under the cursor afterwards. Both panes share
+        # identical w/h/s, so solving in whichever one the cursor is over and
+        # writing the result into the shared pan keeps them in lockstep.
         g = self._geometry(canvas)
         if g and new_zoom != self.zoom:
             w, h, s_old, ox_old, oy_old = g
@@ -1011,18 +1202,17 @@ class ESRGApp:
         sx, sy, px, py = self._pan_start
         self.pan_x = px + (event.x - sx)
         self.pan_y = py + (event.y - sy)
-        self._redraw()
+        self._render_panes()
 
-    # Left-click-and-hold drag pans the main viewer too (a trackpad has no
-    # natural right-click-drag gesture), while a plain click with no real
-    # movement still places a manual seed. Distinguish the two by how far
-    # the pointer actually moved before release.
+    # Left-click-and-hold drag pans (a trackpad has no natural right-click-drag
+    # gesture), while a plain click with no real movement places a manual seed.
+    # With the Pan tool on, every left press is a drag from the start.
     _DRAG_THRESHOLD = 4
 
     def _on_left_press(self, event):
         if self._has_image():
             self._left_press = (event.x, event.y, self.pan_x, self.pan_y)
-            self._left_dragging = False
+            self._left_dragging = self.pan_tool.get()
 
     def _on_left_drag(self, event):
         if not self._left_press:
@@ -1034,7 +1224,7 @@ class ESRGApp:
         if self._left_dragging:
             self.pan_x = px + dx
             self.pan_y = py + dy
-            self._redraw()
+            self._render_panes()
 
     def _on_left_release(self, event):
         if self._left_press and not self._left_dragging:
@@ -1043,29 +1233,8 @@ class ESRGApp:
         self._left_dragging = False
 
     # ── Rendering & Visual Geometry ──────────────────────────────────────────
-    def _sync_viewer_visibility(self):
-        """Show self.canvas or the split self.compare_pane depending on the
-        active view, so exactly one of them is packed at any time. Each
-        canvas naturally clips its own drawing to its own bounds, which is
-        what keeps zoomed compare panels from bleeding into one another."""
-        want_split = self._wants_split_compare()
-        is_split = bool(self.compare_pane.winfo_ismapped())
-        if want_split == is_split:
-            return
-        if want_split:
-            self.canvas.pack_forget()
-            self.compare_pane.pack(fill=tk.BOTH, expand=True)
-        else:
-            self.compare_pane.pack_forget()
-            self.canvas.pack(fill=tk.BOTH, expand=True)
-        # The canvas layout class just changed (one full-width canvas <->
-        # two half-width canvases) so a raw pixel pan offset from the old
-        # layout is meaningless in the new one. Zoom level is kept.
-        self.pan_x = 0.0
-        self.pan_y = 0.0
-
     def _geometry(self, canvas=None):
-        canvas = canvas or self.canvas
+        canvas = canvas or self.canvases[0]
         if self.result:
             h, w = self.result.stage("input").image.shape
         elif self.raw_image is not None:
@@ -1079,142 +1248,135 @@ class ESRGApp:
         oy = (ch - h * s) / 2 + self.pan_y
         return w, h, s, ox, oy
 
-    def _canvas_to_image(self, x, y):
-        g = self._geometry()
+    def _canvas_to_image(self, x, y, canvas=None):
+        g = self._geometry(canvas)
         if not g:
             return None
         w, h, s, ox, oy = g
         c, r = int((x - ox) / s), int((y - oy) / s)
         return (r, c) if 0 <= r < h and 0 <= c < w else None
 
-    def _redraw(self):
-        self._sync_viewer_visibility()
-
-        if self._wants_split_compare():
-            self._redraw_compare_split()
-            return
-
-        self.canvas.delete("all")
-        cw = max(self.canvas.winfo_width(), 50)
-        ch = max(self.canvas.winfo_height(), 50)
-
-        if not self.result and self.raw_image is None:
-            self.canvas.create_text(
-                cw // 2, ch // 2,
-                text="Load an MRI slice to initialize viewport\n(Manual landmark placement is active in Manual mode)\n"
-                     "Scroll or use +/− to zoom, right-click drag to pan",
-                fill=TEXT_FAINT,
-                font=FONT_SUB,
-                justify=tk.CENTER
-            )
-            return
-
-        if not self.result:
-            # Raw scan preview, shown before the pipeline has run so the user
-            # can confirm the correct slice was loaded.
-            rgb = np.repeat(self.raw_image[:, :, None], 3, axis=2)
-        elif self._is_compare_active():
-            self._redraw_compare_overlay(cw, ch)
-            return
-        elif self.current == "evaluation":
-            self._redraw_evaluation(cw, ch)
-            return
-        else:
-            st = self.result.stage(self.current) or self.result.stages[-1]
-            base = self.result.stage("input").image
-
-            if st.key == "final":
-                rgb = viz.overlay_result(base, st.image, self.result.gt,
-                                         self.opacity.get(), self.error_mode.get())
-            else:
-                rgb = viz.render_stage(st, base, self.result.gt, self.opacity.get())
-
-        if self.seed_mode.get() == "manual" and self.manual_points:
-            for r, c, t in self.manual_points:
-                rgb[max(0, r - 2):r + 3, max(0, c - 2):c + 3] = SEED_RGB[(t - 1) % len(SEED_RGB)]
-
-        w, h, s, ox, oy = self._geometry()
-        img = Image.fromarray(rgb.astype(np.uint8)).resize(
-            (max(1, int(w * s)), max(1, int(h * s))), Image.NEAREST
-        )
-        self._photo = ImageTk.PhotoImage(img)
-        self.canvas.create_image(ox, oy, anchor=tk.NW, image=self._photo)
+    def _schedule_render(self):
+        """Coalesce bursts of <Configure> / slider events into one repaint."""
+        if not self._render_pending:
+            self._render_pending = True
+            self.root.after_idle(self._render_panes)
 
     @staticmethod
     def _mask_rgb(base_img, mask, color, opacity):
-        rgb = np.stack([np.clip(base_img, 0, 255).astype(np.uint8)] * 3, axis=-1)
+        rgb = _gray_rgb(base_img)
         m = mask.astype(bool)
         if m.any():
             rgb[m] = (np.array(color) * opacity + rgb[m] * (1 - opacity)).astype(np.uint8)
         return rgb
 
-    def _redraw_compare_overlay(self, cw, ch):
-        """Blended overlay of both masks on one canvas (Overlay toggle checked)."""
-        base = self.result.stage("input").image
-        pred = self.result.mask.astype(bool)
-        gt = self.result.gt.astype(bool)
-        h, w = base.shape
-
-        rgb = viz.overlay_result(base, pred, gt, self.opacity.get(), self.error_mode.get())
-        s = min(cw / w, ch / h) * self.zoom
-        iw, ih = max(1, int(w * s)), max(1, int(h * s))
-        img = Image.fromarray(rgb.astype(np.uint8)).resize((iw, ih), Image.NEAREST)
-        photo = ImageTk.PhotoImage(img)
-        self._compare_photos = [photo]
-        ox, oy = (cw - iw) / 2 + self.pan_x, (ch - ih) / 2 + self.pan_y
-        self.canvas.create_image(ox, oy, anchor=tk.NW, image=photo)
-        label = ("OVERLAY — TP green / FP red / FN orange" if self.error_mode.get()
-                 else "OVERLAY — ESRG prediction (red fill) vs ground truth (green outline)")
-        self.canvas.create_text(cw / 2, 14, text=label, fill=TEXT_FAINT, font=FONT_SM)
-
-    def _redraw_evaluation(self, cw, ch):
-        """Evaluation view: the pixels each metric counts. TP green, FP red,
-        FN orange (or the prediction alone without a ground truth), with the
-        seed core S of Objective 1 outlined in cyan."""
-        base = self.result.stage("input").image
-        pred = self.result.mask.astype(bool)
-        gt = self.result.gt
-        rgb = viz.overlay_result(base, pred, gt, self.opacity.get(), error_mode=gt is not None)
-        seed = self.result.stage("seed")
+    def _evaluation_rgb(self):
+        """The pixels each metric counts: TP green, FP red, FN orange (or the
+        prediction alone without a ground truth), with the seed core S of
+        Objective 1 in cyan."""
+        res = self.result
+        base = res.stage("input").image
+        gt = res.gt
+        rgb = viz.overlay_result(base, res.mask.astype(bool), gt, self.opacity.get(),
+                                 error_mode=gt is not None)
+        seed = res.stage("seed")
         if seed is not None and seed.image.any():
             core = seed.image.astype(bool)
             # Small cores are filled so they stay visible; larger ones are outlined.
             rgb[core if core.sum() < 30 else viz.outline(core)] = (34, 211, 238)
-        w, h, s, ox, oy = self._geometry()
+        return rgb
+
+    def _stamp_seeds(self, rgb):
+        if self.seed_mode.get() == "manual":
+            for r, c, t in self.manual_points:
+                rgb[max(0, r - 2):r + 3, max(0, c - 2):c + 3] = SEED_RGB[(t - 1) % len(SEED_RGB)]
+        return rgb
+
+    def _pane_images(self):
+        """(left_rgb, right_rgb, left_caption, right_caption, right_legend).
+        An rgb of None means 'draw the empty-state hint'. Cached across pan / zoom /
+        resize, since only the placement changes there."""
+        key = (id(self.result), self.current, round(self.opacity.get(), 3),
+               self.error_mode.get(), self.seed_mode.get(), id(self.manual_points),
+               len(self.manual_points), id(self.raw_image), self.compare_overlay.get())
+        if self._pane_cache[0] == key:
+            return self._pane_cache[1]
+
+        res, op = self.result, self.opacity.get()
+        legend = ""
+        if self.raw_image is None and res is None:
+            out = (None, None, "ORIGINAL", "SEGMENTED OUTPUT", "")
+        elif res is None:
+            # Raw scan preview, so the user can confirm the right slice was loaded.
+            out = (self._stamp_seeds(_gray_rgb(self.raw_image)), None, "ORIGINAL",
+                   "SEGMENTED OUTPUT", "")
+        elif self.current == "compare" and res.gt is not None:
+            base = res.stage("input").image
+            if self.compare_overlay.get():
+                # Both masks superimposed on one pane; the other keeps the plain slice for reference.
+                legend = ("TP green · FP red · FN orange" if self.error_mode.get()
+                          else "ESRG prediction red fill · ground truth green outline")
+                out = (_gray_rgb(self.raw_image if self.raw_image is not None else base),
+                       viz.overlay_result(base, res.mask, res.gt, op, self.error_mode.get()),
+                       "ORIGINAL", "OVERLAY · ESRG vs GROUND TRUTH", legend)
+            else:
+                out = (self._mask_rgb(base, res.mask, viz.RED, op),
+                       self._mask_rgb(base, res.gt, viz.GREEN, op),
+                       "ESRG PREDICTION", "GROUND TRUTH", "")
+        else:
+            left = _gray_rgb(self.raw_image if self.raw_image is not None
+                             else res.stage("input").image)
+            if self.current == "evaluation":
+                right, title = self._evaluation_rgb(), "Evaluation"
+                legend = ("TP green · FP red · FN orange · seed core cyan" if res.gt is not None
+                          else "Prediction red · seed core cyan (no ground truth)")
+            else:
+                st = res.stage(self.current) or res.stages[-1]
+                base = res.stage("input").image
+                if st.key == "final":
+                    right = viz.overlay_result(base, st.image, res.gt, op, self.error_mode.get())
+                    if res.gt is not None:
+                        legend = ("TP green · FP red · FN orange" if self.error_mode.get()
+                                  else "Prediction red fill · ground truth green outline")
+                else:
+                    right = viz.render_stage(st, base, res.gt, op)
+                title = st.name
+            if self.current != "evaluation":
+                self._stamp_seeds(left)
+                self._stamp_seeds(right)
+            out = (left, right, "ORIGINAL", f"SEGMENTED OUTPUT · {title}", legend)
+        self._pane_cache = (key, out)
+        return out
+
+    def _render_panes(self):
+        self._render_pending = False
+        if not hasattr(self, "canvases"):
+            return
+        left, right, cap_l, cap_r, legend = self._pane_images()
+        self.captions[0].configure(text=cap_l)
+        self.captions[1].configure(text=cap_r)
+        self.legends[1].configure(text=legend)
+        hints = ("Open an MRI slice to begin\nScroll to zoom · drag to pan",
+                 "The segmented output appears here\nafter RUN PIPELINE")
+        for cv, rgb, hint in zip(self.canvases, (left, right), hints):
+            self._paint(cv, rgb, hint)
+
+    def _paint(self, canvas, rgb, hint):
+        canvas.delete("all")
+        g = self._geometry(canvas) if rgb is not None else None
+        if g is None:
+            canvas.create_text(max(canvas.winfo_width(), 50) // 2, max(canvas.winfo_height(), 50) // 2,
+                               text=hint, fill=ON_BLACK, font=TK_UI, justify=tk.CENTER)
+            self._photos.pop(canvas, None)
+            return
+        w, h, s, ox, oy = g
         img = Image.fromarray(rgb.astype(np.uint8)).resize(
             (max(1, int(w * s)), max(1, int(h * s))), Image.NEAREST)
-        self._photo = ImageTk.PhotoImage(img)
-        self.canvas.create_image(ox, oy, anchor=tk.NW, image=self._photo)
-        label = ("EVALUATION — TP green · FP red · FN orange · seed core cyan" if gt is not None
-                 else "EVALUATION — prediction red · seed core cyan (no ground truth)")
-        self.canvas.create_text(cw / 2, 14, text=label, fill=TEXT_FAINT, font=FONT_SM)
-
-    def _redraw_compare_split(self):
-        """Side-by-side ESRG prediction vs. ground truth, each on its own
-        canvas so a zoomed-in mask is hard-clipped to its own panel and can
-        never bleed into the other one."""
-        base = self.result.stage("input").image
-        pred = self.result.mask.astype(bool)
-        gt = self.result.gt.astype(bool)
-
-        left_rgb = self._mask_rgb(base, pred, viz.RED, self.opacity.get())
-        right_rgb = self._mask_rgb(base, gt, viz.GREEN, self.opacity.get())
-
-        self._compare_photos = []
-        for canvas, rgb in ((self.cmp_canvas_l, left_rgb), (self.cmp_canvas_r, right_rgb)):
-            canvas.delete("all")
-            g = self._geometry(canvas)
-            if not g:
-                continue
-            w, h, s, ox, oy = g
-            iw, ih = max(1, int(w * s)), max(1, int(h * s))
-            img = Image.fromarray(rgb.astype(np.uint8)).resize((iw, ih), Image.NEAREST)
-            photo = ImageTk.PhotoImage(img)
-            self._compare_photos.append(photo)
-            canvas.create_image(ox, oy, anchor=tk.NW, image=photo)
+        self._photos[canvas] = ImageTk.PhotoImage(img)  # keep a reference alive
+        canvas.create_image(ox, oy, anchor=tk.NW, image=self._photos[canvas])
 
 
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = ctk.CTk()
     ESRGApp(root)
     root.mainloop()
