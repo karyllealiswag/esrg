@@ -2,7 +2,7 @@
  * render_docx.js — Render the Chapter 4 specification (JSON) into a Word document.
  *
  * Purpose : Produce Chapter 4 in the thesis format (US Letter, 1-inch margins,
- *           Times New Roman 12 pt, double spacing, APA 7 tables and figures,
+ *           Times New Roman 12 pt, 1.5 line spacing, APA 7 tables and figures,
  *           numbered OMML equations followed by a "where:" list).
  * Function : node render_docx.js <spec.json> <out.docx>. Each block of the spec is
  *           one of: h1 | h2 | h3 | p | eq | where | table | figure | pagebreak.
@@ -67,7 +67,7 @@ function heading(level, text) {
   return new d.Paragraph({
     heading: style, keepNext: true,
     alignment: level === "h1" ? d.AlignmentType.CENTER : d.AlignmentType.LEFT,
-    spacing: { before: level === "h1" ? 0 : 240, after: 0, line: 480 },
+    spacing: { before: level === "h1" ? 0 : 240, after: 0, line: 360 },
     indent: level === "h3" ? { left: 720 } : undefined,
     children: runs(text, { bold: true, size: level === "h1" ? 28 : 24, color: "000000" }),
   });
@@ -76,7 +76,7 @@ function heading(level, text) {
 function para(b) {
   return new d.Paragraph({
     alignment: d.AlignmentType.JUSTIFIED,
-    spacing: { before: 0, after: 0, line: 480 },
+    spacing: { before: 0, after: 0, line: 360 },
     indent: b.noindent ? undefined : { firstLine: 720 },
     keepNext: !!b.keepNext,
     children: runs(b.text),
@@ -114,8 +114,8 @@ function where(b) {
 
 function tableBlock(b) {
   const out = [
-    new d.Paragraph({ keepNext: true, spacing: { before: 240, after: 0, line: 480 }, children: runs(`Table ${b.num}`, { bold: true }) }),
-    new d.Paragraph({ keepNext: true, spacing: { after: 0, line: 480 }, children: runs(b.title, { italics: true }) }),
+    new d.Paragraph({ keepNext: true, spacing: { before: 240, after: 0, line: 360 }, children: runs(`Table ${b.num}`, { bold: true }) }),
+    new d.Paragraph({ keepNext: true, spacing: { after: 0, line: 360 }, children: runs(b.title, { italics: true }) }),
   ];
   const ncol = b.widths.length;
   const total = b.widths.reduce((a, c) => a + c, 0);
@@ -170,8 +170,8 @@ function figure(b, baseDir) {
   const w = 624; // 6.5 in at 96 dpi
   const h = Math.round((w * b.h) / b.w);
   const out = [
-    new d.Paragraph({ keepNext: true, spacing: { before: 240, after: 0, line: 480 }, children: runs(`Figure ${b.num}`, { bold: true }) }),
-    new d.Paragraph({ keepNext: true, spacing: { after: 0, line: 480 }, children: runs(b.title, { italics: true }) }),
+    new d.Paragraph({ keepNext: true, spacing: { before: 240, after: 0, line: 360 }, children: runs(`Figure ${b.num}`, { bold: true }) }),
+    new d.Paragraph({ keepNext: true, spacing: { after: 0, line: 360 }, children: runs(b.title, { italics: true }) }),
     new d.Paragraph({ keepNext: true, alignment: d.AlignmentType.CENTER, children: [new d.ImageRun({ type: "png", data: img, transformation: { width: w, height: h } })] }),
   ];
   if (b.note) out.push(new d.Paragraph({ alignment: d.AlignmentType.JUSTIFIED, spacing: { before: 60, after: 240, line: 240 }, children: runs("*Note.* " + b.note, { size: 20 }) }));
@@ -179,7 +179,7 @@ function figure(b, baseDir) {
 }
 
 function reference(b) {
-  return new d.Paragraph({ spacing: { after: 0, line: 480 }, indent: { left: 720, hanging: 720 }, children: runs(b.text) });
+  return new d.Paragraph({ spacing: { after: 0, line: 360 }, indent: { left: 720, hanging: 720 }, children: runs(b.text) });
 }
 
 // ── main ────────────────────────────────────────────────────────────────────

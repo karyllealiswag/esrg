@@ -4,8 +4,8 @@ discussion.py — Interpretation paragraphs of Chapter 4.
 Purpose : Hold the discussion text that interprets each result, written after the
           results were examined, with every number still read from results.json so
           the text cannot drift from the tables.
-Function : texts(R, df) returns {placeholder: paragraph text} for the [[NAME]]
-          placeholders of build_chapter4.py. Where a sentence depends on the
+Function : texts(R, df, tb) returns {placeholder: paragraph text} for the [[NAME]]
+          placeholders of build_chapter4.py; tb maps table ids to their numbers. Where a sentence depends on the
           direction or significance of a result, the wording follows the data.
 Notes   : Citations follow APA 7 author–date style; full entries for the works first
           cited in this chapter are listed at its end, the others in Chapter 3.
@@ -23,7 +23,7 @@ def sig(p):
     return p is not None and p < 0.05
 
 
-def texts(R, df):
+def texts(R, df, tb):
     E1, E2, E3, E4, E5, E6 = R["e1"], R["e2"], R["e3"], R["e4"], R["e5"], R["e6"]
     S = R["summary"]
     n = R["meta"]["n_sample"]
@@ -46,7 +46,7 @@ def texts(R, df):
         "the tumor, so the region grew in the wrong tissue from the outset. On the "
         f"{hv['n']} slices whose automatic seed hit the tumor, which both algorithms share, ESRG reaches a mean DSC "
         f"of {f(hv['dsc']['esrg']['mean'])} against {f(hv['dsc']['srg']['mean'])} and a mean recall of "
-        f"{f(hv['recall']['esrg']['mean'])} against {f(hv['recall']['srg']['mean'])} (*Z* = {f(hv['recall']['Z'], 2)}, "
+        f"{f(hv['recall']['esrg']['mean'])} against {f(hv['recall']['srg']['mean'])} (*r* = {nz(hv['recall']['r'])}, "
         f"{P(hv['recall']['p'])}). HD95 does not differ significantly ({P(au['hd95_wc']['p_holm'])}): both algorithms "
         "start from the same seed, so on the slices where that seed misses the tumor both boundaries are far from the "
         "true one, whichever algorithm grows the region. Sections 4.2.1 and 4.2.3 separate the "
@@ -57,8 +57,8 @@ def texts(R, df):
         f"its median predicted area is {f(S['P_SRG']['area_ratio']['median'], 3)} times the tumor area, so almost "
         "everything it absorbs is tumor but it misses most of the tumor. ESRG trades a moderate loss of mean "
         f"precision (median {f(pl['precision']['enh']['median'])}) for a fourfold gain in recall, and its boundary lies "
-        f"closer to the true boundary on most slices (median ASSD {f(pl['assd_wc']['enh']['median'], 2)} against "
-        f"{f(pl['assd_wc']['base']['median'], 2)} pixels). Its mean HD95 is higher than its median because the "
+        f"closer to the true boundary on most slices (median HD95 {f(pl['hd95_wc']['enh']['median'], 2)} against "
+        f"{f(pl['hd95_wc']['base']['median'], 2)} pixels). Its mean HD95 is higher than its median because the "
         f"{pct(pl['leaked']['rate_cmp'])} of slices that leak have large boundary errors.")
     z = E4["by_class"]["all"]
     T["DIST_DISCUSSION"] = (
@@ -86,7 +86,7 @@ def texts(R, df):
         f"{P(c['test']['p'])}, Cramér’s *V* = {nz(c['test']['cramers_v'])}, a large association). The seed hits "
         f"{pct(c['meningioma']['rate'])} of meningiomas, whose bright, compact, well-circumscribed enhancement places "
         "them clearly in the highest interior intensity class, consistent with intensity-based seeding results in "
-        f"the literature (Biratu et al., 2021); its median localization distance is "
+        f"the literature (Biratu et al., 2021); its median seed distance is "
         f"{f(c['meningioma']['seed_dist']['median'], 1)} pixels, that is, the seed centroid lies inside the tumor. "
         f"Reliability is lower for pituitary tumors ({pct(c['pituitary']['rate'])}), which sit centrally among normal "
         "structures of similar brightness, and lowest for gliomas "
@@ -96,23 +96,23 @@ def texts(R, df):
         f"(χ²({p_['test']['df']}) = {p_['test']['chi2']:.2f}, {P(p_['test']['p'])}, *V* = {nz(p_['test']['cramers_v'])}, "
         f"a small association): coronal slices give the highest rate ({pct(p_['coronal']['rate'])}) and sagittal "
         f"slices the lowest ({pct(p_['sagittal']['rate'])}). When the seed misses, it usually lands on a different "
-        "structure altogether rather than just outside the tumor edge, as the large localization distances show.")
+        "structure altogether rather than just outside the tumor edge, as the large seed distances show.")
     op = E1["operator"]
     ao = {lv: op[lv]["auto_vs_operator_esrg"] for lv in op}
     T["OPERATOR_DISCUSSION"] = (
         "Two findings follow. First, the original algorithm appears consistent only because it consistently "
         f"undersegments: its mean DSC over the five operators is {f(op['all']['srg']['mean_dsc']['mean'])}, so its "
         "results cannot vary much. Second, the enhanced grower is far more sensitive to where the seed is placed "
-        f"(*Z* = {f(op['all']['sd_test']['Z'], 2)}, {P(op['all']['sd_test']['p'])}, *r* = {nz(op['all']['sd_test']['r'])}): "
-        "because its stopping bound is derived from the statistics of the seed region (Equation 3.28), a click on a "
+        f"({P(op['all']['sd_test']['p'])}, *r* = {nz(op['all']['sd_test']['r'])}): "
+        "because its stopping bound is derived from the statistics of the seed region (Equations 3.9 and 3.10), a click on a "
         "slightly brighter or more heterogeneous part of the tumor produces a different bound and a different result. "
         "This confirms the problem stated for Objective 1, that manual seeding makes the output depend on the "
         "operator (Adams & Bischof, 1994; Fan et al., 2005), and it is exactly the variability that the automated "
         "seed removes: with no operator input, the same slice always yields the same seed and the same mask. The "
         "cost of automation is measured by comparing the automatic result with the average of the five operator "
         f"results for the same grower. Over all slices the operators do better (mean DSC "
-        f"{f(op['all']['esrg']['mean_dsc']['mean'])} against {f(op['all']['auto_dsc']['mean'])}; *Z* = "
-        f"{f(ao['all']['Z'], 2)}, {P(ao['all']['p'])}, *r* = {nz(ao['all']['r'])}), but this difference comes from "
+        f"{f(op['all']['esrg']['mean_dsc']['mean'])} against {f(op['all']['auto_dsc']['mean'])}; "
+        f"{P(ao['all']['p'])}, *r* = {nz(ao['all']['r'])}), but this difference comes from "
         f"glioma ({f(op['glioma']['esrg']['mean_dsc']['mean'])} against {f(op['glioma']['auto_dsc']['mean'])}, "
         f"{P(ao['glioma']['p'])}), where the automatic seed seldom reaches the tumor. For meningioma "
         f"({f(op['meningioma']['esrg']['mean_dsc']['mean'])} against {f(op['meningioma']['auto_dsc']['mean'])}, "
@@ -120,8 +120,8 @@ def texts(R, df):
         f"{f(op['pituitary']['auto_dsc']['mean'])}, {P(ao['pituitary']['p'])}), the automatic seed performs "
         f"{'as well as' if not (sig(ao['meningioma']['p']) and sig(ao['pituitary']['p'])) else 'nearly as well as'} the "
         "average operator who clicks correctly inside the tumor, without any operator input and with no variability. "
-        f"The automatic seed also outperforms the original algorithm seeded by an operator (*Z* = "
-        f"{f(op['all']['auto_vs_operator_srg']['Z'], 2)}, {P(op['all']['auto_vs_operator_srg']['p'])}).")
+        f"The automatic seed also outperforms the original algorithm seeded by an operator (*r* = "
+        f"{nz(op['all']['auto_vs_operator_srg']['r'])}, {P(op['all']['auto_vs_operator_srg']['p'])}).")
     allb = b["all"]
     seed_fail = allb["B"]["k"] + allb["C"]["k"] + allb["X"]["k"]
     grow_fail = allb["D"]["k"] + allb["E"]["k"]
@@ -160,12 +160,12 @@ def texts(R, df):
         f"larger and mean DSC doubles, from {f(ds['tests']['P_ESRG_global']['ref']['mean'])} to {f(ds['enh']['mean'])}. "
         f"The share of slices on which at least half of the tumor is recovered rises from "
         f"{pct(E2['recall_ge_50']['P_SRG']['pct'])} for the baseline to {pct(E2['recall_ge_50']['P_ESRG']['pct'])}. "
-        "This directly addresses the second problem: making the similarity comparison local and logarithmic "
-        "substantially reduces undersegmentation (Akram et al., 2017; Li et al., 2011). Recall nevertheless remains "
+        "This directly addresses the second problem: replacing the global-mean difference with a local comparison "
+        "in the log domain substantially reduces undersegmentation (Akram et al., 2017; Li et al., 2011). Recall nevertheless remains "
         f"moderate in absolute terms, lowest for pituitary tumors ({f(E2['recall']['pituitary']['enh']['mean'])}). "
         f"Growth ended at the maximum of four passes on {pmax} of the {n:,} planted slices "
         f"({pct(100 * pmax / n)}), so the region was usually still growing when the pass limit was reached, and the "
-        "small purified seed yields a tight initial bound (Table 4.17).")
+        f"small purified seed yields a tight initial bound (Table {tb['purify']}).")
     bb = E2["bias"]
     ctx = E2["bias_context"]
     T["BIAS_DISCUSSION"] = (
@@ -179,7 +179,7 @@ def texts(R, df):
         f"across a tumor of median size (about {ctx['gt_diam_median']:.0f} pixels in diameter) it changes the intensity "
         f"by only about {ctx['change_over_median_tumor_pct']:.1f}%, which is small compared with the natural "
         "heterogeneity of the tumor. The experiment therefore shows that ESRG is robust to a field of this size, "
-        "rather than that the baseline is harmed by it; the gains of Objective 2 in Table 4.13 appear on the original "
+        f"rather than that the baseline is harmed by it; the gains of Objective 2 in Table {tb['recall']} appear on the original "
         "slices and come from comparing each pixel with its own neighborhood on a relative scale.")
 
     # ── Objective 3 ──────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ def texts(R, df):
     dsc3 = E3["dsc"]["all"]
     rec3 = E3["recall"]["all"]
     T["LEAK_DISCUSSION"] = (
-        "No slice leaked with the criterion that did not also leak without it (*c* = 0), and the improvement is large "
+        "The improvement in precision is large "
         f"and significant in every class (*r* from {nz(min(E3['precision'][c]['tests']['P_ESRG_nostop']['r'] for c in ('glioma', 'meningioma', 'pituitary')))} "
         f"to {nz(max(E3['precision'][c]['tests']['P_ESRG_nostop']['r'] for c in ('glioma', 'meningioma', 'pituitary')))}). "
         f"The median precision with the criterion is {f(E3['precision']['all']['enh']['median'])}, meaning that on most "
@@ -195,13 +195,13 @@ def texts(R, df):
         f"{f(dsc3['tests']['P_ESRG_nostop']['ref']['mean'])} to {f(dsc3['enh']['mean'])}, although recall falls from "
         f"{f(rec3['tests']['P_ESRG_nostop']['ref']['mean'])} to {f(rec3['enh']['mean'])}, because unconditional "
         "growth covers the tumor only by covering the whole head. This directly addresses the third problem: the "
-        "adaptive stopping criterion prevents the flooding caused by unconditional absorption, in the same way that "
+        "adaptive stopping criterion and its drift guard prevent the flooding caused by unconditional absorption, in the same way that "
         "confidence-connected region growing bounds a region by its own statistics (Insight Software Consortium, "
         "n.d.). Leakage is not eliminated. Glioma remains the most affected class "
         f"({pct(L['glioma']['leak_ci']['P_ESRG']['pct'])} leakage, mean precision "
         f"{f(E3['precision']['glioma']['enh']['mean'])}), because its infiltrative margin has no sharp intensity step "
         "at which the bound can stop growth. The baseline shows no leakage with a planted seed "
-        f"({pct(L['all']['leak_ci']['P_SRG']['pct'])}), but, as noted in Section 4.1, it achieves this by stopping far "
+        f"({pct(L['all']['leak_ci']['P_SRG']['pct'])}), but, as noted in Section 4.1.1, it achieves this by stopping far "
         f"inside the tumor (median area ratio {f(L['all']['ratio']['P_SRG']['median'], 3)}).")
     hd = E3["hd95_wc"]
     T["BOUNDARY_DISCUSSION"] = (
@@ -233,7 +233,7 @@ def texts(R, df):
     bc = E4["by_class"]
     kw = E4["kruskal"]
     T["CLASS_DISCUSSION"] = (
-        f"Table 4.18 shows three distinct outcomes. Meningioma is delineated reliably and automatically: its median "
+        f"Table {tb['dsc_class']} shows three distinct outcomes. Meningioma is delineated reliably and automatically: its median "
         f"DSC improves from {f(bc['meningioma']['A_SRG']['dsc']['median'])} to "
         f"{f(bc['meningioma']['A_ESRG']['dsc']['median'])} ({P(bc['meningioma']['auto_test']['p_holm'])}, "
         f"*r* = {nz(bc['meningioma']['auto_test']['r'])}), and {pct(bc['meningioma']['A_ESRG']['success']['pct'])} of "
@@ -252,7 +252,7 @@ def texts(R, df):
         "under planted seeding).")
     cp = E4["class_plane"]
     T["PLANE_DISCUSSION"] = (
-        "Table 4.19 reports the results per imaging plane. The plane has a statistically significant but small effect "
+        "By imaging plane (Appendix F), the plane has a statistically significant but small effect "
         f"under automatic seeding (ε² = {nz(kw['A_ESRG']['plane']['epsilon2'])}) and "
         f"{'no significant effect' if not sig(kw['P_ESRG']['plane']['p']) else 'a significant effect'} with a planted "
         f"seed ({P(kw['P_ESRG']['plane']['p'])}). The plane therefore affects where the automatic seed lands rather "
@@ -292,7 +292,7 @@ def texts(R, df):
             f"warm-cache advantage. At a median of {f(t['esrg']['median'], 2)} s per slice on a laptop CPU without a "
             "GPU, running on battery power, the enhanced algorithm is fast enough for interactive use.")
         T["STAGE_DISCUSSION"] = (
-            "Table 4.22 and Figure 4.7 show where the time goes. Stages 1 to 5 are identical for both algorithms; the "
+            f"Table {tb['stages']} shows where the time goes. Stages 1 to 5 are identical for both algorithms; the "
             f"difference lies in region growing, which takes a mean {f(g_srg, 2)} s for SRG and {f(g_esrg, 2)} s for "
             f"ESRG. The most expensive shared stage is seed selection ({f(st['A_ESRG']['t_candidates']['mean'], 2)} s), "
             "which ranks every candidate component; it is also the stage that limits accuracy under automatic "
@@ -300,18 +300,20 @@ def texts(R, df):
 
     # ── Summary ──────────────────────────────────────────────────────────────
     T["SUMMARY_INTRO"] = (
-        "Table 4.23 summarizes the evaluation per objective. Each objective is judged by the metric that measures its "
+        f"Table {tb['summary']} summarizes the evaluation per objective. Each objective is judged by the metric that measures its "
         "problem directly, against the configuration without the corresponding enhancement.")
     rc_all = E2["recall"]["all"]
     T["SUMMARY_CLOSE"] = (
-        "Objective 1 is met in the sense intended: the system now provides an automatic, deterministic seed that "
+        "Objective 1 is met in the sense intended: multi-level Otsu thresholding with connected-component filtering "
+        "now provides an automatic, deterministic seed that "
         "removes the dependence on the operator, which the evaluation showed to be substantial for the enhanced "
         f"grower (inconsistent outcome on {pct(op['all']['esrg']['inconsistent']['pct'])} of slices). Its seed hit rate "
         f"of {pct(E1['class']['all']['rate'])} is high for meningioma and low for glioma, so automatic seeding is "
         "dependable for well-circumscribed tumors while the manual option remains necessary for the others. "
         "Objective 2 is met: the local log-domain measure raises recall from "
         f"{f(rc_all['tests']['P_SRG']['ref']['mean'])} to {f(rc_all['enh']['mean'])} with a planted seed, and both of "
-        "its parts contribute significantly. Objective 3 is met: the adaptive stopping criterion lowers the leakage "
+        "its parts contribute significantly. Objective 3 is met: the stopping criterion, which adapts to the intensity "
+        "variability of the growing region and is supported by the global drift guard, lowers the leakage "
         f"rate from {pct(L['all']['leak_ci']['P_ESRG_nostop']['pct'])} to {pct(L['all']['leak_ci']['P_ESRG']['pct'])} "
         f"and raises precision from {f(E3['precision']['all']['tests']['P_ESRG_nostop']['ref']['mean'])} to "
         f"{f(E3['precision']['all']['enh']['mean'])}. Combined, the enhancements more than double the mean DSC of the "

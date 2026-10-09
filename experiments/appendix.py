@@ -5,16 +5,18 @@ Purpose : Give every Chapter 4 evaluation an Excel file that lists the result of
           every sampled slice, so each table value can be cross-referenced to the
           slices behind it.
 Function : write_all(df, timing, R, d) writes outputs/evaluation/appendix/
-            Appendix_A_Sampling.xlsx                 (Tables 4.1–4.2)
-            Appendix_B_E1_Seed_Selection.xlsx        (Objective 1; Tables 4.9–4.11)
-            Appendix_C_E5_Failure_Attribution.xlsx   (Table 4.12)
-            Appendix_D_E2_Undersegmentation.xlsx     (Objective 2; Tables 4.13–4.14)
-            Appendix_E_E3_Boundary_Leakage.xlsx      (Objective 3; Tables 4.15–4.17)
-            Appendix_F_E4_Overall_Delineation.xlsx   (Tables 4.4–4.8, 4.18–4.20)
-            Appendix_G_E6_Processing_Time.xlsx       (Tables 4.21–4.22)
+            Appendix_A_Sampling.xlsx                 (sampling)
+            Appendix_B_E1_Seed_Selection.xlsx        (Objective 1)
+            Appendix_C_E5_Failure_Attribution.xlsx   (failure attribution)
+            Appendix_D_E2_Undersegmentation.xlsx     (Objective 2)
+            Appendix_E_E3_Boundary_Leakage.xlsx      (Objective 3)
+            Appendix_F_E4_Overall_Delineation.xlsx   (overall delineation, ablation)
+            Appendix_G_E6_Processing_Time.xlsx       (processing time)
             Appendix_H_Raw_Results.xlsx              (every run, every column)
           Each workbook opens with a Notes sheet (purpose, equations, column
-          dictionary), then per-slice sheets, then the Chapter 4 tables it supports.
+          dictionary), then per-slice sheets, then full-detail versions of the
+          Chapter 4 tables it supports (with SD, Z, b / c, and CIs), numbered
+          within the appendix (Table B.1, B.2, …).
 Notes   : Columns whose header ends in "(check)" are live Excel formulas that
           recompute the metric from the pixel counts in the same row, so a reader
           can verify the stored value without any software but Excel.
@@ -222,15 +224,15 @@ def overlap_checks(prefix):
 
 def metric_notes():
     return [
-        ("DSC (Eq. 3.32)", "DSC = 2TP / (2TP + FP + FN) = 2|M ∩ G| / (|M| + |G|)"),
-        ("IoU (Eq. 3.33)", "IoU = TP / (TP + FP + FN)"),
-        ("Precision (Eq. 3.34)", "Precision = TP / (TP + FP); undefined (blank) when nothing was predicted"),
-        ("Recall (Eq. 3.35)", "Recall = TP / (TP + FN); the missed share is 1 − Recall = FN / |G|"),
-        ("HD95 (Eq. 3.37)", "95th percentile of the pooled boundary-to-boundary distances (pixels); "
+        ("DSC (Table 3.3)", "DSC = 2TP / (2TP + FP + FN) = 2|M ∩ G| / (|M| + |G|)"),
+        ("IoU (Table 3.3)", "IoU = TP / (TP + FP + FN)"),
+        ("Precision (Table 3.3)", "Precision = TP / (TP + FP); undefined (blank) when nothing was predicted"),
+        ("Recall (Table 3.3)", "Recall = TP / (TP + FN); the missed share is 1 − Recall = FN / |G|"),
+        ("HD95 (Table 3.3)", "95th percentile of the pooled boundary-to-boundary distances (pixels); "
                             "an empty prediction is given the image diagonal (worst case)"),
-        ("ASSD (Eq. 4.10)", "Mean of the pooled boundary-to-boundary distances (pixels); worst case as for HD95"),
-        ("Leaked (Eq. 3.39)", "1 when |M| > 2|G| (λ = 2)"),
-        ("Success (Eq. 4.11)", "1 when DSC ≥ 0.70"),
+        ("ASSD (Table 3.3)", "Mean of the pooled boundary-to-boundary distances (pixels); worst case as for HD95"),
+        ("Leaked (Table 3.3)", "1 when |M| > 2|G| (λ = 2)"),
+        ("Success (Table 3.3)", "1 when DSC ≥ 0.70"),
         ("TP, FP, FN", "Pixel counts: TP = |M ∩ G|, FP = |M \\ G|, FN = |G \\ M| (M = predicted mask, G = ground truth)"),
         ("(check) columns", "Live Excel formulas recomputing the metric from TP, FP, FN in the same row; they "
                             "equal the stored value to rounding precision"),
@@ -244,14 +246,14 @@ def wb_sampling(R, tabs, d):
         ("Population", f"BRISC 2025 segmentation task, training + test splits: {R['meta']['N_population']:,} slices, "
                        "every one with a ground-truth tumor mask"),
         ("Strata", "9 strata = 3 tumor classes × 3 imaging planes, read from each filename"),
-        ("Cochran (Eq. 4.1)", "n0 = z² p (1 − p) / e²,  z = 1.959964, p = 0.5, e = 0.05"),
-        ("Finite population correction (Eq. 4.2)", "n = n0 / (1 + (n0 − 1) / N)"),
-        ("Equal allocation (Eq. 4.3)", "n_h = ceil( max_c n_c / 3 ) for every stratum h"),
-        ("Achieved margin (Eq. 4.4)", "e = z sqrt( p(1 − p)/n × (N − n)/(N − 1) )"),
+        ("Cochran (Section 3.1.1)", "n0 = z² p (1 − p) / e²,  z = 1.959964, p = 0.5, e = 0.05"),
+        ("Finite population correction (Section 3.1.1)", "n = n0 / (1 + (n0 − 1) / N)"),
+        ("Equal allocation (Section 3.1.1)", "n_h = ceil( max_c n_c / 3 ) for every stratum h"),
+        ("Achieved margin (Section 3.1.1)", "e = z sqrt( p(1 − p)/n × (N − n)/(N − 1) )"),
         ("Selection", "Simple random sampling without replacement within each stratum; the stratum’s slices "
                       "are sorted by filename, shuffled with random.Random(2026), and the first n_h are taken"),
         ("Sheets", "Sample_size (with live formulas), Strata, Sample (the 954 slices), Sampling_frame (all slices "
-                   "with their random draw order), Tables (Tables 4.1–4.2)"),
+                   "with their random draw order), Tables (Tables A.1–A.2)"),
         ("Removal", "Every image/mask pair not in the sample was deleted from segmentation_task/ after the draw "
                     "(experiments/sampling.py --prune); the frame below is the record of the population"),
     ])
@@ -288,16 +290,17 @@ def wb_sampling(R, tabs, d):
 def wb_e1(df, R, tabs, d):
     wb = Workbook()
     notes_sheet(wb, "Appendix B", "Experiment E1 — Objective 1: Automated Seed Selection", [
-        ("Objective", "To provide an automatic seed selection option through Multi-Level Otsu Thresholding"),
+        ("Objective", "To provide an automatic seed selection option through Multi-Level Otsu Thresholding with "
+                      "connected-component filtering"),
         ("Configuration", "A_ESRG (automatic seed); O_SRG_1–5 and O_ESRG_1–5 (five simulated operator clicks)"),
-        ("Seed Hit (Eq. 3.38)", "Hit = 1 when |S \\ G| = 0, i.e. every seed-core pixel lies inside the tumor"),
-        ("Seed Hit Rate", "SHR = hits / N_S, N_S = slices that received a seed; Wilson 95% CI (Eq. 4.14)"),
+        ("Seed Hit (Table 3.3)", "Hit = 1 when |S \\ G| = 0, i.e. every seed-core pixel lies inside the tumor"),
+        ("Seed Hit Rate", "SHR = hits / N_S, N_S = slices that received a seed; Wilson 95% CI (Section 3.1.2)"),
         ("Inside share", "|S ∩ G| / |S|"),
-        ("Localization distance (Eq. 4.7)", "Euclidean distance (px) from the centroid of S to the nearest tumor pixel; 0 inside"),
-        ("Operator click (Eq. 4.5)", "Random tumor pixel whose distance to the tumor boundary exceeds the 3-px click radius; "
+        ("Seed distance (Table 3.3)", "Euclidean distance (px) from the centroid of S to the nearest tumor pixel; 0 inside"),
+        ("Operator click (Section 3.1)", "Random tumor pixel whose distance to the tumor boundary exceeds the 3-px click radius; "
                                      "5 distinct clicks per slice, seeded by the filename (CRC32)"),
-        ("Within-slice SD (Eq. 4.8)", "SD_i = sqrt( Σ_k (DSC_ik − mean_i)² / (K − 1) ), K = 5"),
-        ("Inconsistency (Eq. 4.9)", "1 when 0 < number of successful clicks < 5"),
+        ("Within-slice SD", "SD_i = sqrt( Σ_k (DSC_ik − mean_i)² / (K − 1) ), K = 5"),
+        ("Inconsistency", "1 when 0 < number of successful clicks < 5"),
         ("Determinism", "Automatic seeding run twice (parallel run and sequential timing pass); identical = same DSC and |M|"),
         ("Sheets", "Seed_selection, Operator_variability, Determinism, Tables"),
     ] + metric_notes())
@@ -387,9 +390,10 @@ def wb_e5(df, R, tabs, d):
 def wb_e2(df, R, tabs, d):
     wb = Workbook()
     notes_sheet(wb, "Appendix D", "Experiment E2 — Objective 2: Minimizing Undersegmentation", [
-        ("Objective", "To minimize undersegmentation by correcting the image using Log-Domain Transformation"),
+        ("Objective", "To minimize undersegmentation by replacing the global-mean difference with a local difference "
+                      "measure computed in the log domain, making the criterion insensitive to multiplicative bias"),
         ("Configurations", "P_SRG, P_ESRG_global, P_ESRG_nolog, P_ESRG (same planted seed); "
-                           "B_* = the same with the synthetic 40% bias field (Eq. 4.6)"),
+                           "B_* = the same with the synthetic 40% bias field (Section 3.1)"),
         ("Primary metric", "Recall = TP / (TP + FN); Missed share = FN / |G| = 1 − Recall"),
         ("Sheets", "Recall_planted, Bias_field, Tables"),
     ] + metric_notes())
@@ -426,7 +430,8 @@ def wb_e2(df, R, tabs, d):
 def wb_e3(df, R, tabs, d):
     wb = Workbook()
     notes_sheet(wb, "Appendix E", "Experiment E3 — Objective 3: Decreasing Boundary Leakage", [
-        ("Objective", "To decrease boundary leakage by integrating an adaptive stopping criterion"),
+        ("Objective", "To decrease boundary leakage by integrating a stopping criterion that adapts to the intensity "
+                      "variability of the growing region, supported with a global drift guard"),
         ("Configurations", "P_ESRG_nostop (unconditional absorption), P_SRG, P_ESRG (adaptive stopping); "
                            "P_ESRG_nopurify for the seed-size analysis"),
         ("Primary metrics", "Precision = TP/(TP + FP); Leaked = 1 when |M| > 2|G|; HD95 and ASSD in pixels"),
@@ -470,9 +475,9 @@ def wb_e4(df, R, tabs, d):
     notes_sheet(wb, "Appendix F", "Experiment E4 — Overall Delineation Quality and Ablation", [
         ("Configurations", "A_SRG, A_ESRG (automatic seed); P_SRG, P_ESRG (planted seed); ablation arms "
                            "P_ESRG_global, P_ESRG_nolog, P_ESRG_nostop"),
-        ("Tests", "Wilcoxon signed-rank (Eq. 4.12), r = Z/√N (Eq. 3.41), Holm (Eq. 3.40), McNemar (Eq. 4.13), "
-                  "Friedman (Eq. 4.16), Kruskal–Wallis, Shapiro–Wilk"),
-        ("Population weighting (Eq. 4.15)", "ȳ_st = Σ_h W_h ȳ_h, W_h = N_h/N"),
+        ("Tests", "Wilcoxon signed-rank (Section 3.1.2), r = Z/√N (Section 3.1.2), Holm (Section 3.1.2), McNemar (Section 3.1.2), "
+                  "Friedman (Section 3.1.2), Kruskal–Wallis, Shapiro–Wilk"),
+        ("Population weighting (Section 3.1.1)", "ȳ_st = Σ_h W_h ȳ_h, W_h = N_h/N"),
         ("Sheets", "Overall_auto, Overall_planted, Ablation, Tables"),
     ] + metric_notes())
     b = base_cols(df)
@@ -539,14 +544,14 @@ COLUMN_DOC = {
     "method": "esrg or srg", "seeding": "auto, planted, or operator", "biased": "Synthetic bias field applied",
     "click": "Operator click number (1–5)", "status": "OK, WARN, NO TUMOR CANDIDATE, or ERROR",
     "tp": "True-positive pixels |M ∩ G|", "fp": "False-positive pixels |M \\ G|", "fn": "False-negative pixels |G \\ M|",
-    "pred_area": "|M| (px)", "gt_area": "|G| (px)", "dsc": "Eq. 3.32", "iou": "Eq. 3.33", "precision": "Eq. 3.34",
-    "recall": "Eq. 3.35", "hd95": "Eq. 3.37 (blank when a mask is empty)", "assd": "Eq. 4.10 (blank when a mask is empty)",
+    "pred_area": "|M| (px)", "gt_area": "|G| (px)", "dsc": "Table 3.3", "iou": "Table 3.3", "precision": "Table 3.3",
+    "recall": "Table 3.3", "hd95": "Table 3.3 (blank when a mask is empty)", "assd": "Table 3.3 (blank when a mask is empty)",
     "hd95_wc": "HD95 with the image diagonal for an empty prediction", "assd_wc": "ASSD with the image diagonal for an empty prediction",
     "diag": "Image diagonal (px)", "n_boundary_pred": "|∂M| (px)", "n_boundary_gt": "|∂G| (px)", "area_ratio": "|M|/|G|",
-    "leaked": "|M| > 2|G| (Eq. 3.39)", "success": "DSC ≥ 0.70 (Eq. 4.11)", "seed_area": "|S| (px)", "seed_in_gt_px": "|S ∩ G| (px)",
-    "seed_in_gt_frac": "|S ∩ G|/|S|", "seed_hit": "S ⊆ G (Eq. 3.38)", "seed_distance": "Eq. 4.7 (px)",
+    "leaked": "|M| > 2|G| (Table 3.3)", "success": "DSC ≥ 0.70 (Table 3.3)", "seed_area": "|S| (px)", "seed_in_gt_px": "|S ∩ G| (px)",
+    "seed_in_gt_frac": "|S ∩ G|/|S|", "seed_hit": "S ⊆ G (Table 3.3)", "seed_distance": "Table 3.3 (px)",
     "click_row": "Row of the click (planted/operator)", "click_col": "Column of the click", "click_depth": "Distance of the click to the tumor boundary (px)",
-    "sigma_floor": "σ_floor (Eq. 3.21)", "sigma_A_initial": "σ_A in pass 1 (Eq. 3.28)", "k_local": "k_L", "stop_reason": "Why growth ended",
+    "sigma_floor": "σ_floor (Section 3.4.2)", "sigma_A_initial": "σ_A in pass 1 (Equation 3.9)", "k_local": "k_L", "stop_reason": "Why growth ended",
     "n_passes": "Growing passes", "bias_theta_deg": "Bias gradient direction (degrees)", "bucket": "E5 bucket (A_ESRG)",
     "bucket_reason": "Value that set the bucket", "seconds": "Time measured during the parallel run (not used for E6)",
     "t_input": "Stage 1 time (s)", "t_mask": "Stage 2 time (s)", "t_log": "Stage 3 time (s)", "t_candidates": "Stages 4–5 time (s)",
