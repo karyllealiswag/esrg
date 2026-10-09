@@ -11,8 +11,11 @@ Function : write_all(df, timing, R, d) writes outputs/evaluation/appendix/
             Appendix_D_E2_Undersegmentation.xlsx     (Objective 2)
             Appendix_E_E3_Boundary_Leakage.xlsx      (Objective 3)
             Appendix_F_E4_Overall_Delineation.xlsx   (overall delineation, ablation)
-            Appendix_G_E6_Processing_Time.xlsx       (processing time)
-            Appendix_H_Raw_Results.xlsx              (every run, every column)
+            Appendix_G_Raw_Results.xlsx              (every run, every accuracy column)
+          and write_supplementary(df, timing, R, d) writes outputs/evaluation/
+          supplementary/Supplementary_Processing_Time.xlsx. Processing time is not
+          an objective of the study, so its data (the E6 sequential pass and the
+          per-run timing columns) live there, outside the thesis appendices.
           Each workbook opens with a Notes sheet (purpose, equations, column
           dictionary), then per-slice sheets, then full-detail versions of the
           Chapter 4 tables it supports (with SD, Z, b / c, and CIs), numbered
@@ -172,9 +175,9 @@ def table_sheet(wb, name, tabs):
         ws.column_dimensions[get_column_letter(j)].width = 17
 
 
-def save(wb, d, name):
-    os.makedirs(os.path.join(d, "appendix"), exist_ok=True)
-    p = os.path.join(d, "appendix", name)
+def save(wb, d, name, folder="appendix"):
+    os.makedirs(os.path.join(d, folder), exist_ok=True)
+    p = os.path.join(d, folder, name)
     wb.save(p)
     return p
 
@@ -506,12 +509,17 @@ def wb_e4(df, R, tabs, d):
     return save(wb, d, "Appendix_F_E4_Overall_Delineation.xlsx")
 
 
-def wb_e6(timing, R, tabs, d):
+TIME_COLS = ("seconds", "t_input", "t_mask", "t_log", "t_candidates", "t_growth", "t_final")
+
+
+def write_supplementary(df, timing, R, d):
+    """Processing time (Experiment E6) and the per-run timing columns: not an objective, so not an appendix."""
     if timing is None:
         return None
+    tabs = T.build(R)
     wb = Workbook()
     env = R["meta"].get("environment") or {}
-    notes_sheet(wb, "Appendix G", "Experiment E6 — Processing Time", [
+    notes_sheet(wb, "Supplementary", "Experiment E6 — Processing Time (not an objective of the study)", [
         ("Configurations", "A_SRG and A_ESRG (automatic seeding)"),
         ("Slices", f"{timing.file.nunique()} slices: the first {timing.file.nunique() // 9} slices of every stratum in "
                    "the random draw order of the sampling step (a stratified random subsample of the 954)"),
@@ -531,11 +539,15 @@ def wb_e6(timing, R, tabs, d):
                          "Plane": s0.plane.map(PLN).values}).set_index("Slice (file)", drop=False)
     out = base.join(parts[0]).join(parts[1]).sort_index().reset_index(drop=True)
     fm = {c: "0.0000" for c in out.columns if "(s)" in c}
-    data_sheet(wb, "Time_per_slice", "Appendix G", "Sequential Processing Time per Slice and Stage", out, fmt=fm,
+    data_sheet(wb, "Time_per_slice", "Supplementary", "Sequential Processing Time per Slice and Stage", out, fmt=fm,
                checks=[("ESRG − SRG, s (check)", "={ESRG: Total (s)}-{SRG: Total (s)}"),
                        ("ESRG faster (check)", "=IF({ESRG: Total (s)}<{SRG: Total (s)},1,0)")])
+    runs = df[["file", "config"] + list(TIME_COLS)].sort_values(["file", "config"])
+    data_sheet(wb, "Time_per_run", "Supplementary",
+               "Time Recorded in the Parallel Evaluation Run (Not Used for E6)", runs,
+               fmt={c: "0.0000" for c in TIME_COLS})
     table_sheet(wb, "Tables", [tabs["time"], tabs["stages"]])
-    return save(wb, d, "Appendix_G_E6_Processing_Time.xlsx")
+    return save(wb, d, "Supplementary_Processing_Time.xlsx", "supplementary")
 
 
 COLUMN_DOC = {
@@ -561,26 +573,33 @@ COLUMN_DOC = {
 
 def wb_raw(df, R, d):
     wb = Workbook()
-    notes_sheet(wb, "Appendix H", "Raw Results of Every Run", [
+    notes_sheet(wb, "Appendix G", "Raw Results of Every Run", [
         ("Rows", f"{len(df):,} runs = {R['meta']['n_sample']:,} slices × {R['meta']['n_configs']} configurations"),
         ("Errors", f"{R['meta']['n_errors']} runs ended in an error"),
         ("Reproduce", "python experiments/sampling.py --draw; python experiments/evaluate.py; "
                       "python experiments/evaluate.py --timing; python experiments/analyze.py"),
-    ] + [(k, v) for k, v in COLUMN_DOC.items()])
+    ] + [(k, v) for k, v in COLUMN_DOC.items() if k not in TIME_COLS]
+      + [("Processing time", "Per-run timing columns are in supplementary/Supplementary_Processing_Time.xlsx")])
     cfg = pd.DataFrame([{"Configuration": k, "Description": v[0], "Parameter overrides": str(v[1]) or "—",
-                         "Seeding": v[2], "Bias field": v[3]} for k, v in CONFIGS.items()])
-    data_sheet(wb, "Configurations", "Appendix H", "Configurations", cfg, widths={"Description": 50, "Parameter overrides": 40})
-    raw = df.sort_values(["file", "config"]).copy()
+                         "Seeding": v[2], "Bias field": v[3]} for k, v in CONFIGS.items()
+                        if k in set(df.config)])
+    data_sheet(wb, "Configurations", "Appendix G", "Configurations", cfg, widths={"Description": 50, "Parameter overrides": 40})
+    raw = df.drop(columns=[c for c in TIME_COLS if c in df.columns]).sort_values(["file", "config"]).copy()
     for c in ("leaked", "success", "seed_hit", "biased"):
         raw[c] = bool01(raw[c])
-    data_sheet(wb, "Raw_results", "Appendix H", "One Row per Slice and Configuration", raw)
-    return save(wb, d, "Appendix_H_Raw_Results.xlsx")
+    data_sheet(wb, "Raw_results", "Appendix G", "One Row per Slice and Configuration", raw)
+    return save(wb, d, "Appendix_G_Raw_Results.xlsx")
 
 
 def write_all(df, timing, R, d):
     tabs = T.build(R)
     paths = [wb_sampling(R, tabs, d), wb_e1(df, R, tabs, d), wb_e5(df, R, tabs, d), wb_e2(df, R, tabs, d),
-             wb_e3(df, R, tabs, d), wb_e4(df, R, tabs, d), wb_e6(timing, R, tabs, d), wb_raw(df, R, d)]
+             wb_e3(df, R, tabs, d), wb_e4(df, R, tabs, d), wb_raw(df, R, d),
+             write_supplementary(df, timing, R, d)]
+    # Older layouts kept processing time as Appendix G and raw results as H.
+    for old in ("Appendix_G_E6_Processing_Time.xlsx", "Appendix_H_Raw_Results.xlsx"):
+        if os.path.exists(os.path.join(d, "appendix", old)):
+            os.remove(os.path.join(d, "appendix", old))
     for p in paths:
         if p:
             print("  wrote", p)

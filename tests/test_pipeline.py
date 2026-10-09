@@ -7,7 +7,9 @@ Function : Small synthetic cases with known answers — perfect/disjoint DSC, ou
           logic, rejection of an invalid k_global <= k_local, the seed-pixel
           report (per-region grouping, averages, click de-duplication), the
           evaluation pipeline (Cochran sample size, equal allocation, the
-          statistics, worst-case distances) and the GUI's metric explanations.
+          statistics, worst-case distances), the GUI's metric explanations, and
+          the stage telemetry (growth recording changes nothing and every logged
+          decision obeys Eq. 3.8–3.11; every stage has a report).
 Notes   : Run with pytest, or directly: python tests/test_pipeline.py
 """
 import os, sys, numpy as np
@@ -153,6 +155,80 @@ def test_explain_agrees_with_metrics():
                   ("hd95", "hd95"), ("assd", "assd"), ("leakage", "area_ratio")):
         assert abs(e[k]["value"] - m[mk]) < 1e-12, k
     assert e["seed"]["value"] == 1.0
+
+
+def _square_case():
+    img = np.full((60, 60), 40.0); img[20:40, 20:40] = 200.0
+    img += np.random.RandomState(0).normal(0, 2, img.shape)
+    L = log_transform(normalize(img))
+    mask = np.ones((60, 60), bool)
+    core = np.zeros((60, 60), bool); core[28:32, 28:32] = True
+    return L, mask, core
+
+
+def test_growth_recording_changes_nothing_and_obeys_eq_3_8_to_3_11():
+    """record=True only logs: same region, same passes; every logged decision follows the rules."""
+    L, mask, core = _square_case()
+    cfg = Config()
+    r0, t0 = grow_esrg(L, mask, core, 0.02, cfg)
+    r1, t1 = grow_esrg(L, mask, core, 0.02, cfg, record=True)
+    assert np.array_equal(r0, r1) and t0["passes"] == t1["passes"]
+    bounds = {d["pass"]: d for d in t1["pass_detail"]}
+    for p, r, c, Lv, ref, delta, dev, decision in t1["events"]:
+        d = bounds[p]
+        assert abs(delta - abs(Lv - ref)) < 1e-12 and abs(Lv - L[r, c]) < 1e-12
+        assert abs(d["T_L"] - cfg.k_local * d["sigma"]) < 1e-12
+        assert abs(d["sigma"] - max(d["s"], d["sigma_floor"])) < 1e-12
+        if decision == "absorb":
+            assert delta <= d["T_L"] and dev <= d["T_G"]
+        elif decision == "reject":
+            assert dev > d["T_G"]
+        else:
+            assert delta > d["T_L"]
+    absorbed = sum(1 for e in t1["events"] if e[7] == "absorb")
+    assert absorbed == r1.sum() - core.sum()
+
+
+def test_stage_report_covers_every_stage():
+    """The Details view has a report, with INPUT and OUTPUT, for every stage of a real run."""
+    import glob
+    from esrg import run
+    from esrg.stage_report import report
+    files = sorted(glob.glob(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                          "segmentation_task", "test", "images", "*.jpg")))
+    if not files:
+        return                                   # dataset not present: nothing to run on
+    for cfg in (Config(), Config(method="srg")):
+        res = run(files[0], cfg, record=True)
+        for st in res.stages:
+            kinds = [k for k, _ in report(res, cfg, st.key)]
+            assert kinds[0] == "flow" and "output" in kinds, (cfg.method, st.key)
+        assert any(k == "output" for k, _ in report(res, cfg, "evaluation", ["dsc"]))
+
+
+def test_stage_report_reflects_the_runs_own_settings():
+    """Toggled ablations and adjusted hyperparameters are shown as run, flagged, and still check out."""
+    import glob
+    from esrg import run
+    from esrg.stage_report import report
+    files = sorted(glob.glob(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                          "segmentation_task", "test", "images", "*.jpg")))
+    if not files:
+        return
+    cfg = Config().replace(k_local=2.5, otsu_classes=4, rank_use_contrast=False, use_log_local=False)
+    res = run(files[1], cfg, record=True)
+    flagged, q_rows = set(), []
+    for st in res.stages:
+        for kind, p in report(res, Config(), st.key):     # a default cfg must not override the run's
+            if kind == "settings":
+                flagged |= {(label, value) for label, value, changed, _ in p if changed}
+            if kind == "table" and "Q from eq." in p["cols"]:
+                q_rows += p["rows"]
+    assert {("k_L", "2.5"), ("K, Otsu classes", "4"), ("rank by contrast", "OFF"),
+            ("local log measure (Obj 2)", "OFF")} <= flagged, flagged
+    assert q_rows and all(r[6] == r[7] for r in q_rows)
+    for d in res.stage("growth").info["_trace"]["pass_detail"]:
+        assert d["k_L"] == 2.5 and abs(d["T_L"] - 2.5 * d["sigma"]) < 1e-12
 
 
 if __name__ == "__main__":

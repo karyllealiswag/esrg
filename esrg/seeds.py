@@ -31,9 +31,13 @@ def select_seed(img, mask, depth, cfg):
 
     # Restrict the histogram to interior tissue. Scalp fat outshines an enhancing
     # tumor on T1, so including it pushes the tumor out of the top Otsu class.
-    interior = mask & (depth >= max(cfg.min_clearance, cfg.interior_frac * depth.max()))
+    depth_cut = max(cfg.min_clearance, cfg.interior_frac * depth.max())
+    interior = mask & (depth >= depth_cut)
+    info["_interior"] = {"depth_max": float(depth.max()), "depth_cut": float(depth_cut),
+                         "px": int(interior.sum()), "head_px": int(mask.sum()), "fallback": False}
     if interior.sum() < 50:
         interior = mask
+        info["_interior"]["fallback"] = True
     info["interior_frac_of_head"] = round(float(interior.sum() / max(mask.sum(), 1)), 2)
     vals = img[interior]
     if vals.size < 50 or vals.max() - vals.min() < 1e-6:
@@ -50,7 +54,9 @@ def select_seed(img, mask, depth, cfg):
     info["thresholds"] = [round(float(t), 1) for t in thresholds]
 
     cand = interior & (img >= thresholds[-1])
+    info["_cand_px"] = {"top_class": int(cand.sum())}
     cand = morphology.opening(cand, morphology.disk(1))          # drop 1-px speckle
+    info["_cand_px"]["opened"] = int(cand.sum())
 
     # Phase 2a: remove orbits / skull base BEFORE candidate labeling, since these
     # are high-contrast and cannot be out-ranked (Phase 1). Excludes by anatomical
@@ -114,13 +120,15 @@ def select_seed(img, mask, depth, cfg):
 
     # ── Core = medial pixels, farthest from partial-volume boundary pixels ───
     core = comp & (dt >= cfg.seed_core_frac * dt.max())
+    info["_core"] = {"dt_max": float(dt.max()), "cut": float(cfg.seed_core_frac * dt.max()),
+                     "comp_area": int(comp.sum()), "fallback": not core.any()}
     if not core.any():
         core = comp & (dt >= dt.max())                           # single deepest pixel
     info["core_area"] = int(core.sum())
     return core, info
 
 
-def purify_core(core, cfg):
+def purify_core(core, cfg, info=None):
     """
     Erode a seed core to its own medial pixels (mirrors the dt >= seed_core_frac *
     dt.max() clip select_seed() already applies to the auto core), so growth's
@@ -133,6 +141,11 @@ def purify_core(core, cfg):
         return core
     dt = ndi.distance_transform_edt(core)
     clipped = core & (dt >= cfg.seed_core_frac * dt.max())
+    if info is not None:
+        # Recorded for the GUI only; same fields as select_seed()'s "_core".
+        info["_core"] = {"dt_max": float(dt.max()), "cut": float(cfg.seed_core_frac * dt.max()),
+                         "comp_area": int(core.sum()), "fallback": not clipped.any(),
+                         "purified": True}
     return clipped if clipped.any() else (core & (dt >= dt.max()))
 
 

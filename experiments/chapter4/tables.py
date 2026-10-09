@@ -137,13 +137,11 @@ def t_metrics():
          "Huttenlocher et al. (1993); Menze et al. (2015)"],
         ["ASSD", "Table 3.3", "Mean distance between the two boundaries", "Lower",
          "Taha & Hanbury (2015); Yeghiazaryan & Voiculescu (2018)"],
-        {"group": "Overall delineation and efficiency"},
+        {"group": "Overall delineation"},
         ["DSC", "Table 3.3", "Overlap of prediction and ground truth", "Higher",
          "Dice (1945); Zou et al. (2004); Menze et al. (2015)"],
         ["IoU", "Table 3.3", "Intersection divided by union", "Higher", "Jaccard (1912); Taha & Hanbury (2015)"],
         ["Success rate", "Table 3.3", "Share of slices with DSC ≥ 0.70", "Higher", "Zijdenbos et al. (1994)"],
-        ["Processing time", "Table 3.3", "Wall-clock seconds per slice, sequential", "Lower",
-         "Udupa et al. (2006); Hoefler & Belli (2015)"],
     ]
     return {"title": "Evaluation Metrics per Objective, Their Definitions, and Supporting Studies",
             "header": ["Metric", "Defined in", "What it measures", "Better", "Supporting studies"],
@@ -184,8 +182,8 @@ def t_configs(R):
                      f"{R['meta']['n_rows']:,} runs; {R['meta']['n_errors']} ended in an error). Automatic seeding uses "
                      "the seed selection of Objective 1; planted seeding places one click at the deepest ground-truth "
                      "pixel; operator seeding places five clicks at random tumor pixels (Section 3.1). Experiments "
-                     "E1–E6 are those of Table 3.5. The identifier appears in the Configuration column of Appendix H."),
-            "appendix": "H"}
+                     "E1–E6 are those of Table 3.5. The identifier appears in the Configuration column of Appendix G."),
+            "appendix": "G"}
 
 
 def t_normality(R):
@@ -548,7 +546,7 @@ def t_time(R):
                      "1 − *Mdn*_{ESRG}/*Mdn*_{SRG}. A negative *Z* means ESRG was faster (Wilcoxon signed-rank test); after "
                      "Holm adjustment over the three classes every *p* is "
                      f"{fmt_p(pmax) if fmt_p(pmax).startswith('<') else '≤ ' + fmt_p(pmax)}."),
-            "appendix": "G"}
+            "appendix": "S"}
 
 
 def t_stages(R):
@@ -563,7 +561,7 @@ def t_stages(R):
             "note": ("Stage times from the same sequential pass as the per-slice processing times. Stages 1–5 are shared by both "
                      "algorithms, so their times differ only by measurement noise; the difference in total time comes "
                      "from Stage 6. The remainder of the total (noise-floor estimation and bookkeeping) is not shown."),
-            "appendix": "G"}
+            "appendix": "S"}
 
 
 ORDER = [("sample_size", t_sample_size), ("strata", t_strata), ("configs", t_configs), ("metrics", None),
@@ -856,7 +854,7 @@ def c_time(R):
             "note": (f"*N* = {T['all']['N']} slices ({T['all']['N'] // 9} per stratum) timed in the sequential pass of "
                      "Section 3.1.2. Reduction is 1 − *Mdn*_{ESRG}/*Mdn*_{SRG}; a negative *r* means ESRG was faster "
                      "(Wilcoxon signed-rank test); after Holm adjustment over the three classes, "
-                     f"{_p_all([T[lv]['p_holm'] for lv in LEVELS])}. Means and standard deviations are given in Appendix G.")}
+                     f"{_p_all([T[lv]['p_holm'] for lv in LEVELS])}. Means and standard deviations are given in Supplementary_Processing_Time.xlsx.")}
 
 
 def c_stages(R):
@@ -874,7 +872,24 @@ def c_stages(R):
 CH_ORDER = [("overall_auto", lambda R: c_overall(R, "auto")), ("overall_planted", lambda R: c_overall(R, "planted")),
             ("seed_hit", c_seed_hit), ("operator", c_operator), ("buckets", c_buckets), ("recall", c_recall),
             ("bias", c_bias), ("leak", c_leak), ("boundary", c_boundary), ("purify", c_purify),
-            ("dsc_class", t_dsc_class), ("ablation", c_ablation), ("time", c_time), ("stages", c_stages)]
+            ("dsc_class", t_dsc_class), ("ablation", c_ablation)]
+
+# Processing time is not one of the study's objectives, so its tables are kept out of
+# the chapter and built only for the supplementary report (build_supplementary.py).
+SUPP_ORDER = [("time", c_time), ("stages", c_stages)]
+
+
+def build_supplementary(R):
+    """Processing-time tables of the supplementary report, numbered S.1, S.2."""
+    out = {}
+    for i, (key, fn) in enumerate(SUPP_ORDER, 1):
+        t = dict(fn(R))
+        t["num"] = f"S.{i}"
+        out[key] = t
+    for t in out.values():
+        if t.get("note"):
+            t["note"] = re.sub(r"\[\[T:(\w+)\]\]", lambda m: out[m.group(1)]["num"], t["note"])
+    return out
 
 
 def build_chapter(R):

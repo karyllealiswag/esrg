@@ -270,14 +270,14 @@ def texts(R, df, tb):
         f"({f(sm['P_ESRG_nolog']['dsc']['mean'])}). The enhancements are complementary: the local log-domain measure "
         "lets the region reach the tumor boundary, and the stopping criterion keeps it from crossing it.")
 
-    # ── Efficiency ───────────────────────────────────────────────────────────
-    if E6:
+    # ── Efficiency (supplementary report only; not an objective of the study) ───────────────────────────────────────────────────────────
+    if E6 and "stages" in tb:
         t = E6["all"]
         st = E6["stages"]
         faster = t["reduction_pct_median"] > 0
         g_srg, g_esrg = st["A_SRG"]["t_growth"]["mean"], st["A_ESRG"]["t_growth"]["mean"]
         T["TIME_DISCUSSION"] = (
-            ("The enhanced algorithm is therefore faster as well as more accurate. " if faster and sig(t["p"]) else
+            ("The enhanced algorithm is faster than the baseline. " if faster and sig(t["p"]) else
              "The two algorithms differ little in speed. " if not sig(t["p"]) else
              "The enhanced algorithm is slower, the price of its additional bookkeeping. ")
             + "The baseline partitions the whole head among hundreds of background seeds, whereas ESRG grows a single "

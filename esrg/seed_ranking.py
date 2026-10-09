@@ -97,7 +97,11 @@ def score_candidates(candidates, img, mask, cfg):
             score -= 10.0
         rec.update(contrast=round(f["contrast"], 1), vfrac=round(f["vfrac"], 2),
                    compactness=round(f["compactness"], 2), solidity=round(f["solidity"], 2),
-                   score=round(float(score), 3), vetoed=bool(vetoed))
+                   score=round(float(score), 3), vetoed=bool(vetoed),
+                   # Exact Equation 3.3 terms, so the GUI can show Q = sum of them.
+                   _terms={"contrast_n": float(nc), "radius_n": float(nr), "shape": float(shape_term),
+                           "contrast": float(f["contrast"]), "radius": float(f["radius"]),
+                           "score": float(score)})
         ranked.append((score, rec, comp, dt))
 
     ranked.sort(key=lambda x: x[0], reverse=True)

@@ -64,30 +64,40 @@ class _Welford:
         return float(np.sqrt(self.m2 / (self.n - 1))) if self.n > 1 else 0.0
 
 
-def grow_esrg(L, mask, core, sigma_floor, cfg):
+def grow_esrg(L, mask, core, sigma_floor, cfg, record=False):
     """
     L           : log-domain image
     mask        : head mask (growth never leaves it)
     core        : seed core
     sigma_floor : noise floor, lower clamp on sigma_A
+    record      : GUI only. Logs every decision in trace["events"] and the frozen
+                  statistics of each pass in trace["pass_detail"]; the arithmetic
+                  and the grown region are identical either way.
     """
     H, W = L.shape
     region = core.copy()
     rejected = np.zeros((H, W), bool)
     trace = {"passes": [], "stop_reason": None}
+    events, pass_detail = ([], []) if record else (None, None)
 
     local = _LocalMean(L.shape, cfg.local_radius)
     stats = _Welford()
     for r, c in zip(*np.nonzero(core)):
         local.add(r, c, L[r, c])
         stats.add(L[r, c])
+    if record:
+        trace["seed_stats"] = {"n": stats.n, "mean": stats.mean, "s": stats.sigma()}
+
+    def reference(r, c):
+        """The value x is compared with: mu_loc(x) (Eq. 3.8), or mu_A when the window is empty."""
+        if not cfg.use_log_local:
+            return stats.mean                     # ablation: global reference
+        m = local.mean(r, c)
+        return stats.mean if m is None else m
 
     def delta(r, c):
         """Objective 2: compare against nearby absorbed pixels, not the whole region."""
-        if not cfg.use_log_local:
-            return abs(L[r, c] - stats.mean)      # ablation: global reference
-        m = local.mean(r, c)
-        return abs(L[r, c] - (stats.mean if m is None else m))
+        return abs(L[r, c] - reference(r, c))
 
     # Phase 3: set the acceptance multiplier k_L per image from how well the seed
     # stands out from its immediate surroundings (log-domain contrast). A tumor
@@ -111,9 +121,11 @@ def grow_esrg(L, mask, core, sigma_floor, cfg):
         # Statistics frozen for the whole pass: updating per pixel lets each
         # borderline absorption widen sigma and admit the next one (leakage).
         mu_A = stats.mean
-        sigma_A = max(stats.sigma(), sigma_floor)
+        s_A = stats.sigma()
+        sigma_A = max(s_A, sigma_floor)
         t_local = k_local * sigma_A
         t_global = cfg.k_global * sigma_A
+        n_requeued = n_rejected = 0
 
         ssl, queued = [], np.zeros((H, W), bool)
         for r, c in zip(*np.nonzero(region)):
@@ -132,21 +144,33 @@ def grow_esrg(L, mask, core, sigma_floor, cfg):
                 continue
 
             # Lazy re-evaluation: the local mean may have moved since queueing.
-            d_now = delta(r, c)
+            ref = reference(r, c)
+            d_now = abs(L[r, c] - ref)
             if d_now > d + cfg.lazy_tol:
                 heapq.heappush(ssl, (d_now, r, c))
+                n_requeued += 1
                 continue
 
             if cfg.use_stopping:
                 # The SSL is sorted, so the first failure implies all the rest fail.
                 if d_now > t_local:
                     stop = f"delta {d_now:.3f} > T_L {t_local:.3f}"
+                    if record:
+                        events.append((p, int(r), int(c), float(L[r, c]), float(ref), float(d_now),
+                                       float(abs(L[r, c] - mu_A)), "stop"))
                     break
                 # Global drift guard: blocks slow chaining across a soft boundary.
                 if abs(L[r, c] - mu_A) > t_global:
                     rejected[r, c] = True
+                    n_rejected += 1
+                    if record:
+                        events.append((p, int(r), int(c), float(L[r, c]), float(ref), float(d_now),
+                                       float(abs(L[r, c] - mu_A)), "reject"))
                     continue
 
+            if record:
+                events.append((p, int(r), int(c), float(L[r, c]), float(ref), float(d_now),
+                               float(abs(L[r, c] - mu_A)), "absorb"))
             region[r, c] = True
             local.add(r, c, L[r, c])
             stats.add(L[r, c])
@@ -163,6 +187,12 @@ def grow_esrg(L, mask, core, sigma_floor, cfg):
             "pass": p, "mu": round(mu_A, 4), "sigma": round(sigma_A, 4),
             "T_L": round(t_local, 4), "T_G": round(t_global, 4),
             "added": added, "area": int(region.sum()), "stop": stop})
+        if record:
+            pass_detail.append({"pass": p, "n": stats.n - added, "mu": mu_A, "s": s_A,
+                                "sigma_floor": sigma_floor, "sigma": sigma_A, "k_L": k_local,
+                                "T_L": t_local, "T_G": t_global, "added": added,
+                                "rejected": n_rejected, "requeued": n_requeued,
+                                "area": int(region.sum()), "stop": stop})
 
         if added == 0:
             trace["stop_reason"] = f"converged after pass {p} (no pixels added)"
@@ -171,11 +201,13 @@ def grow_esrg(L, mask, core, sigma_floor, cfg):
         trace["stop_reason"] = f"reached P_max = {cfg.max_passes}"
     if trace["stop_reason"] is None:
         trace["stop_reason"] = f"converged after pass {p}"
+    if record:
+        trace["events"], trace["pass_detail"] = events, pass_detail
 
     return region, trace
 
 
-def grow_srg(img, seed_labels):
+def grow_srg(img, seed_labels, record=False):
     """
     Adams & Bischof (1994) seeded region growing, exactly as published.
 
@@ -204,20 +236,28 @@ def grow_srg(img, seed_labels):
     counts = {i: int((label == i).sum()) for i in ids}
 
     ssl = []
+    # record (GUI only): the region mean each region-1 entry was scored against.
+    refs, events = ({}, []) if record else (None, None)
 
     def enqueue(r, c, lid):
         """delta is computed once, here, against the region mean of the moment."""
         if 0 <= r < H and 0 <= c < W and label[r, c] == 0:
-            heapq.heappush(ssl, (abs(img[r, c] - sums[lid] / counts[lid]), r, c, lid))
+            ref = sums[lid] / counts[lid]
+            d = abs(img[r, c] - ref)
+            heapq.heappush(ssl, (d, r, c, lid))
+            if record and lid == 1:
+                refs[(d, r, c)] = ref
 
     for r, c in zip(*np.nonzero(label)):
         for dr, dc in NEIGH4:
             enqueue(r + dr, c + dc, int(label[r, c]))
 
     while ssl:
-        _, r, c, lid = heapq.heappop(ssl)
+        d, r, c, lid = heapq.heappop(ssl)
         if label[r, c] != 0:
             continue                    # a better-fitting region reached it first
+        if record and lid == 1:
+            events.append((int(r), int(c), float(img[r, c]), float(refs[(d, r, c)]), float(d), 1))
         label[r, c] = lid               # unconditional: no stopping rule, no re-scoring
         sums[lid] += float(img[r, c])
         counts[lid] += 1
@@ -231,6 +271,9 @@ def grow_srg(img, seed_labels):
         "region_areas": {i: int(counts[i]) for i in ids},
         "region_means": {i: round(sums[i] / counts[i], 2) for i in ids},
     }
+    if record:
+        trace["events"] = events
+        trace["seed_areas"] = {i: int((seed_labels == i).sum()) for i in ids}
     if len(ids) < 2:
         trace["warning"] = ("Only one seed region was planted. SRG has no stopping "
                             "rule, so with nothing to compete against, that single "
@@ -238,7 +281,7 @@ def grow_srg(img, seed_labels):
     return label, trace
 
 
-def grow_srg_auto(img, mask, core, cfg):
+def grow_srg_auto(img, mask, core, cfg, record=False):
     """
     Adams & Bischof (1994) under the automatic seeding protocol.
 
@@ -267,6 +310,8 @@ def grow_srg_auto(img, mask, core, cfg):
                 nxt += 1
 
     ssl, queued = [], np.zeros((H, W), bool)
+    events = [] if record else None
+    seed_mean = sums[1] / counts[1]
 
     def enqueue(r, c):
         if (0 <= r < H and 0 <= c < W and mask[r, c]
@@ -304,6 +349,9 @@ def grow_srg_auto(img, mask, core, cfg):
             queued[r, c] = False
             continue
         lid = best[1]
+        if record and lid == 1:
+            events.append((int(r), int(c), float(img[r, c]), float(sums[1] / counts[1]),
+                           float(best[0]), 1))
         label[r, c] = lid                       # unconditional: no stopping rule
         sums[lid] += float(img[r, c])
         counts[lid] += 1
@@ -318,4 +366,9 @@ def grow_srg_auto(img, mask, core, cfg):
                          "stop": "all pixels allocated"}],
              "stop_reason": "tessellation complete (no stopping criterion)",
              "n_background_seeds": nxt - 2}
+    if record:
+        trace["events"] = events
+        trace["seed_stats"] = {"n": int(core.sum()), "mean": seed_mean}
+        trace["allocated"] = int((label > 0).sum())
+        trace["mask_px"] = int(mask.sum())
     return region, trace

@@ -6,8 +6,9 @@ Purpose : Load an MRI slice, run the pipeline, inspect any stage, and read
 Function : CustomTkinter app in a header / 3-column / footer grid. Left: input,
           method, seeding, ablation and hyperparameter controls. Centre: stage
           tabs over two equal panes (Original | Segmented Output) with zoom / pan
-          controls. Right: collapsible seed-telemetry table (plus a Details view
-          with the log-domain and evaluation worked computations). Footer: one
+          controls. Right: collapsible stage telemetry: a seed table and a Details
+          view that explains the selected stage end to end (inputs, equation,
+          computation, outputs; esrg/stage_report.py). Footer: one
           line of evaluation metrics. The pipeline runs off the UI thread.
 Notes   : Strictly flat: no gradients, bevels or shadows; every widget is square
           (corner_radius=0) apart from the radio buttons' circular indicators.
@@ -28,6 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from esrg import Config, run
 from esrg import explain as evalx
 from esrg import pixel_report
+from esrg import stage_report
 from esrg import preprocessing as pre
 from esrg import visualize as viz
 from esrg.io_utils import find_mask_for, load_image
@@ -49,6 +51,8 @@ BLUE        = "#0066CC"
 BLUE_HOV    = "#0052A3"
 
 OK_CLR      = "#1E8E3E"
+IN_BG       = "#E8F0FB"   # telemetry INPUT band
+OUT_BG      = "#E6F4EA"   # telemetry OUTPUT band
 WARN_CLR    = "#B26A00"
 FAIL_CLR    = "#C5221F"
 
@@ -57,8 +61,8 @@ FAIL_CLR    = "#C5221F"
 # region 2+ are the other competing regions. SRG itself does not distinguish them.
 SEED_RGB = viz.SEED_COLORS
 
-DIAG_PANEL_W = 380  # telemetry panel width (px)
-EVAL_PANEL_W = 430  # wider while the Evaluation step shows worked computations
+DIAG_PANEL_W = 380    # telemetry panel width in Seeds mode (px)
+DETAIL_PANEL_W = 520  # wider in Details mode, where stage tables are shown
 RAIL_W       = 34   # width of the strip left behind when telemetry is collapsed
 LEFT_W       = 232  # default width of the control panel; drag its right edge to resize
 LEFT_MIN     = 218  # narrowest that still fits the longest checkbox label
@@ -403,7 +407,8 @@ class ESRGApp:
         self._section_header(sc, "Pipeline Method")
         for val, lab in (("esrg", "ESRG (Enhanced Model)"), ("srg", "SRG Baseline (1994)")):
             self._radio(sc, lab, self.method, val,
-                        self._update_seed_region_visibility).pack(anchor="w", pady=2)
+                        lambda: (self._update_seed_region_visibility(),
+                                 self._controls_changed())).pack(anchor="w", pady=2)
 
         self._section_header(sc, "Seeding Strategy")
         for val, lab in (("auto", "Automated Seeding"), ("manual", "Manual Seeding")):
@@ -436,12 +441,14 @@ class ESRGApp:
                          (self.use_local, "Local Log Measure (Obj 2)"),
                          (self.use_stop, "Adaptive Termination (Obj 3)"),
                          (self.purify_manual_seed, "Purify Manual Seed (ESRG only)")):
-            self._check(sc, lab, var).pack(anchor="w", pady=3)
+            self._check(sc, lab, var, self._controls_changed).pack(anchor="w", pady=3)
 
         self._section_header(sc, "Hyperparameters")
-        self._slider(sc, "k_L — Local Stopping Factor", self.k_local, 0.5, 4.0, 0.1, "{:.1f}")
-        self._slider(sc, "r — Neighborhood Radius", self.radius, 1, 8, 1, "{:.0f}")
-        self._slider(sc, "K — Otsu Threshold Classes", self.classes, 2, 5, 1, "{:.0f}")
+        self._slider(sc, "k_L — Local Stopping Factor", self.k_local, 0.5, 4.0, 0.1, "{:.1f}",
+                     self._controls_changed)
+        self._slider(sc, "r — Neighborhood Radius", self.radius, 1, 8, 1, "{:.0f}", self._controls_changed)
+        self._slider(sc, "K — Otsu Threshold Classes", self.classes, 2, 5, 1, "{:.0f}",
+                     self._controls_changed)
 
         self._section_header(sc, "Display")
         self._slider(sc, "Overlay Opacity", self.opacity, 0.0, 1.0, 0.05, "{:.2f}",
@@ -471,6 +478,18 @@ class ESRGApp:
                       button_corner_radius=2, button_length=4, border_width=6,
                       fg_color=BORDER_DARK, progress_color=BLUE, button_color=BLUE,
                       button_hover_color=BLUE_HOV).pack(fill="x", pady=(4, 0))
+
+    def _controls_changed(self):
+        """A control moved: refresh the telemetry once (debounced) so its 'controls
+        changed since this run' notice appears or clears."""
+        if getattr(self, "_ctl_pending", None):
+            self.root.after_cancel(self._ctl_pending)
+        self._ctl_pending = self.root.after(200, self._refresh_after_controls)
+
+    def _refresh_after_controls(self):
+        self._ctl_pending = None
+        if self.result is not None:
+            self._refresh_telemetry()
 
     def _on_seed_mode_change(self):
         self._update_seed_region_visibility()
@@ -613,7 +632,7 @@ class ESRGApp:
 
         head = ctk.CTkFrame(p, fg_color=WHITE, corner_radius=0)
         head.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
-        ctk.CTkLabel(head, text="SEED TELEMETRY", font=F_CAP, text_color=BLUE).pack(side="left")
+        ctk.CTkLabel(head, text="STAGE TELEMETRY", font=F_CAP, text_color=BLUE).pack(side="left")
         self._btn(head, ">|", self._toggle_telemetry, width=36, height=26,
                   font=F_CAP).pack(side="right")
 
@@ -704,6 +723,24 @@ class ESRGApp:
         self.diag.tag_config("good", foreground=OK_CLR, font=TK_MONO + ("bold",))
         self.diag.tag_config("bad", foreground=FAIL_CLR, font=TK_MONO + ("bold",))
         self.diag.tag_config("indent", lmargin1=18, lmargin2=18)
+        # Stage report blocks (esrg/stage_report.py).
+        self.diag.tag_config("flow", foreground=FAINT, font=TK_UI)
+        self.diag.tag_config("flow_cur", foreground=WHITE, background=BLUE, font=TK_BOLD)
+        self.diag.tag_config("stage", foreground=TEXT, font=(TK_UI[0], 12, "bold"),
+                             spacing1=6, spacing3=2)
+        self.diag.tag_config("section", foreground=BLUE, font=TK_BOLD, spacing1=10, spacing3=3)
+        self.diag.tag_config("in_band", background=IN_BG, lmargin1=8, lmargin2=8, rmargin=4)
+        self.diag.tag_config("out_band", background=OUT_BG, lmargin1=8, lmargin2=8, rmargin=4)
+        self.diag.tag_config("in_lbl", foreground=BLUE, font=TK_MONO + ("bold",))
+        self.diag.tag_config("out_lbl", foreground=OK_CLR, font=TK_MONO + ("bold",))
+        self.diag.tag_config("eq", background=WHITE, foreground=TEXT, font=TK_MONO + ("bold",),
+                             lmargin1=12, lmargin2=12, spacing1=1, spacing3=1)
+        self.diag.tag_config("table", wrap=tk.NONE, lmargin1=4)
+        self.diag.tag_config("thead", foreground=MUTED, font=TK_MONO + ("bold",), underline=True)
+        self.diag.tag_config("note", foreground=MUTED, font=TK_UI, lmargin1=4, lmargin2=4)
+        self.diag.tag_config("changed", foreground=WARN_CLR, font=TK_MONO + ("bold",))
+        self.diag.tag_config("stale", foreground=WHITE, background=WARN_CLR, font=TK_BOLD,
+                             lmargin1=6, lmargin2=6, rmargin=6, spacing1=4, spacing3=4)
 
         self._refresh_telemetry()
 
@@ -808,82 +845,94 @@ class ESRGApp:
         if self.result is None:
             d.insert(tk.END, "Run the pipeline to see the worked computation of each stage.\n",
                      "muted")
-        elif self.current == "evaluation":
-            self._write_eval_telemetry()
-        elif self.current == "log":
-            groups, msg = self._telemetry_groups()
-            if msg:
-                d.insert(tk.END, msg + "\n", "muted")
-            else:
-                self._write_log_telemetry(groups)
         else:
-            self._write_stage_info()
+            run_cfg = self.result.meta.get("_cfg") or self.run_cfg
+            if run_cfg is not None and run_cfg != self._current_config():
+                d.insert(tk.END, "Controls changed since this run. The values below are for the run as "
+                                 "executed; press RUN PIPELINE to apply the new settings.\n", "stale")
+            chosen = [k for k, _, _ in evalx.METRICS if self.eval_vars[k].get()]
+            self._render_blocks(stage_report.report(self.result, self.run_cfg or self.cfg,
+                                                    self.current, chosen))
         d.yview_moveto(top)
         d.config(state=tk.DISABLED)
 
-    def _write_stage_info(self):
+    def _render_blocks(self, blocks):
+        """Draw stage_report blocks: flow strip, INPUT / OUTPUT bands, equations, tables."""
         d = self.diag
-        st = self.result.stage(self.current)
-        if st is None:
-            d.insert(tk.END, "No stage details for this view.\n", "muted")
-            return
-        d.insert(tk.END, f"{st.name}\n", "head")
-        d.insert(tk.END, f"status {st.status} · {st.seconds * 1000:.0f} ms\n", "muted")
-        for k, v in st.info.items():
-            if k.startswith("_"):
-                continue
-            txt = str(v)
-            d.insert(tk.END, f"\n{k}\n", "sub")
-            d.insert(tk.END, (txt if len(txt) <= 200 else txt[:197] + "…") + "\n")
+        for kind, p in blocks:
+            if kind == "flow":
+                for i, (_, name, cur) in enumerate(p):
+                    if i:
+                        d.insert(tk.END, " → ", "flow")
+                    d.insert(tk.END, f" {name} " if cur else name, "flow_cur" if cur else "flow")
+                d.insert(tk.END, "\n")
+            elif kind == "head":
+                d.insert(tk.END, p + "\n", "stage")
+            elif kind == "sub":
+                d.insert(tk.END, p + "\n", "section")
+            elif kind in ("input", "output"):
+                band, lbl = ("in_band", "in_lbl") if kind == "input" else ("out_band", "out_lbl")
+                word, prep = ("IN ", "from") if kind == "input" else ("OUT", "to")
+                for name, value, where in p:
+                    d.insert(tk.END, f"{word} ", (band, lbl))
+                    d.insert(tk.END, f"{name} = ", (band, "avg"))
+                    d.insert(tk.END, f"{value}\n", band)
+                    d.insert(tk.END, f"    {prep}: {where}\n", (band, "muted"))
+            elif kind == "eq":
+                for line in p:
+                    d.insert(tk.END, f" {line} \n", "eq")
+            elif kind == "kv":
+                for k, v in p:
+                    d.insert(tk.END, f"{k}: ", "muted")
+                    d.insert(tk.END, f"{v}\n")
+            elif kind == "settings":
+                d.insert(tk.END, "SETTINGS USED IN THIS RUN\n", "section")
+                for label, value, changed, note in p:
+                    d.insert(tk.END, f"{label}: ", "muted")
+                    d.insert(tk.END, value, "changed" if changed else "avg")
+                    d.insert(tk.END, f"   {note}\n" if note else "\n", "muted")
+            elif kind == "table":
+                self._render_table(p)
+            elif kind == "note":
+                d.insert(tk.END, p + "\n", "note")
+            elif kind in ("good", "bad"):
+                d.insert(tk.END, p + "\n", kind)
+            else:
+                d.insert(tk.END, str(p) + "\n")
 
-    def _write_log_telemetry(self, groups):
-        """Stage 3 view: L(x) of every seed pixel with its arithmetic, and the
-        noise floor's intermediates, all read from the arrays the run used."""
+    @staticmethod
+    def _is_number(v):
+        t = v.replace(",", "").replace("−", "-").replace(" px", "").lstrip("+-")
+        try:
+            float(t)
+            return True
+        except ValueError:
+            return False
+
+    def _render_table(self, t):
+        """Monospace table: numeric columns right-aligned, text left-aligned, header underlined."""
         d = self.diag
-        st = self.result.stage("log")
-        mask = self.result.stage("mask").image
-        I = np.where(mask, self.result.stage("input").image, 0.0)
-        use_log, eps = st.info["_use_log"], st.info["_eps"]
-        nf = st.info["_noise_floor"]
+        cols = list(t["cols"])
+        rows = [[str(c) for c in r] for r in t["rows"]]
+        n = len(cols)
+        w = [max([len(cols[i])] + [len(r[i]) for r in rows]) for i in range(n)]
+        num = [bool(rows) and all(self._is_number(r[i]) or r[i] in ("", "—") for r in rows)
+               for i in range(n)]
 
-        d.insert(tk.END, "3 · Log domain\n", "head")
-        if use_log:
-            d.insert(tk.END, f"L(x) = ln(I(x) + ε),  ε = {eps:g}\n", "avg")
-            d.insert(tk.END, "ln = natural log (base e)\n"
-                             "I = NORM value inside head mask H\n"
-                             "    (0 outside H)\n", "muted")
-        else:
-            d.insert(tk.END, "Log transform OFF: L(x) = I(x)\n", "avg")
-            d.insert(tk.END, "I = NORM value inside head mask H\n"
-                             "Pixels pass through unchanged.\n", "muted")
+        def line(cells):
+            return "  ".join(c.rjust(w[i]) if num[i] else c.ljust(w[i]) for i, c in enumerate(cells))
 
-        for g in pixel_report.log_domain(groups, I, st.image, mask, eps, use_log):
-            d.insert(tk.END, "\n" + "─" * 34 + "\n")
-            d.insert(tk.END, f"{g['label']} — {g['n']} px\n", "head")
-            d.insert(tk.END, f"{'row':>5}{'col':>6}{'I(x)':>12}{'L(x)':>11}\n")
-            for p in g["pixels"]:
-                d.insert(tk.END, f"{p['row']:>5}{p['col']:>6}{p['I']:>12.6f}{p['L']:>11.6f}\n")
-                if not p["in_head"]:
-                    d.insert(tk.END, "  outside H, so I(x) = 0\n", "muted")
-                if use_log:
-                    d.insert(tk.END, f"  ln({p['I']:.6f} + {eps:g}) = {p['L']:.6f}\n", "muted")
-            if g["n"] > 1:
-                d.insert(tk.END, f"Average  L {g['mean_L']:.6f}\n", "avg")
-
-        d.insert(tk.END, "\n" + "─" * 34 + "\n")
-        d.insert(tk.END, "Noise floor σ_floor\n", "head")
-        d.insert(tk.END, f"over all {nf['n']} px of H\n"
-                         "r(x) = L(x) − median3×3(L)(x)\n"
-                         "MAD  = median|r − median(r)|\n", "muted")
-        d.insert(tk.END, f"median(r)     = {nf['median_resid']:.6f}\n"
-                         f"MAD           = {nf['mad']:.6f}\n"
-                         f"1.4826 × MAD  = {nf['raw_sigma']:.6f}\n")
-        d.insert(tk.END, f"σ_floor = max({nf['raw_sigma']:.6f}, {nf['min_value']:g})\n"
-                         f"        = {nf['sigma_floor']:.6f}\n", "avg")
+        d.insert(tk.END, line(cols) + "\n", ("table", "thead"))
+        for r in rows:
+            d.insert(tk.END, line(r) + "\n", "table")
+        if t.get("note"):
+            d.insert(tk.END, t["note"] + "\n", "note")
+        d.insert(tk.END, "\n")
 
     def _sync_eval_picker(self, evaluating):
-        """Show the metric picker and widen the panel while the Evaluation step is explained."""
-        self.tel_panel.configure(width=EVAL_PANEL_W if evaluating else DIAG_PANEL_W)
+        """Widen the panel in Details mode; show the metric picker only for the Evaluation step."""
+        details = self.tel_mode.get() == "Details"
+        self.tel_panel.configure(width=DETAIL_PANEL_W if details else DIAG_PANEL_W)
         if evaluating and not self.eval_picker.winfo_ismapped():
             self.eval_picker.grid(row=0, column=0, sticky="ew")
         elif not evaluating:
@@ -893,48 +942,6 @@ class ESRGApp:
         for v in self.eval_vars.values():
             v.set(value)
         self._refresh_telemetry()
-
-    def _write_eval_telemetry(self):
-        """Evaluation step: for each selected metric, its result, then where
-        every variable comes from, the equation, and the worked computation."""
-        d, res = self.diag, self.result
-        lam = self.run_cfg.leak_ratio if self.run_cfg else self.cfg.leak_ratio
-        entries = evalx.explain(res, lam)
-        meta = res.meta
-        d.insert(tk.END, f"{os.path.basename(meta.get('path') or '')}\n", "head")
-        d.insert(tk.END, f"{str(meta.get('method', '')).upper()} · {meta.get('seed_mode')} seeding"
-                         f" · status {res.status}\n", "muted")
-        gt = meta.get("ground_truth")
-        d.insert(tk.END, ("Ground truth: " + os.path.basename(gt)) if gt
-                 else "No ground truth: only time is measurable", "muted")
-        d.insert(tk.END, "\nEvery value below is recomputed from\n"
-                         "the masks of this run (Eq. 3.32–3.39).\n", "muted")
-
-        chosen = [k for k, _, _ in evalx.METRICS if self.eval_vars[k].get()]
-        if not chosen:
-            d.insert(tk.END, "\nNo metric selected — tick one above.\n", "muted")
-            return
-        for k in chosen:
-            e = entries[k]
-            v = e["value"]
-            defined = v is not None and not (isinstance(v, float) and np.isnan(v))
-            good = defined and not any(w in e["verdict"] for w in
-                                       ("MISS", "LEAKED", "below", "undefined", "requires"))
-            d.insert(tk.END, "\n" + "━" * 38 + "\n")
-            d.insert(tk.END, f"{e['label']}  {evalx.value_text(e)}\n", "metric")
-            d.insert(tk.END, e["objective"] + "\n", "muted")
-            d.insert(tk.END, "→ " + e["verdict"] + "\n", "good" if good else "bad")
-            if e["sources"]:
-                d.insert(tk.END, "\nSOURCES OF THE VARIABLES\n", "sub")
-                for sym, val, origin in e["sources"]:
-                    d.insert(tk.END, f"{sym:<2} {val}\n")
-                    d.insert(tk.END, origin + "\n", ("muted", "indent"))
-            if e["formula"]:
-                d.insert(tk.END, "\nEQUATION\n", "sub")
-                d.insert(tk.END, "\n".join(e["formula"]) + "\n")
-            d.insert(tk.END, "\nCOMPUTATION\n", "sub")
-            d.insert(tk.END, "\n".join(e["steps"]) + "\n")
-            d.insert(tk.END, f"Result: {e['label']} = {evalx.value_text(e)}\n", "avg")
 
     # ── Footer: one-line metrics ─────────────────────────────────────────────
     def _build_footer(self, parent):
@@ -970,7 +977,7 @@ class ESRGApp:
         elif not scores:
             msg, color = "No ground truth found — metrics unavailable.", WARN_CLR
         else:
-            msg, color = f"Run time {scores.get('seconds') or 0:.2f} s", MUTED
+            msg, color = f"Status: {res.status} · scored against the ground-truth mask", MUTED
         self.foot_msg.configure(text=msg, text_color=color)
 
     # ── Controller & Backend Invocation ──────────────────────────────────────
@@ -1059,7 +1066,7 @@ class ESRGApp:
         def worker():
             try:
                 res = run(self.image_path, cfg, manual_points=list(self.manual_points),
-                          progress=lambda m: self.root.after(
+                          record=True, progress=lambda m: self.root.after(
                               0, lambda m=m: self.status_lbl.configure(text=m)))
                 self.root.after(0, self._done, res, None)
             except Exception as e:
@@ -1104,8 +1111,8 @@ class ESRGApp:
             self._add_tab(st.key, st.name)
         if self.result.gt is not None:
             self._add_tab("compare", "Compare")
-        # Always offered after a run: time is measurable even without a ground
-        # truth, and the Details view explains what is missing.
+        # Always offered after a run; without a ground truth the Details view
+        # explains what is missing.
         self._add_tab("evaluation", "Evaluation")
 
     def _select(self, key):
@@ -1120,9 +1127,9 @@ class ESRGApp:
                             text_color=status_colors.get(st.status, TEXT) if st else TEXT)
 
         self._sync_obj_buttons()
-        # The worked computations belong to the log and evaluation stages. Switching
+        # Every stage tab is explained in Details (Seeds stays one click away). Switching
         # views can resize the telemetry panel, so settle that before scrolling the tab in.
-        self._set_tel_mode("Details" if key in ("log", "evaluation") else "Seeds")
+        self._set_tel_mode("Details")
         self._scroll_tab_into_view(self.stage_buttons.get(key))
         self._render_panes()
 

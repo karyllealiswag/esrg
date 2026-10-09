@@ -47,7 +47,7 @@ class Result:
 
 
 def run(image_path, cfg, mask_path=None, manual_points=None, progress=None,
-        planted_core=None, raw_hook=None):
+        planted_core=None, raw_hook=None, record=False):
     """
     Full pipeline on one slice. manual_points overrides seed selection when
     cfg.seed_mode == 'manual'. progress(str) is an optional GUI callback.
@@ -58,6 +58,11 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None,
                      grows it against the automatic background-seed grid.
       raw_hook     : function applied to the loaded slice before normalization,
                      e.g. to multiply in a synthetic bias field.
+
+    GUI hook:
+      record       : keep the intermediates the stage telemetry explains (normalization
+                     percentiles, the raw slice, every growth decision). Results are
+                     identical with it on or off; it only costs memory and time.
     """
     cfg.validate()
     stages, t_total = [], time.perf_counter()
@@ -76,14 +81,16 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None,
     (raw, scale), dt = timed(lambda: load_image(image_path, cfg.max_side))
     if raw_hook is not None:
         raw = raw_hook(raw)
-    img = pre.normalize(raw)
+    img, norm_info = pre.normalize_details(raw)
     meta = {"path": image_path, "shape": img.shape, "scale": round(scale, 3),
             "method": cfg.method,
+            "_cfg": cfg,  # the exact settings of this run, read back by the GUI telemetry
             "seed_mode": "planted" if planted_core is not None else cfg.seed_mode,
             **parse_brisc_name(image_path)}
     stages.append(Stage("input", "1 · Input", img, "gray",
                         {"size": f"{img.shape[1]} × {img.shape[0]} px",
-                         "scale factor": round(scale, 3), "file": image_path}, dt))
+                         "scale factor": round(scale, 3), "file": image_path,
+                         "_norm": norm_info, **({"_raw": raw} if record else {})}, dt))
 
     # ── Stage 2: head mask ───────────────────────────────────────────────────
     say("Masking head…")
@@ -131,7 +138,7 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None,
         s_info = {"status": "OK" if core.any() else "NO SEED", "core_area": int(core.sum()),
                   "components": [], "warnings": []}
         if cfg.method == "esrg" and cfg.purify_manual_seed:
-            core = seedmod.purify_core(core, cfg)
+            core = seedmod.purify_core(core, cfg, s_info)
             s_info["core_area"] = int(core.sum())
         seed_labels = core.astype(np.int32)
         cand, dt = core, 0.0
@@ -141,8 +148,9 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None,
         if cfg.method == "esrg" and cfg.purify_manual_seed:
             # SRG's seed_labels (used verbatim by grow_srg) is left untouched --
             # this only reshapes the ESRG growth core.
-            core = seedmod.purify_core(core, cfg)
+            core = seedmod.purify_core(core, cfg, s_info)
             s_info["core_area"] = int(core.sum())
+        s_info["_click_disk"] = seed_labels == 1
         cand = core
     else:
         (core, s_info), dt = timed(lambda: seedmod.select_seed(img_masked, mask, depth, cfg))
@@ -157,12 +165,12 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None,
                         {"thresholds": s_info.get("thresholds"),
                          "components found": s_info.get("n_raw"),
                          "components kept": s_info.get("n_kept"),
-                         "detail": s_info.get("components", [])[:8]}, dt))
+                         "detail": s_info.get("components", [])[:8], "_s_info": s_info}, dt))
     stages.append(Stage("seed", "5 · Seed core", core, "mask",
                         {"status": s_info["status"], "chosen": s_info.get("chosen"),
                          "core area": s_info.get("core_area"),
                          **({"seed types": s_info["types"]} if s_info.get("types") else {}),
-                         "warnings": s_info.get("warnings", [])}, 0.0,
+                         "warnings": s_info.get("warnings", []), "_s_info": s_info}, 0.0,
                         "FAIL" if s_info["status"] != "OK" else "OK"))
 
     result = Result(stages=stages, meta=meta)
@@ -181,14 +189,14 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None,
     if cfg.method == "srg" and (cfg.seed_mode == "auto" or planted_core is not None):
         # No planted competitors: the auto core competes with a grid of
         # background seeds inside the head mask.
-        (region, trace), dt = timed(lambda: growing.grow_srg_auto(img_masked, mask, core, cfg))
+        (region, trace), dt = timed(lambda: growing.grow_srg_auto(img_masked, mask, core, cfg, record))
         growth_info = {"stop reason": trace["stop_reason"], "passes": trace["passes"],
                        "background seeds": trace["n_background_seeds"]}
     elif cfg.method == "srg":
         # Whole image, unmasked: the published algorithm has no skull-stripping step
         # and leaves no pixel unallocated. Every planted id grows under the same
         # rule; grow_srg has no notion of "tumor" at all.
-        (label_map, trace), dt = timed(lambda: growing.grow_srg(img, seed_labels))
+        (label_map, trace), dt = timed(lambda: growing.grow_srg(img, seed_labels, record))
         stages.append(Stage("tessellation", "6a · Full tessellation", label_map, "labels",
                             {"seed regions": trace["n_seed_regions"],
                              "region areas": trace["region_areas"],
@@ -202,8 +210,9 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None,
                        "unlabeled px": trace["unlabeled"],
                        **({"warning": trace["warning"]} if "warning" in trace else {})}
     else:
-        (region, trace), dt = timed(lambda: growing.grow_esrg(L, mask, core, sigma_floor, cfg))
+        (region, trace), dt = timed(lambda: growing.grow_esrg(L, mask, core, sigma_floor, cfg, record))
         growth_info = {"stop reason": trace["stop_reason"], "passes": trace["passes"]}
+    growth_info["_trace"] = trace
     stages.append(Stage("growth", "6 · Region growing", region, "mask", growth_info, dt,
                         "WARN" if "warning" in trace else "OK"))
 
@@ -213,6 +222,8 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None,
     result.mask = final
 
     brain_frac = final.sum() / max(mask.sum(), 1)
+    p_info["_head_px"] = int(mask.sum())
+    p_info["_brain_frac"] = float(brain_frac)
     status = "OK"
     if brain_frac > cfg.leak_warn_frac:
         status = "WARN"

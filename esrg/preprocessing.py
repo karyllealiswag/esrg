@@ -20,10 +20,16 @@ from skimage import filters, morphology, measure
 # ─── 1. Normalization ─────────────────────────────────────────────────────────
 def normalize(img):
     """Linear rescale to [0, 255] using the 0.5 / 99.5 percentiles (robust to hot pixels)."""
+    return normalize_details(img)[0]
+
+
+def normalize_details(img):
+    """normalize() plus the two percentiles it used: (I, {"lo", "hi"})."""
     lo, hi = np.percentile(img, [0.5, 99.5])
+    info = {"lo": float(lo), "hi": float(hi)}
     if hi - lo < 1e-6:
-        return np.zeros_like(img, dtype=np.float64)
-    return np.clip((img - lo) / (hi - lo), 0, 1) * 255.0
+        return np.zeros_like(img, dtype=np.float64), info
+    return np.clip((img - lo) / (hi - lo), 0, 1) * 255.0, info
 
 
 # ─── 2. Skull stripping ───────────────────────────────────────────────────────
@@ -62,17 +68,24 @@ def head_mask(img, cfg):
     g = filters.gaussian(img, sigma=1.0, preserve_range=True)
 
     # Tissue vs background (air and cortical bone are both dark on T1)
-    tissue = g > filters.threshold_otsu(g)
+    otsu_t = filters.threshold_otsu(g)
+    tissue = g > otsu_t
 
     # Head = largest blob after removing thin frames / arrows / text, holes filled
     opened = morphology.opening(tissue, morphology.disk(cfg.frame_open_radius))
-    head = ndi.binary_fill_holes(_largest_cc(opened))
+    largest = _largest_cc(opened)
+    head = ndi.binary_fill_holes(largest)
+    # Areas after each step, so the GUI can show what each operation changed.
+    info["_steps"] = {"otsu_t": float(otsu_t), "tissue_px": int(tissue.sum()),
+                      "opened_px": int(opened.sum()), "largest_px": int(largest.sum()),
+                      "head_px": int(head.sum()), "image_px": int(head.size)}
     if head.sum() < 0.05 * head.size:
         info["warnings"].append("Head region very small; check the input image.")
         return head, ndi.distance_transform_edt(head), info
 
     depth = ndi.distance_transform_edt(head)
     head_area = float(head.sum())
+    info["_steps"]["depth_max"] = float(depth.max())
 
     # Granulometry, reported only as a diagnostic: the radius of the sharpest
     # area loss marks the skull ring where one exists (mostly axial slices).

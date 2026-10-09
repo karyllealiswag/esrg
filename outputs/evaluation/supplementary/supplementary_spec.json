@@ -1,0 +1,132 @@
+{
+ "title": "Supplementary Report: Processing Time",
+ "blocks": [
+  {
+   "t": "h1",
+   "text": "Supplementary Report"
+  },
+  {
+   "t": "h1",
+   "text": "PROCESSING TIME OF THE BASELINE AND ENHANCED ALGORITHM"
+  },
+  {
+   "t": "p",
+   "text": "Processing time is not one of the objectives of the study, so it is reported here rather than in Chapter 4. It was measured in a separate sequential pass (Experiment E6) under automatic seeding, on 180 slices (20 per stratum), in one process with nothing else running, after a discarded warm-up run, with the order of the two algorithms alternated per slice. The time runs from loading the slice to the final mask and excludes the computation of the evaluation metrics."
+  },
+  {
+   "t": "table",
+   "num": "S.1",
+   "title": "Processing Time per Slice Under Automatic Seeding",
+   "header": [
+    "Tumor class",
+    "SRG *Mdn*, s",
+    "ESRG *Mdn*, s",
+    "Reduction",
+    "*r*"
+   ],
+   "rows": [
+    [
+     "Glioma",
+     "14.57",
+     "8.69",
+     "40.4%",
+     "−.64"
+    ],
+    [
+     "Meningioma",
+     "10.76",
+     "6.43",
+     "40.2%",
+     "−.71"
+    ],
+    [
+     "Pituitary",
+     "3.48",
+     "1.68",
+     "51.7%",
+     "−.86"
+    ],
+    [
+     "All classes",
+     "10.76",
+     "5.73",
+     "46.7%",
+     "−.68"
+    ]
+   ],
+   "widths": [
+    1.8,
+    1.3,
+    1.3,
+    1.2,
+    0.8
+   ],
+   "note": "*N* = 180 slices (20 per stratum) timed in the sequential pass of Section 3.1.2. Reduction is 1 − *Mdn*_{ESRG}/*Mdn*_{SRG}; a negative *r* means ESRG was faster (Wilcoxon signed-rank test); after Holm adjustment over the three classes, every *p* is < .001. Means and standard deviations are given in Supplementary_Processing_Time.xlsx."
+  },
+  {
+   "t": "p",
+   "text": "Table S.1 shows the processing time per slice. The median time is 10.76 s for SRG and 5.73 s for ESRG (Wilcoxon signed-rank test, *p* < .001, *r* = −.68), a 46.7% reduction; ESRG was faster on 86.7% of slices. The enhanced algorithm is faster than the baseline. The baseline partitions the whole head among hundreds of background seeds, whereas ESRG grows a single region and stops at its boundary. By class, ESRG takes longest on glioma slices (median 8.69 s), where weak margins let the region grow larger before the bound halts it. Running first or second made no material difference (mean 6.33 against 6.34 s for ESRG and 9.82 against 9.87 s for SRG), so the alternation removed any warm-cache advantage. At a median of 5.73 s per slice on a laptop CPU without a GPU, running on battery power, the enhanced algorithm is fast enough for interactive use."
+  },
+  {
+   "t": "table",
+   "num": "S.2",
+   "title": "Mean Processing Time per Pipeline Stage",
+   "header": [
+    "Stage",
+    "SRG *M*, s",
+    "ESRG *M*, s"
+   ],
+   "rows": [
+    [
+     "1 · Input",
+     "0.006",
+     "0.006"
+    ],
+    [
+     "2 · Head mask",
+     "1.757",
+     "1.745"
+    ],
+    [
+     "3 · Log domain",
+     "0.006",
+     "0.006"
+    ],
+    [
+     "4–5 · Seed selection",
+     "2.614",
+     "2.606"
+    ],
+    [
+     "6 · Region growing",
+     "5.350",
+     "1.858"
+    ],
+    [
+     "7 · Post-processing",
+     "0.045",
+     "0.043"
+    ]
+   ],
+   "widths": [
+    2.6,
+    1.4,
+    1.4
+   ],
+   "note": "Same sequential pass as Table S.1. Stages 1–5 are shared by both algorithms, so their times differ only by measurement noise; the difference in total time comes from Stage 6.",
+   "align": [
+    "l",
+    "c",
+    "c"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Table S.2 shows where the time goes. Stages 1 to 5 are identical for both algorithms; the difference lies in region growing, which takes a mean 5.35 s for SRG and 1.86 s for ESRG. The most expensive shared stage is seed selection (2.61 s), which ranks every candidate component; it is also the stage that limits accuracy under automatic seeding, so it is the natural target for further optimization."
+  },
+  {
+   "t": "h2",
+   "text": "References"
+  }
+ ]
+}

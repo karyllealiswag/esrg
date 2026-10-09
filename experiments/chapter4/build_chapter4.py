@@ -108,7 +108,7 @@ def build(d):
     D = Doc()
     D.tabs = T.build_chapter(R)
     tb = {k: v["num"] for k, v in D.tabs.items()}
-    M, E1, E2, E3, E4, E6 = R["meta"], R["e1"], R["e2"], R["e3"], R["e4"], R["e6"]
+    M, E1, E2, E3, E4 = R["meta"], R["e1"], R["e2"], R["e3"], R["e4"]
     n = M["n_sample"]
     figdir = os.path.join(d, "figures")
     fig_n = [0]
@@ -130,19 +130,18 @@ def build(d):
     D.h2("4.1 General Results")
     D.p("This chapter presents the evaluation of the Enhanced Seeded Region Growing (ESRG) algorithm against the "
         "original Seeded Region Growing (SRG) algorithm of Adams and Bischof (1994), which serves as the baseline "
-        "control. The evaluation follows the three aspects that Udupa et al. (2006) identify for judging a "
-        "segmentation method: its *accuracy* (how closely the result matches the ground truth), its *precision* in "
-        "the sense of reproducibility (whether the same image always yields the same result), and its *efficiency* "
-        "(the time it takes). The dataset and sampling design, the experimental configurations, the evaluation "
+        "control. The evaluation follows two of the aspects that Udupa et al. (2006) identify for judging a "
+        "segmentation method: its *accuracy* (how closely the result matches the ground truth) and its *precision* in "
+        "the sense of reproducibility (whether the same image always yields the same result). The dataset and sampling design, the experimental configurations, the evaluation "
         "metrics, and the statistical tests are described in Chapter 3 (Sections 3.1 to 3.1.2, Tables 3.1 to 3.5) and "
         "are not repeated here.")
     D.p(f"The results are organized by the three specific objectives of the study: {OBJ1}, evaluated by the seed hit "
         f"rate and the variability between operators; {OBJ2}, evaluated by recall; and {OBJ3}, evaluated by precision, "
         "the leakage rate, and HD95. Overall delineation is summarized by the Dice Similarity Coefficient (DSC) and the "
-        f"success rate, and efficiency by the processing time per slice. All {M['n_rows']:,} runs ({n:,} slices × "
+        f"success rate. All {M['n_rows']:,} runs ({n:,} slices × "
         f"{M['n_configs']} configurations) were produced by the automated evaluation pipeline, and "
         f"{'none' if M['n_errors'] == 0 else M['n_errors']} ended in an error; the per-slice results of every "
-        "evaluation are listed in Appendices B to H.")
+        "evaluation are listed in Appendices B to G.")
     ws = [r["shapiro_diff"]["W"] for r in au + pl if r["metric"] in ("dsc", "recall", "precision", "hd95_wc")]
     D.p("Because the Shapiro–Wilk test rejected the normality of every paired difference "
         f"(*W* = {nz(min(ws), 3)} to {nz(max(ws), 3)}, all *p* < .001), configurations are compared with the Wilcoxon "
@@ -333,19 +332,6 @@ def build(d):
         f"(χ²({ab['df']}, *N* = {ab['n']:,}) = {ab['chi2']:.2f}, {P(ab['p'])}, Kendall’s *W* = {nz(ab['kendall_w'])}), "
         f"and full ESRG has the best mean rank ({f(ab['mean_rank']['P_ESRG'], 2)}). [[ABLATION_DISCUSSION]]")
 
-    # ── Efficiency ───────────────────────────────────────────────────────────
-    D.h3("4.2.5 Computational Efficiency")
-    if E6:
-        D.table("time")
-        t = E6["all"]
-        D.p(f"Table {tb['time']} shows the processing time measured in the sequential timing pass. The median time "
-            f"per slice is {f(t['srg']['median'], 2)} s for SRG and {f(t['esrg']['median'], 2)} s for ESRG "
-            f"({P(t['p'])}, *r* = {nz(t['r'])}), a {pct(abs(t['reduction_pct_median']))} "
-            f"{'reduction' if t['reduction_pct_median'] > 0 else 'increase'}; ESRG was faster on "
-            f"{pct(t['faster_share'])} of slices. [[TIME_DISCUSSION]]")
-        D.table("stages")
-        D.p("[[STAGE_DISCUSSION]]")
-
     # ── Summary ──────────────────────────────────────────────────────────────
     D.h2("4.3 Summary of Findings")
     D.p("[[SUMMARY_INTRO]]")
@@ -361,7 +347,7 @@ def build(d):
 
 
 def summary_table(R, tb):
-    E1, E2, E3, E4, E6 = R["e1"], R["e2"], R["e3"], R["e4"], R["e6"]
+    E1, E2, E3, E4 = R["e1"], R["e2"], R["e3"], R["e4"]
     rc, lp, lk = E2["recall"]["all"], E3["precision"]["all"], E3["leak"]["all"]
     op = E1["operator"]["all"]
     au = {r["metric"]: r for r in E4["auto"]}
@@ -382,16 +368,12 @@ def summary_table(R, tb):
          f"*r* = {nz(lp['tests']['P_ESRG_nostop']['r'])}", tb["leak"]],
         ["Leakage rate, no stopping vs. adaptive", pct(lk["leak_ci"]["P_ESRG_nostop"]["pct"]), pct(lk["leak_ci"]["P_ESRG"]["pct"]),
          "McNemar", tb["leak"]],
-        {"group": "Overall (automatic seed) and efficiency"},
+        {"group": "Overall delineation (automatic seed)"},
         ["DSC *M*", f(au["dsc"]["base"]["mean"]), f(au["dsc"]["enh"]["mean"]), f"*r* = {nz(au['dsc']['r'])}", tb["overall_auto"]],
         ["Success rate", pct(au["success"]["rate_ref"]), pct(au["success"]["rate_cmp"]), "McNemar", tb["overall_auto"]],
     ]
     ps = [rc["tests"][k]["p_holm"] for k in ("P_SRG", "P_ESRG_global", "P_ESRG_nolog")] + \
          [lp["tests"]["P_ESRG_nostop"]["p_holm"], lk["P_ESRG_nostop"]["p"], au["dsc"]["p_holm"], au["success"]["p_holm"]]
-    if E6:
-        rows.append(["Time per slice, *Mdn*", f"{f(E6['all']['srg']['median'], 2)} s", f"{f(E6['all']['esrg']['median'], 2)} s",
-                     f"*r* = {nz(E6['all']['r'])}", tb["time"]])
-        ps.append(E6["all"]["p"])
     return {"title": "Summary of the Evaluation per Objective",
             "header": ["Metric", "Without enhancement", "ESRG", "Effect", "Table"],
             "rows": rows, "widths": [3, 1.7, 1.3, 1.6, 0.7], "align": ["l", "c", "c", "c", "c"],

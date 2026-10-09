@@ -28,7 +28,6 @@ METRICS = [
     ("hd95", "HD95", "Objective 3 · boundary accuracy"),
     ("assd", "ASSD", "Objective 3 · boundary accuracy"),
     ("seed", "Seed hit", "Objective 1 · seed selection"),
-    ("time", "Time", "Computational efficiency"),
 ]
 NEEDS_GT = {"dsc", "iou", "recall", "precision", "leakage", "hd95", "assd", "seed"}
 SUCCESS_DSC = 0.70
@@ -279,21 +278,6 @@ def _seed(result, gt):
     ]
 
 
-def _time(result):
-    rows = [(s.name, s.seconds) for s in result.stages if s.seconds > 0]
-    total = float(result.meta.get("seconds") or 0.0)
-    staged = sum(t for _, t in rows)
-    steps = ["Stage durations (time.perf_counter):"]
-    steps += [f"  {name[:22]:<22} {t:7.3f} s" for name, t in rows]
-    steps += [f"  {'other (noise floor)':<22} {max(total - staged, 0):7.3f} s",
-              f"  {'':<22} -------",
-              f"  {'T = total':<22} {total:7.3f} s"]
-    return total, f"{total:.3f} s for this slice", [
-        "T = t_end − t_start",
-        "from loading the slice to the final",
-        "mask; metric computation excluded"], steps
-
-
 def _fit(lines, width=38):
     """Move a trailing '(Eq. …)' reference to its own line when a line is too wide."""
     out = []
@@ -336,10 +320,8 @@ def explain(result, leak_ratio=2.0):
             v, verdict, formula, steps = _hd95(pred, gt, c)
         elif key == "assd":
             v, verdict, formula, steps = _assd(pred, gt, c)
-        elif key == "seed":
-            v, verdict, formula, steps = _seed(result, gt)
         else:
-            v, verdict, formula, steps = _time(result)
+            v, verdict, formula, steps = _seed(result, gt)
         entry.update(value=v, verdict=verdict, formula=_fit(formula), steps=_fit(steps),
                      sources=_sources(result, c) if key in NEEDS_GT and key != "seed" else [])
         out[key] = entry
@@ -357,6 +339,4 @@ def value_text(entry):
         return f"ratio {v:.3f}"
     if k == "seed":
         return "HIT" if v else "MISS"
-    if k == "time":
-        return f"{v:.3f} s"
     return f"{v:.4f}"
