@@ -19,6 +19,11 @@ Notes   : Seeding conditions —
             operator five simulated operator clicks per slice, each at a random
                      ground-truth pixel deep enough for the click disk to lie inside
                      the tumor (Objective 1, operator variability).
+            manual   the GUI's Manual Seeding protocol for SRG: operator click k as
+                     tumor seed (type 1) plus competing seeds in brain (type 2),
+                     scalp/skull (type 3) and air (type 4), grown by the original
+                     whole-image tessellation (growing.grow_srg). Seed positions are
+                     written to manual_seeds.csv so each run can be repeated in the GUI.
           "biased" multiplies a synthetic linear bias field (40% INU) into the slice
           before normalization (Experiment E2). Parameters are the frozen defaults.
           CLI: python experiments/evaluate.py            (parallel accuracy run)
@@ -46,6 +51,7 @@ from skimage import morphology
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from esrg import Config, run
+from esrg import preprocessing as pre
 from esrg.io_utils import load_image, load_mask
 from experiments.attribution import attribute
 from experiments.sampling import read_manifest
@@ -55,6 +61,8 @@ INU = 0.40                     # bias field spans 1 - INU/2 .. 1 + INU/2 (BrainW
 N_CLICKS = 5                   # simulated operators per slice
 SUCCESS_DSC = 0.70             # success threshold (Zijdenbos et al., 1994)
 TIMING_PER_STRATUM = 20        # slices per stratum in the sequential timing pass (E6)
+MANUAL_GT_CLEARANCE = 12       # px: brain/scalp seeds of the manual protocol stay this far from the tumor
+MANUAL_MIN_SEP = 25            # px: minimum distance between any two manual-protocol seeds
 
 # id: (description, config overrides, seeding condition, biased, click number)
 CONFIGS = {
@@ -76,6 +84,14 @@ for _k in range(1, N_CLICKS + 1):
     CONFIGS[f"O_SRG_{_k}"] = (f"SRG, simulated operator click {_k}", dict(method="srg"), "operator", False, _k)
 for _k in range(1, N_CLICKS + 1):
     CONFIGS[f"O_ESRG_{_k}"] = (f"ESRG, simulated operator click {_k}", dict(), "operator", False, _k)
+N_MANUAL = 3                   # simulated operators for the manual SRG protocol
+for _k in range(1, N_MANUAL + 1):
+    CONFIGS[f"M_SRG_{_k}"] = (f"SRG, manual protocol (click {_k} + competing seeds)",
+                              dict(method="srg", seed_mode="manual"), "manual", False, _k)
+# Manual SRG and ESRG from operator click 1 under the synthetic bias field (Objective 2)
+CONFIGS["BM_SRG"] = ("SRG, manual protocol click 1, bias field",
+                     dict(method="srg", seed_mode="manual"), "manual", True, 1)
+CONFIGS["BM_ESRG"] = ("ESRG, simulated operator click 1, bias field", dict(), "operator", True, 1)
 
 STAGE_KEYS = ["input", "mask", "log", "candidates", "growth", "final"]
 FIELDS = ["file", "split", "tumor", "plane", "stratum", "index", "config", "method", "seeding",
@@ -121,6 +137,43 @@ def operator_clicks(gt, cfg, name, k=N_CLICKS):
     rng = random.Random(zlib.crc32(name.encode()))
     picks = rng.sample(range(len(pool)), min(k, len(pool)))
     return [(int(pool[i][0]), int(pool[i][1]), float(dt[pool[i][0], pool[i][1]])) for i in picks]
+
+
+def _pick(pool, n, rng, taken, min_sep):
+    """Up to n pixels from pool ((N, 2) array), each at least min_sep from the others and from taken."""
+    out = []
+    order = list(range(len(pool)))
+    rng.shuffle(order)
+    for i in order:
+        r, c = int(pool[i][0]), int(pool[i][1])
+        if all((r - tr) ** 2 + (c - tc) ** 2 >= min_sep ** 2 for tr, tc in taken + out):
+            out.append((r, c))
+            if len(out) == n:
+                break
+    return out
+
+
+def manual_protocol_points(raw, gt, cfg, name, k, click):
+    """
+    Seeds of a simulated operator using the GUI's Manual Seeding for SRG: the tumor click
+    (type 1) plus competing seeds in brain tissue (type 2, two), scalp/skull (type 3,
+    three) and air (type 4, three), as a careful operator would place them. Positions are
+    deterministic per (slice, operator); brain and scalp seeds stay clear of the tumor.
+    Returns [(row, col, type), ...] for run(manual_points=...).
+    """
+    img = pre.normalize(raw)
+    mask, depth, _ = pre.head_mask(img, cfg)
+    rng = random.Random(zlib.crc32(f"{name}M{k}".encode()))
+    far = ndi.distance_transform_edt(~gt) > MANUAL_GT_CLEARANCE
+    brain = np.argwhere(mask & far & (depth > 0.4 * depth[mask].max()))
+    scalp = np.argwhere(mask & far & (depth >= 2) & (depth <= 8))
+    air = np.argwhere(~mask & (ndi.distance_transform_edt(~mask) >= 8))
+    pts, taken = [(click[0], click[1], 1)], [tuple(click)]
+    for t, pool, n in ((2, brain, 2), (3, scalp, 3), (4, air, 3)):
+        got = _pick(pool, n, rng, taken, MANUAL_MIN_SEP)
+        pts += [(r, c, t) for r, c in got]
+        taken += got
+    return pts
 
 
 def bias_hook(index, split):
@@ -178,7 +231,7 @@ def process(task):
                "click": click}
         try:
             hook, theta = bias_hook(info["index"], info["split"]) if biased else (None, None)
-            core = None
+            core, points = None, None
             if seeding == "planted":
                 core = pcore
                 row["click_row"], row["click_col"], row["click_depth"] = pr, pc, round(pd, 3)
@@ -186,7 +239,12 @@ def process(task):
                 cr, cc, cd = clicks[(click - 1) % len(clicks)]
                 core = _disk(gt.shape, cr, cc, base.manual_seed_radius)
                 row["click_row"], row["click_col"], row["click_depth"] = cr, cc, round(cd, 3)
-            res = run(ip, cfg, mask_path=mp, planted_core=core, raw_hook=hook)
+            elif seeding == "manual":
+                cr, cc, cd = clicks[(click - 1) % len(clicks)]
+                points = manual_protocol_points(img, gt, base, info["file"], click, (cr, cc))
+                row["click_row"], row["click_col"], row["click_depth"] = cr, cc, round(cd, 3)
+                row["manual_points"] = json.dumps(points)     # -> manual_seeds.csv, not raw_results.csv
+            res = run(ip, cfg, mask_path=mp, planted_core=core, manual_points=points, raw_hook=hook)
             _row_from_result(row, res, gt, cfg)
             if biased:
                 row["bias_theta_deg"] = round(theta, 2)
@@ -220,14 +278,22 @@ def run_all(sample, out_csv, cfg_ids, workers):
     new = not os.path.isfile(out_csv)
     os.makedirs(os.path.dirname(out_csv) or ".", exist_ok=True)
     t0 = time.time()
-    with open(out_csv, "a", newline="", encoding="utf-8") as f:
+    seeds_csv = os.path.join(os.path.dirname(out_csv) or ".", "manual_seeds.csv")
+    new_seeds = not os.path.isfile(seeds_csv)
+    with open(out_csv, "a", newline="", encoding="utf-8") as f, \
+            open(seeds_csv, "a", newline="", encoding="utf-8") as fs:
         w = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
+        sw = csv.writer(fs)
         if new:
             w.writeheader()
+        if new_seeds:
+            sw.writerow(["file", "config", "points"])      # points: JSON [[row, col, type], ...]
         with Pool(workers) as pool:
             for n, rows in enumerate(pool.imap_unordered(process, tasks), 1):
                 w.writerows(rows)
+                sw.writerows([r["file"], r["config"], r["manual_points"]] for r in rows if r.get("manual_points"))
                 f.flush()
+                fs.flush()
                 if n % 10 == 0 or n == len(tasks):
                     el = time.time() - t0
                     print(f"  {n}/{len(tasks)}  {el/60:.1f} min elapsed, "

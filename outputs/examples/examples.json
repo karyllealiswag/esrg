@@ -1,0 +1,581 @@
+[
+  {
+    "objective": 1,
+    "title": "Objective 1: Automatic seed selection",
+    "file": "brisc2025_test_00287_me_ax_t1.jpg",
+    "split": "test",
+    "tumor": "meningioma",
+    "plane": "axial",
+    "image_path": "segmentation_task/test/images/brisc2025_test_00287_me_ax_t1.jpg",
+    "mask_path": "segmentation_task/test/masks/brisc2025_test_00287_me_ax_t1.png",
+    "srg": [
+      {
+        "label": "SRG, operator click 1",
+        "config": "O_SRG_1",
+        "png": "obj1_brisc2025_test_00287_me_ax_t1_O_SRG_1.png",
+        "dsc": 0.007,
+        "precision": 1.0,
+        "recall": 0.004,
+        "click_row_col": [
+          166,
+          231
+        ],
+        "pred_area": 102,
+        "gt_area": 28154
+      },
+      {
+        "label": "SRG, operator click 2",
+        "config": "O_SRG_2",
+        "png": "obj1_brisc2025_test_00287_me_ax_t1_O_SRG_2.png",
+        "dsc": 0.004,
+        "precision": 1.0,
+        "recall": 0.002,
+        "click_row_col": [
+          147,
+          275
+        ],
+        "pred_area": 63,
+        "gt_area": 28154
+      },
+      {
+        "label": "SRG, operator click 3",
+        "config": "O_SRG_3",
+        "png": "obj1_brisc2025_test_00287_me_ax_t1_O_SRG_3.png",
+        "dsc": 0.004,
+        "precision": 0.981,
+        "recall": 0.002,
+        "click_row_col": [
+          81,
+          264
+        ],
+        "pred_area": 54,
+        "gt_area": 28154
+      }
+    ],
+    "esrg": [
+      {
+        "label": "ESRG, automatic seed",
+        "config": "A_ESRG",
+        "png": "obj1_brisc2025_test_00287_me_ax_t1_A_ESRG.png",
+        "dsc": 0.961,
+        "precision": 1.0,
+        "recall": 0.925,
+        "click_row_col": null,
+        "pred_area": 26041,
+        "gt_area": 28154
+      }
+    ]
+  },
+  {
+    "objective": 1,
+    "title": "Objective 1: Automatic seed selection",
+    "file": "brisc2025_test_00871_pi_co_t1.jpg",
+    "split": "test",
+    "tumor": "pituitary",
+    "plane": "coronal",
+    "image_path": "segmentation_task/test/images/brisc2025_test_00871_pi_co_t1.jpg",
+    "mask_path": "segmentation_task/test/masks/brisc2025_test_00871_pi_co_t1.png",
+    "srg": [
+      {
+        "label": "SRG, operator click 1",
+        "config": "O_SRG_1",
+        "png": "obj1_brisc2025_test_00871_pi_co_t1_O_SRG_1.png",
+        "dsc": 0.06,
+        "precision": 1.0,
+        "recall": 0.031,
+        "click_row_col": [
+          232,
+          272
+        ],
+        "pred_area": 209,
+        "gt_area": 6705
+      },
+      {
+        "label": "SRG, operator click 2",
+        "config": "O_SRG_2",
+        "png": "obj1_brisc2025_test_00871_pi_co_t1_O_SRG_2.png",
+        "dsc": 0.048,
+        "precision": 1.0,
+        "recall": 0.025,
+        "click_row_col": [
+          287,
+          234
+        ],
+        "pred_area": 165,
+        "gt_area": 6705
+      },
+      {
+        "label": "SRG, operator click 3",
+        "config": "O_SRG_3",
+        "png": "obj1_brisc2025_test_00871_pi_co_t1_O_SRG_3.png",
+        "dsc": 0.071,
+        "precision": 1.0,
+        "recall": 0.037,
+        "click_row_col": [
+          287,
+          261
+        ],
+        "pred_area": 246,
+        "gt_area": 6705
+      }
+    ],
+    "esrg": [
+      {
+        "label": "ESRG, automatic seed",
+        "config": "A_ESRG",
+        "png": "obj1_brisc2025_test_00871_pi_co_t1_A_ESRG.png",
+        "dsc": 0.948,
+        "precision": 1.0,
+        "recall": 0.902,
+        "click_row_col": null,
+        "pred_area": 6047,
+        "gt_area": 6705
+      }
+    ]
+  },
+  {
+    "objective": 1,
+    "title": "Objective 1: Automatic seed selection",
+    "file": "brisc2025_test_00110_gl_co_t1.jpg",
+    "split": "test",
+    "tumor": "glioma",
+    "plane": "coronal",
+    "image_path": "segmentation_task/test/images/brisc2025_test_00110_gl_co_t1.jpg",
+    "mask_path": "segmentation_task/test/masks/brisc2025_test_00110_gl_co_t1.png",
+    "srg": [
+      {
+        "label": "SRG, operator click 1",
+        "config": "O_SRG_1",
+        "png": "obj1_brisc2025_test_00110_gl_co_t1_O_SRG_1.png",
+        "dsc": 0.105,
+        "precision": 1.0,
+        "recall": 0.055,
+        "click_row_col": [
+          285,
+          183
+        ],
+        "pred_area": 314,
+        "gt_area": 5666
+      },
+      {
+        "label": "SRG, operator click 2",
+        "config": "O_SRG_2",
+        "png": "obj1_brisc2025_test_00110_gl_co_t1_O_SRG_2.png",
+        "dsc": 0.038,
+        "precision": 1.0,
+        "recall": 0.019,
+        "click_row_col": [
+          321,
+          178
+        ],
+        "pred_area": 110,
+        "gt_area": 5666
+      },
+      {
+        "label": "SRG, operator click 3",
+        "config": "O_SRG_3",
+        "png": "obj1_brisc2025_test_00110_gl_co_t1_O_SRG_3.png",
+        "dsc": 0.018,
+        "precision": 1.0,
+        "recall": 0.009,
+        "click_row_col": [
+          321,
+          174
+        ],
+        "pred_area": 51,
+        "gt_area": 5666
+      }
+    ],
+    "esrg": [
+      {
+        "label": "ESRG, automatic seed",
+        "config": "A_ESRG",
+        "png": "obj1_brisc2025_test_00110_gl_co_t1_A_ESRG.png",
+        "dsc": 0.944,
+        "precision": 0.954,
+        "recall": 0.935,
+        "click_row_col": null,
+        "pred_area": 5551,
+        "gt_area": 5666
+      }
+    ]
+  },
+  {
+    "objective": 2,
+    "title": "Objective 2: Log-domain transformation (undersegmentation)",
+    "file": "brisc2025_test_00407_me_co_t1.jpg",
+    "split": "test",
+    "tumor": "meningioma",
+    "plane": "coronal",
+    "image_path": "segmentation_task/test/images/brisc2025_test_00407_me_co_t1.jpg",
+    "mask_path": "segmentation_task/test/masks/brisc2025_test_00407_me_co_t1.png",
+    "srg": [
+      {
+        "label": "SRG, operator click 1",
+        "config": "O_SRG_1",
+        "png": "obj2_brisc2025_test_00407_me_co_t1_O_SRG_1.png",
+        "dsc": 0.052,
+        "precision": 1.0,
+        "recall": 0.027,
+        "click_row_col": [
+          87,
+          251
+        ],
+        "pred_area": 151,
+        "gt_area": 5631
+      },
+      {
+        "label": "SRG, operator click 2",
+        "config": "O_SRG_2",
+        "png": "obj2_brisc2025_test_00407_me_co_t1_O_SRG_2.png",
+        "dsc": 0.017,
+        "precision": 1.0,
+        "recall": 0.009,
+        "click_row_col": [
+          76,
+          288
+        ],
+        "pred_area": 49,
+        "gt_area": 5631
+      },
+      {
+        "label": "SRG, operator click 3",
+        "config": "O_SRG_3",
+        "png": "obj2_brisc2025_test_00407_me_co_t1_O_SRG_3.png",
+        "dsc": 0.078,
+        "precision": 1.0,
+        "recall": 0.041,
+        "click_row_col": [
+          64,
+          232
+        ],
+        "pred_area": 230,
+        "gt_area": 5631
+      }
+    ],
+    "esrg": [
+      {
+        "label": "ESRG, operator click 1",
+        "config": "O_ESRG_1",
+        "png": "obj2_brisc2025_test_00407_me_co_t1_O_ESRG_1.png",
+        "dsc": 0.957,
+        "precision": 0.994,
+        "recall": 0.922,
+        "click_row_col": [
+          87,
+          251
+        ],
+        "pred_area": 5221,
+        "gt_area": 5631
+      }
+    ]
+  },
+  {
+    "objective": 2,
+    "title": "Objective 2: Log-domain transformation (undersegmentation)",
+    "file": "brisc2025_test_00717_pi_ax_t1.jpg",
+    "split": "test",
+    "tumor": "pituitary",
+    "plane": "axial",
+    "image_path": "segmentation_task/test/images/brisc2025_test_00717_pi_ax_t1.jpg",
+    "mask_path": "segmentation_task/test/masks/brisc2025_test_00717_pi_ax_t1.png",
+    "srg": [
+      {
+        "label": "SRG, operator click 1",
+        "config": "O_SRG_1",
+        "png": "obj2_brisc2025_test_00717_pi_ax_t1_O_SRG_1.png",
+        "dsc": 0.038,
+        "precision": 1.0,
+        "recall": 0.02,
+        "click_row_col": [
+          213,
+          280
+        ],
+        "pred_area": 91,
+        "gt_area": 4654
+      },
+      {
+        "label": "SRG, operator click 2",
+        "config": "O_SRG_2",
+        "png": "obj2_brisc2025_test_00717_pi_ax_t1_O_SRG_2.png",
+        "dsc": 0.077,
+        "precision": 1.0,
+        "recall": 0.04,
+        "click_row_col": [
+          191,
+          271
+        ],
+        "pred_area": 187,
+        "gt_area": 4654
+      },
+      {
+        "label": "SRG, operator click 3",
+        "config": "O_SRG_3",
+        "png": "obj2_brisc2025_test_00717_pi_ax_t1_O_SRG_3.png",
+        "dsc": 0.055,
+        "precision": 1.0,
+        "recall": 0.028,
+        "click_row_col": [
+          223,
+          263
+        ],
+        "pred_area": 132,
+        "gt_area": 4654
+      }
+    ],
+    "esrg": [
+      {
+        "label": "ESRG, operator click 1",
+        "config": "O_ESRG_1",
+        "png": "obj2_brisc2025_test_00717_pi_ax_t1_O_ESRG_1.png",
+        "dsc": 0.925,
+        "precision": 0.924,
+        "recall": 0.925,
+        "click_row_col": [
+          213,
+          280
+        ],
+        "pred_area": 4660,
+        "gt_area": 4654
+      }
+    ]
+  },
+  {
+    "objective": 2,
+    "title": "Objective 2: Log-domain transformation (undersegmentation)",
+    "file": "brisc2025_test_00019_gl_ax_t1.jpg",
+    "split": "test",
+    "tumor": "glioma",
+    "plane": "axial",
+    "image_path": "segmentation_task/test/images/brisc2025_test_00019_gl_ax_t1.jpg",
+    "mask_path": "segmentation_task/test/masks/brisc2025_test_00019_gl_ax_t1.png",
+    "srg": [
+      {
+        "label": "SRG, operator click 1",
+        "config": "O_SRG_1",
+        "png": "obj2_brisc2025_test_00019_gl_ax_t1_O_SRG_1.png",
+        "dsc": 0.017,
+        "precision": 1.0,
+        "recall": 0.008,
+        "click_row_col": [
+          247,
+          321
+        ],
+        "pred_area": 91,
+        "gt_area": 10811
+      },
+      {
+        "label": "SRG, operator click 2",
+        "config": "O_SRG_2",
+        "png": "obj2_brisc2025_test_00019_gl_ax_t1_O_SRG_2.png",
+        "dsc": 0.043,
+        "precision": 0.996,
+        "recall": 0.022,
+        "click_row_col": [
+          334,
+          301
+        ],
+        "pred_area": 237,
+        "gt_area": 10811
+      },
+      {
+        "label": "SRG, operator click 3",
+        "config": "O_SRG_3",
+        "png": "obj2_brisc2025_test_00019_gl_ax_t1_O_SRG_3.png",
+        "dsc": 0.048,
+        "precision": 1.0,
+        "recall": 0.025,
+        "click_row_col": [
+          294,
+          376
+        ],
+        "pred_area": 267,
+        "gt_area": 10811
+      }
+    ],
+    "esrg": [
+      {
+        "label": "ESRG, operator click 1",
+        "config": "O_ESRG_1",
+        "png": "obj2_brisc2025_test_00019_gl_ax_t1_O_ESRG_1.png",
+        "dsc": 0.824,
+        "precision": 1.0,
+        "recall": 0.701,
+        "click_row_col": [
+          247,
+          321
+        ],
+        "pred_area": 7575,
+        "gt_area": 10811
+      }
+    ]
+  },
+  {
+    "objective": 3,
+    "title": "Objective 3: Adaptive stopping criterion (boundary leakage)",
+    "file": "brisc2025_test_00523_me_sa_t1.jpg",
+    "split": "test",
+    "tumor": "meningioma",
+    "plane": "sagittal",
+    "image_path": "segmentation_task/test/images/brisc2025_test_00523_me_sa_t1.jpg",
+    "mask_path": "segmentation_task/test/masks/brisc2025_test_00523_me_sa_t1.png",
+    "srg": [
+      {
+        "label": "SRG, planted seed",
+        "config": "P_SRG",
+        "png": "obj3_brisc2025_test_00523_me_sa_t1_P_SRG.png",
+        "dsc": 0.101,
+        "precision": 1.0,
+        "recall": 0.053,
+        "click_row_col": [
+          281,
+          328
+        ],
+        "pred_area": 94,
+        "gt_area": 1768
+      },
+      {
+        "label": "ESRG, stopping criterion OFF",
+        "config": "P_ESRG_nostop",
+        "png": "obj3_brisc2025_test_00523_me_sa_t1_P_ESRG_nostop.png",
+        "dsc": 0.022,
+        "precision": 0.011,
+        "recall": 1.0,
+        "click_row_col": [
+          281,
+          328
+        ],
+        "pred_area": 160605,
+        "gt_area": 1768
+      }
+    ],
+    "esrg": [
+      {
+        "label": "ESRG, full (stopping criterion ON)",
+        "config": "P_ESRG",
+        "png": "obj3_brisc2025_test_00523_me_sa_t1_P_ESRG.png",
+        "dsc": 0.895,
+        "precision": 0.965,
+        "recall": 0.834,
+        "click_row_col": [
+          281,
+          328
+        ],
+        "pred_area": 1527,
+        "gt_area": 1768
+      }
+    ]
+  },
+  {
+    "objective": 3,
+    "title": "Objective 3: Adaptive stopping criterion (boundary leakage)",
+    "file": "brisc2025_test_00743_pi_ax_t1.jpg",
+    "split": "test",
+    "tumor": "pituitary",
+    "plane": "axial",
+    "image_path": "segmentation_task/test/images/brisc2025_test_00743_pi_ax_t1.jpg",
+    "mask_path": "segmentation_task/test/masks/brisc2025_test_00743_pi_ax_t1.png",
+    "srg": [
+      {
+        "label": "SRG, planted seed",
+        "config": "P_SRG",
+        "png": "obj3_brisc2025_test_00743_pi_ax_t1_P_SRG.png",
+        "dsc": 0.05,
+        "precision": 1.0,
+        "recall": 0.026,
+        "click_row_col": [
+          216,
+          240
+        ],
+        "pred_area": 94,
+        "gt_area": 3681
+      },
+      {
+        "label": "ESRG, stopping criterion OFF",
+        "config": "P_ESRG_nostop",
+        "png": "obj3_brisc2025_test_00743_pi_ax_t1_P_ESRG_nostop.png",
+        "dsc": 0.053,
+        "precision": 0.027,
+        "recall": 1.0,
+        "click_row_col": [
+          216,
+          240
+        ],
+        "pred_area": 136009,
+        "gt_area": 3681
+      }
+    ],
+    "esrg": [
+      {
+        "label": "ESRG, full (stopping criterion ON)",
+        "config": "P_ESRG",
+        "png": "obj3_brisc2025_test_00743_pi_ax_t1_P_ESRG.png",
+        "dsc": 0.957,
+        "precision": 0.997,
+        "recall": 0.92,
+        "click_row_col": [
+          216,
+          240
+        ],
+        "pred_area": 3397,
+        "gt_area": 3681
+      }
+    ]
+  },
+  {
+    "objective": 3,
+    "title": "Objective 3: Adaptive stopping criterion (boundary leakage)",
+    "file": "brisc2025_test_00248_gl_sa_t1.jpg",
+    "split": "test",
+    "tumor": "glioma",
+    "plane": "sagittal",
+    "image_path": "segmentation_task/test/images/brisc2025_test_00248_gl_sa_t1.jpg",
+    "mask_path": "segmentation_task/test/masks/brisc2025_test_00248_gl_sa_t1.png",
+    "srg": [
+      {
+        "label": "SRG, planted seed",
+        "config": "P_SRG",
+        "png": "obj3_brisc2025_test_00248_gl_sa_t1_P_SRG.png",
+        "dsc": 0.073,
+        "precision": 1.0,
+        "recall": 0.038,
+        "click_row_col": [
+          158,
+          261
+        ],
+        "pred_area": 76,
+        "gt_area": 1995
+      },
+      {
+        "label": "ESRG, stopping criterion OFF",
+        "config": "P_ESRG_nostop",
+        "png": "obj3_brisc2025_test_00248_gl_sa_t1_P_ESRG_nostop.png",
+        "dsc": 0.029,
+        "precision": 0.015,
+        "recall": 1.0,
+        "click_row_col": [
+          158,
+          261
+        ],
+        "pred_area": 135787,
+        "gt_area": 1995
+      }
+    ],
+    "esrg": [
+      {
+        "label": "ESRG, full (stopping criterion ON)",
+        "config": "P_ESRG",
+        "png": "obj3_brisc2025_test_00248_gl_sa_t1_P_ESRG.png",
+        "dsc": 0.891,
+        "precision": 1.0,
+        "recall": 0.804,
+        "click_row_col": [
+          158,
+          261
+        ],
+        "pred_area": 1604,
+        "gt_area": 1995
+      }
+    ]
+  }
+]
