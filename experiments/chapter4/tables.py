@@ -591,6 +591,26 @@ def build(R):
 # effect size r instead of Z, and p only where it is not < .001. The full-detail
 # tables above stay in the appendix workbooks. A note may reference another
 # chapter table as [[T:key]]; build_chapter() fills in its number.
+ALPHA = 0.05
+
+
+def _eff(r):
+    a = abs(r or 0)
+    return "large" if a >= 0.5 else "medium" if a >= 0.3 else "small" if a >= 0.1 else "negligible"
+
+
+def verdict(p, r=None, favors=None):
+    """Interpretation cell: 'Significant, large effect; favors ESRG' or 'Not significant' (Holm-adjusted p < .05)."""
+    if p is None:
+        return "—"
+    if p >= ALPHA:
+        return "Not significant"
+    out = "Significant"
+    if r is not None:
+        out += f", {_eff(r)} effect"
+    return out + (f"; favors {favors}" if favors else "")
+
+
 def _p_all(ps):
     """'every *p* is < .001' or 'every *p* is ≤ .023'."""
     s = fmt_p(max(ps))
@@ -631,12 +651,15 @@ def c_seed_hit(R):
         rows.append({"group": label})
         for lv in levels:
             t = E[grp][lv]
+            last = lv == levels[-1]
+            tst = E[grp]["test"]
+            interp = (f"{'Class' if grp == 'class' else 'Plane'} differences: {verdict(tst['p'])}") if last else ""
             rows.append([CL[lv] if lv != "all" else "All slices", n_(t["no_candidate"]), f"{t['hits']} / {t['N_S']}",
-                         pct(t["rate"]), ci(t["ci"]), f(t["seed_dist"]["median"], 1)])
+                         pct(t["rate"]), ci(t["ci"]), f(t["seed_dist"]["median"], 1), interp])
     tc, tp = E["class"]["test"], E["plane"]["test"]
     return {"title": "Seed Hit Rate of the Automated Seed Selection",
-            "header": ["Group", "No candidate", "Hits / *N*_{S}", "SHR", "95% CI", "Distance *Mdn*, px"],
-            "rows": rows, "widths": [1.8, 1.1, 1.2, 0.9, 1.3, 1.4],
+            "header": ["Group", "No candidate", "Hits / *N*_{S}", "SHR", "95% CI", "Distance *Mdn*, px", "Interpretation"],
+            "rows": rows, "widths": [1.5, 1, 1.1, 0.8, 1.2, 1.2, 1.7],
             "note": (f"Configuration A_ESRG; each class and each plane holds {E['class']['glioma']['n']} slices. A hit is a "
                      "slice whose whole seed core lies inside the tumor (Table 3.3); *N*_{S} counts the slices that "
                      "received a seed, and “No candidate” those for which the selector reported no tumor instead of "
@@ -656,12 +679,14 @@ def _pv(p):
 def c_operator(R):
     O = R["e1"]["operator"]
     rows = [[CL[lv], f(O[lv]["srg"]["sd"]["mean"]), f(O[lv]["esrg"]["sd"]["mean"]),
-             pct(O[lv]["srg"]["inconsistent"]["pct"]), pct(O[lv]["esrg"]["inconsistent"]["pct"])] for lv in LEVELS]
+             pct(O[lv]["srg"]["inconsistent"]["pct"]), pct(O[lv]["esrg"]["inconsistent"]["pct"]),
+             verdict(O[lv]["sd_test"]["p"], O[lv]["sd_test"]["r"],
+                     "SRG (smaller SD)" if O[lv]["sd_test"]["Z"] > 0 else "ESRG")] for lv in LEVELS]
     return {"title": "Variability of the Result Across Five Simulated Operators",
             "header": [[{"text": ""}, {"text": "Within-slice *SD* of DSC", "span": 2, "rule": True},
-                        {"text": "Inconsistency rate", "span": 2, "rule": True}],
-                       ["Tumor class", "SRG", "ESRG", "SRG", "ESRG"]],
-            "rows": rows, "widths": [1.8, 1.2, 1.2, 1.2, 1.2],
+                        {"text": "Inconsistency rate", "span": 2, "rule": True}, {"text": ""}],
+                       ["Tumor class", "SRG", "ESRG", "SRG", "ESRG", "Interpretation of the *SD*"]],
+            "rows": rows, "widths": [1.5, 1, 1, 1, 1, 2.1],
             "note": ("Each slice was segmented from five simulated operator clicks at random tumor pixels (Section 3.1). "
                      "The within-slice *SD* is the standard deviation of the five DSC values of a slice, averaged over "
                      "slices; the inconsistency rate is the share of slices on which some clicks succeed (DSC ≥ 0.70) and "
@@ -677,19 +702,28 @@ def c_buckets(R):
     return t
 
 
+def _recall_verdict(E, k):
+    """Verdict of full ESRG against reference k on all slices, flagging any class that is not significant."""
+    a = E["all"]["tests"][k]
+    text = verdict(a["p_holm"], a["r"], "full ESRG" if a["r"] > 0 else "the reference")
+    odd = [CL[lv].lower() for lv in CLASSES if E[lv]["tests"][k]["p_holm"] >= ALPHA]
+    return text + (f" (not in {', '.join(odd)})" if odd else "")
+
+
 def c_recall(R):
     E = R["e2"]["recall"]
     refs = (("P_SRG", "SRG (baseline)"), ("P_ESRG_global", "ESRG, global measure"),
             ("P_ESRG_nolog", "ESRG, log transform off"))
     rows = [{"group": "Recall *M*"}]
-    rows += [[name] + [f(E[lv]["tests"][k]["ref"]["mean"]) for lv in LEVELS] for k, name in refs]
-    rows.append(["ESRG (full)"] + [f(E[lv]["enh"]["mean"]) for lv in LEVELS])
+    rows += [[name] + [f(E[lv]["tests"][k]["ref"]["mean"]) for lv in LEVELS] + [""] for k, name in refs]
+    rows.append(["ESRG (full)"] + [f(E[lv]["enh"]["mean"]) for lv in LEVELS] + [""])
     rows.append({"group": "Full ESRG vs. reference, *r*"})
-    rows += [[name] + [nz(E[lv]["tests"][k]["r"]) for lv in LEVELS] for k, name in refs]
+    rows += [[name] + [nz(E[lv]["tests"][k]["r"]) for lv in LEVELS]
+             + [_recall_verdict(E, k)] for k, name in refs]
     ps = [E[lv]["tests"][k]["p_holm"] for lv in LEVELS for k, _ in refs]
     return {"title": "Recall of the Baseline, the Ablated Variants, and the Full Enhanced Algorithm With a Planted Seed",
-            "header": ["Configuration"] + [CL[lv] for lv in LEVELS],
-            "rows": rows, "widths": [2.3, 1.2, 1.2, 1.2, 1.2], "align": ["l", "c", "c", "c", "c"],
+            "header": ["Configuration"] + [CL[lv] for lv in LEVELS] + ["Interpretation"],
+            "rows": rows, "widths": [1.9, 1, 1.25, 1, 1, 1.9], "align": ["l", "c", "c", "c", "c", "l"],
             "note": ("Recall (Table 3.3) is the share of the true tumor recovered. All four configurations start from "
                      "the same planted click, so each difference is due to the growing procedure alone. *r* is the effect "
                      "size of the Wilcoxon signed-rank test of full ESRG against the named configuration (positive = full "
@@ -704,12 +738,14 @@ def c_bias(R):
         b = B[k]
         dlt = b["biased"]["mean"] - b["clean"]["mean"]
         rows.append([name, f(b["clean"]["mean"]), f(b["biased"]["mean"]), ("+" if dlt >= 0 else "") + f(dlt),
-                     fmt_p(b["p_holm"])])
+                     fmt_p(b["p_holm"]),
+                     verdict(b["p_holm"], b["r"]) + ("" if b["p_holm"] >= ALPHA else
+                             ("; recall higher with the field" if b["r"] > 0 else "; recall lower with the field"))])
     n4 = B["B_SRG_N4"]
-    rows.append(["SRG + N4", "—", f(n4["biased"]["mean"]), "—", "—"])
+    rows.append(["SRG + N4", "—", f(n4["biased"]["mean"]), "—", "—", "—"])
     return {"title": f"Recall With and Without a Synthetic {int(R['meta']['inu'] * 100)}% Bias Field",
-            "header": ["Configuration", "Recall *M*, no bias", "Recall *M*, bias field", "Change", "*p*"],
-            "rows": rows, "widths": [2.2, 1.4, 1.4, 1, 0.9],
+            "header": ["Configuration", "Recall *M*, no bias", "Recall *M*, bias field", "Change", "*p*", "Interpretation"],
+            "rows": rows, "widths": [1.9, 1.2, 1.2, 0.9, 0.8, 2],
             "note": ("Same slices and planted seeds; only the bias field of Section 3.1 differs. Each "
                      "configuration is compared with itself without the field (Wilcoxon signed-rank test, Holm-adjusted "
                      "over the four configurations). N4 was applied only under the field; against plain SRG on the "
@@ -723,29 +759,44 @@ def c_leak(R):
         p, lk = E["precision"][lv], E["leak"][lv]
         rows.append([CL[lv], f(p["tests"]["P_ESRG_nostop"]["ref"]["mean"]), f(p["enh"]["mean"]),
                      nz(p["tests"]["P_ESRG_nostop"]["r"]),
-                     pct(lk["leak_ci"]["P_ESRG_nostop"]["pct"]), pct(lk["leak_ci"]["P_ESRG"]["pct"])])
+                     pct(lk["leak_ci"]["P_ESRG_nostop"]["pct"]), pct(lk["leak_ci"]["P_ESRG"]["pct"]),
+                     "Precision: " + verdict(p["tests"]["P_ESRG_nostop"]["p_holm"], p["tests"]["P_ESRG_nostop"]["r"]) +
+                     "; leakage: " + verdict(lk["P_ESRG_nostop"]["p"])])
         ps += [p["tests"]["P_ESRG_nostop"]["p_holm"], lk["P_ESRG_nostop"]["p"]]
     return {"title": "Precision and Leakage Rate With and Without the Adaptive Stopping Criterion",
             "header": [[{"text": ""}, {"text": "Precision *M*", "span": 3, "rule": True},
-                        {"text": "Leakage rate", "span": 2, "rule": True}],
-                       ["Tumor class", "No stopping", "Adaptive", "*r*", "No stopping", "Adaptive"]],
-            "rows": rows, "widths": [1.6, 1.2, 1.2, 0.8, 1.2, 1.2],
+                        {"text": "Leakage rate", "span": 2, "rule": True}, {"text": ""}],
+                       ["Tumor class", "No stopping", "Adaptive", "*r*", "No stopping", "Adaptive", "Interpretation"]],
+            "rows": rows, "widths": [1.3, 1, 1, 0.6, 1, 1, 2.6],
             "note": ("Both configurations use the local log-domain measure and the same planted seed; only the stopping "
                      "criterion differs. Precision (Table 3.3) was compared with the Wilcoxon signed-rank test and the "
                      "leakage rate (Table 3.3; predicted area more than twice the true area) with the exact McNemar "
                      f"test; {_p_all(ps)}.")}
 
 
+def _cap(t):
+    return t[:1].upper() + t[1:]
+
+
+def _hd_verdict(t, ref):
+    """HD95: lower is better, so a positive Z (full ESRG larger) favors the reference."""
+    if t["p_holm"] >= ALPHA:
+        return f"not significant vs. {ref}"
+    return f"significant vs. {ref} ({_eff(t['r'])} effect, favors {'full ESRG' if t['Z'] < 0 else ref})"
+
+
 def c_boundary(R):
     E = R["e3"]["hd95_wc"]
     rows = [[CL[lv], mdn_iqr(E[lv]["tests"]["P_SRG"]["ref"], 1), mdn_iqr(E[lv]["tests"]["P_ESRG_nostop"]["ref"], 1),
-             mdn_iqr(E[lv]["enh"], 1)] for lv in LEVELS]
+             mdn_iqr(E[lv]["enh"], 1),
+             _cap(_hd_verdict(E[lv]["tests"]["P_SRG"], "SRG") + "; "
+                  + _hd_verdict(E[lv]["tests"]["P_ESRG_nostop"], "no stopping"))] for lv in LEVELS]
     ps = [E[lv]["tests"][k]["p_holm"] for lv in LEVELS for k in ("P_SRG", "P_ESRG_nostop")]
     worse = [CL[lv].lower() for lv in CLASSES if E[lv]["tests"]["P_SRG"]["Z"] > 0]
     return {"title": "HD95 of the Baseline, the Enhanced Algorithm Without Stopping, and the Full Enhanced Algorithm",
-            "header": [[{"text": ""}, {"text": "HD95 *Mdn* [IQR], pixels", "span": 3, "rule": True}],
-                       ["Tumor class", "SRG", "ESRG, no stopping", "ESRG (full)"]],
-            "rows": rows, "widths": [1.6, 1.8, 1.8, 1.8],
+            "header": [[{"text": ""}, {"text": "HD95 *Mdn* [IQR], pixels", "span": 3, "rule": True}, {"text": ""}],
+                       ["Tumor class", "SRG", "ESRG, no stopping", "ESRG (full)", "Interpretation"]],
+            "rows": rows, "widths": [1.2, 1.3, 1.4, 1.3, 3.2],
             "note": ("Planted seed. HD95 (Table 3.3) in pixels at the working resolution; lower is better. Full ESRG "
                      "was compared with each reference by the Wilcoxon signed-rank test, Holm-adjusted within each row; "
                      f"{_p_all(ps)}. Full ESRG has the smaller HD95 against both references in every class"
@@ -760,12 +811,15 @@ def c_purify(R):
         r = P[m]
         ps.append(r["p_holm"])
         if m in ("success", "leaked"):
-            rows.append([METRIC_NAME[m], pct(r["rate_ref"]), pct(r["rate_cmp"]), "—"])
+            better = (r["rate_cmp"] > r["rate_ref"]) == (m == "success")
+            rows.append([METRIC_NAME[m], pct(r["rate_ref"]), pct(r["rate_cmp"]), "—",
+                         verdict(r["p_holm"], None, "the purified core" if better else "the click disk")])
         else:
-            rows.append([METRIC_NAME[m], f(r["base"]["mean"]), f(r["enh"]["mean"]), nz(r["r"])])
+            rows.append([METRIC_NAME[m], f(r["base"]["mean"]), f(r["enh"]["mean"]), nz(r["r"]),
+                         verdict(r["p_holm"], r["r"], "the purified core" if r["r"] > 0 else "the click disk")])
     return {"title": "Effect of Seed Purification on the Enhanced Algorithm With a Planted Seed",
-            "header": ["Metric", "Click disk", "Purified core", "*r*"],
-            "rows": rows, "widths": [2.6, 1.4, 1.4, 0.8],
+            "header": ["Metric", "Click disk", "Purified core", "*r*", "Interpretation"],
+            "rows": rows, "widths": [2.1, 1.1, 1.1, 0.7, 2.7],
             "note": ("Means and rates of P_ESRG_nopurify (the click disk used directly) and P_ESRG (the disk reduced to its "
                      "core, the default in manual mode). *r* is positive when the purified core scored higher (Wilcoxon "
                      f"signed-rank test; rates: exact McNemar test); after Holm adjustment, {_p_all(ps)}.")}

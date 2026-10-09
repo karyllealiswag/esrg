@@ -23,7 +23,7 @@
   },
   {
    "t": "p",
-   "text": "Because the Shapiro–Wilk test rejected the normality of every paired difference (*W* = .389 to .960, all *p* < .001), configurations are compared with the Wilcoxon signed-rank test and paired rates with the exact McNemar test, as specified in Section 3.1.2. With 954 paired slices almost every difference is statistically significant, so the tables report the effect size *r* = *Z*/√*N* (Section 3.1.2), where |*r*| near .1, .3, and .5 indicates a small, medium, and large effect, and give *p* values only where they add information; unless a table states otherwise, every Holm-adjusted *p* value is below .001. Means and medians are reported without standard deviations because per-slice DSC is bounded and bimodal (Figure 4.1); the standard deviations, test statistics, and confidence intervals of every comparison are given in the appendix workbooks."
+   "text": "Because the Shapiro–Wilk test rejected the normality of every paired difference (*W* = .389 to .960, all *p* < .001), configurations are compared with the Wilcoxon signed-rank test and paired rates with the exact McNemar test, as specified in Section 3.1.2. With 954 paired slices almost every difference is statistically significant, so the tables report the effect size *r* = *Z*/√*N* (Section 3.1.2), where |*r*| near .1, .3, and .5 indicates a small, medium, and large effect. The tables of Sections 4.2.1 to 4.2.3 add an Interpretation column that states, for each comparison, whether the Holm-adjusted *p* value is below .05 (significant), the size of the effect, and which configuration the result favors. Means and medians are reported without standard deviations because per-slice DSC is bounded and bimodal (Figure 4.1); the standard deviations, test statistics, and confidence intervals of every comparison are given in the appendix workbooks."
   },
   {
    "t": "h3",
@@ -286,7 +286,8 @@
     "Hits / *N*_{S}",
     "SHR",
     "95% CI",
-    "Distance *Mdn*, px"
+    "Distance *Mdn*, px",
+    "Interpretation"
    ],
    "rows": [
     {
@@ -298,7 +299,8 @@
      "49 / 318",
      "15.4%",
      "[11.9, 19.8]",
-     "107.4"
+     "107.4",
+     ""
     ],
     [
      "Meningioma",
@@ -306,7 +308,8 @@
      "231 / 307",
      "75.2%",
      "[70.1, 79.7]",
-     "0.0"
+     "0.0",
+     ""
     ],
     [
      "Pituitary",
@@ -314,7 +317,8 @@
      "132 / 318",
      "41.5%",
      "[36.2, 47.0]",
-     "44.1"
+     "44.1",
+     ""
     ],
     [
      "All slices",
@@ -322,7 +326,8 @@
      "412 / 943",
      "43.7%",
      "[40.6, 46.9]",
-     "42.0"
+     "42.0",
+     "Class differences: Significant"
     ],
     {
      "group": "By imaging plane"
@@ -333,7 +338,8 @@
      "138 / 310",
      "44.5%",
      "[39.1, 50.1]",
-     "32.6"
+     "32.6",
+     ""
     ],
     [
      "Coronal",
@@ -341,7 +347,8 @@
      "165 / 318",
      "51.9%",
      "[46.4, 57.3]",
-     "0.0"
+     "0.0",
+     ""
     ],
     [
      "Sagittal",
@@ -349,16 +356,18 @@
      "109 / 315",
      "34.6%",
      "[29.6, 40.0]",
-     "81.5"
+     "81.5",
+     "Plane differences: Significant"
     ]
    ],
    "widths": [
-    1.8,
+    1.5,
+    1,
     1.1,
+    0.8,
     1.2,
-    0.9,
-    1.3,
-    1.4
+    1.2,
+    1.7
    ],
    "note": "Configuration A_ESRG; each class and each plane holds 318 slices. A hit is a slice whose whole seed core lies inside the tumor (Table 3.3); *N*_{S} counts the slices that received a seed, and “No candidate” those for which the selector reported no tumor instead of guessing. The 95% CI is the Wilson score interval (Section 3.1.2). Distance is the seed distance (Table 3.3), 0 when the seed centroid lies inside the tumor. Class differences: χ²(2, *N* = 943) = 228.25, *p* < .001, Cramér’s *V* = .49; plane differences: χ²(2, *N* = 943) = 19.34, *p* < .001, *V* = .14."
   },
@@ -397,6 +406,9 @@
       "text": "Inconsistency rate",
       "span": 2,
       "rule": true
+     },
+     {
+      "text": ""
      }
     ],
     [
@@ -404,7 +416,8 @@
      "SRG",
      "ESRG",
      "SRG",
-     "ESRG"
+     "ESRG",
+     "Interpretation of the *SD*"
     ]
    ],
    "rows": [
@@ -413,36 +426,41 @@
      "0.042",
      "0.177",
      "0.9%",
-     "25.2%"
+     "25.2%",
+     "Significant, large effect; favors SRG (smaller SD)"
     ],
     [
      "Meningioma",
      "0.044",
      "0.229",
      "0.9%",
-     "68.9%"
+     "68.9%",
+     "Significant, large effect; favors SRG (smaller SD)"
     ],
     [
      "Pituitary",
      "0.066",
      "0.262",
      "2.2%",
-     "56.0%"
+     "56.0%",
+     "Significant, large effect; favors SRG (smaller SD)"
     ],
     [
      "All classes",
      "0.051",
      "0.223",
      "1.4%",
-     "50.0%"
+     "50.0%",
+     "Significant, large effect; favors SRG (smaller SD)"
     ]
    ],
    "widths": [
-    1.8,
-    1.2,
-    1.2,
-    1.2,
-    1.2
+    1.5,
+    1,
+    1,
+    1,
+    1,
+    2.1
    ],
    "note": "Each slice was segmented from five simulated operator clicks at random tumor pixels (Section 3.1). The within-slice *SD* is the standard deviation of the five DSC values of a slice, averaged over slices; the inconsistency rate is the share of slices on which some clicks succeed (DSC ≥ 0.70) and others fail. The automatic seed is deterministic, so both measures are zero under automatic seeding."
   },
@@ -572,7 +590,8 @@
     "Glioma",
     "Meningioma",
     "Pituitary",
-    "All classes"
+    "All classes",
+    "Interpretation"
    ],
    "rows": [
     {
@@ -583,28 +602,32 @@
      "0.078",
      "0.069",
      "0.128",
-     "0.092"
+     "0.092",
+     ""
     ],
     [
      "ESRG, global measure",
      "0.187",
      "0.168",
      "0.116",
-     "0.157"
+     "0.157",
+     ""
     ],
     [
      "ESRG, log transform off",
      "0.398",
      "0.325",
      "0.252",
-     "0.325"
+     "0.325",
+     ""
     ],
     [
      "ESRG (full)",
      "0.439",
      "0.506",
      "0.304",
-     "0.416"
+     "0.416",
+     ""
     ],
     {
      "group": "Full ESRG vs. reference, *r*"
@@ -614,29 +637,33 @@
      ".60",
      ".79",
      ".46",
-     ".64"
+     ".64",
+     "Significant, large effect; favors full ESRG"
     ],
     [
      "ESRG, global measure",
      ".75",
      ".83",
      ".78",
-     ".79"
+     ".79",
+     "Significant, large effect; favors full ESRG"
     ],
     [
      "ESRG, log transform off",
      ".22",
      ".58",
      ".36",
-     ".40"
+     ".40",
+     "Significant, medium effect; favors full ESRG"
     ]
    ],
    "widths": [
-    2.3,
-    1.2,
-    1.2,
-    1.2,
-    1.2
+    1.9,
+    1,
+    1.25,
+    1,
+    1,
+    1.9
    ],
    "note": "Recall (Table 3.3) is the share of the true tumor recovered. All four configurations start from the same planted click, so each difference is due to the growing procedure alone. *r* is the effect size of the Wilcoxon signed-rank test of full ESRG against the named configuration (positive = full ESRG recovered more); after Holm adjustment over the three comparisons within each class, every *p* is < .001.",
    "align": [
@@ -644,7 +671,8 @@
     "c",
     "c",
     "c",
-    "c"
+    "c",
+    "l"
    ]
   },
   {
@@ -660,7 +688,8 @@
     "Recall *M*, no bias",
     "Recall *M*, bias field",
     "Change",
-    "*p*"
+    "*p*",
+    "Interpretation"
    ],
    "rows": [
     [
@@ -668,43 +697,49 @@
      "0.092",
      "0.092",
      "+0.000",
-     ".726"
+     ".726",
+     "Not significant"
     ],
     [
      "ESRG, global measure",
      "0.157",
      "0.160",
      "+0.003",
-     "< .001"
+     "< .001",
+     "Significant, small effect; recall higher with the field"
     ],
     [
      "ESRG, log off",
      "0.325",
      "0.318",
      "−0.007",
-     ".726"
+     ".726",
+     "Not significant"
     ],
     [
      "ESRG (full)",
      "0.416",
      "0.415",
      "−0.001",
-     ".726"
+     ".726",
+     "Not significant"
     ],
     [
      "SRG + N4",
      "—",
      "0.092",
      "—",
+     "—",
      "—"
     ]
    ],
    "widths": [
-    2.2,
-    1.4,
-    1.4,
-    1,
-    0.9
+    1.9,
+    1.2,
+    1.2,
+    0.9,
+    0.8,
+    2
    ],
    "note": "Same slices and planted seeds; only the bias field of Section 3.1 differs. Each configuration is compared with itself without the field (Wilcoxon signed-rank test, Holm-adjusted over the four configurations). N4 was applied only under the field; against plain SRG on the biased slices, *p* = .159."
   },
@@ -738,6 +773,9 @@
       "text": "Leakage rate",
       "span": 2,
       "rule": true
+     },
+     {
+      "text": ""
      }
     ],
     [
@@ -746,7 +784,8 @@
      "Adaptive",
      "*r*",
      "No stopping",
-     "Adaptive"
+     "Adaptive",
+     "Interpretation"
     ]
    ],
    "rows": [
@@ -756,7 +795,8 @@
      "0.676",
      ".86",
      "99.4%",
-     "34.3%"
+     "34.3%",
+     "Precision: Significant, large effect; leakage: Significant"
     ],
     [
      "Meningioma",
@@ -764,7 +804,8 @@
      "0.949",
      ".86",
      "96.5%",
-     "4.4%"
+     "4.4%",
+     "Precision: Significant, large effect; leakage: Significant"
     ],
     [
      "Pituitary",
@@ -772,7 +813,8 @@
      "0.953",
      ".85",
      "96.5%",
-     "4.4%"
+     "4.4%",
+     "Precision: Significant, large effect; leakage: Significant"
     ],
     [
      "All classes",
@@ -780,16 +822,18 @@
      "0.860",
      ".86",
      "97.5%",
-     "14.4%"
+     "14.4%",
+     "Precision: Significant, large effect; leakage: Significant"
     ]
    ],
    "widths": [
-    1.6,
-    1.2,
-    1.2,
-    0.8,
-    1.2,
-    1.2
+    1.3,
+    1,
+    1,
+    0.6,
+    1,
+    1,
+    2.6
    ],
    "note": "Both configurations use the local log-domain measure and the same planted seed; only the stopping criterion differs. Precision (Table 3.3) was compared with the Wilcoxon signed-rank test and the leakage rate (Table 3.3; predicted area more than twice the true area) with the exact McNemar test; every *p* is < .001."
   },
@@ -819,13 +863,17 @@
       "text": "HD95 *Mdn* [IQR], pixels",
       "span": 3,
       "rule": true
+     },
+     {
+      "text": ""
      }
     ],
     [
      "Tumor class",
      "SRG",
      "ESRG, no stopping",
-     "ESRG (full)"
+     "ESRG (full)",
+     "Interpretation"
     ]
    ],
    "rows": [
@@ -833,32 +881,37 @@
      "Glioma",
      "45.8 [29.6, 66.1]",
      "254.8 [211.0, 294.0]",
-     "58.3 [30.7, 156.1]"
+     "58.3 [30.7, 156.1]",
+     "Significant vs. SRG (medium effect, favors SRG); significant vs. no stopping (large effect, favors full ESRG)"
     ],
     [
      "Meningioma",
      "42.5 [29.9, 53.9]",
      "252.0 [216.3, 307.0]",
-     "19.8 [11.4, 34.5]"
+     "19.8 [11.4, 34.5]",
+     "Significant vs. SRG (large effect, favors full ESRG); significant vs. no stopping (large effect, favors full ESRG)"
     ],
     [
      "Pituitary",
      "30.5 [21.8, 42.2]",
      "248.6 [229.9, 266.8]",
-     "23.4 [15.7, 37.1]"
+     "23.4 [15.7, 37.1]",
+     "Significant vs. SRG (small effect, favors full ESRG); significant vs. no stopping (large effect, favors full ESRG)"
     ],
     [
      "All classes",
      "38.4 [26.1, 53.1]",
      "250.3 [222.0, 284.2]",
-     "28.3 [16.0, 55.1]"
+     "28.3 [16.0, 55.1]",
+     "Significant vs. SRG (small effect, favors full ESRG); significant vs. no stopping (large effect, favors full ESRG)"
     ]
    ],
    "widths": [
-    1.6,
-    1.8,
-    1.8,
-    1.8
+    1.2,
+    1.3,
+    1.4,
+    1.3,
+    3.2
    ],
    "note": "Planted seed. HD95 (Table 3.3) in pixels at the working resolution; lower is better. Full ESRG was compared with each reference by the Wilcoxon signed-rank test, Holm-adjusted within each row; every *p* is < .001. Full ESRG has the smaller HD95 against both references in every class except against SRG for glioma. ASSD gives the same pattern (Appendix E)."
   },
@@ -874,45 +927,52 @@
     "Metric",
     "Click disk",
     "Purified core",
-    "*r*"
+    "*r*",
+    "Interpretation"
    ],
    "rows": [
     [
      "DSC",
      "0.486",
      "0.387",
-     "−.46"
+     "−.46",
+     "Significant, medium effect; favors the click disk"
     ],
     [
      "Recall",
      "0.659",
      "0.416",
-     "−.76"
+     "−.76",
+     "Significant, large effect; favors the click disk"
     ],
     [
      "Precision",
      "0.701",
      "0.860",
-     ".55"
+     ".55",
+     "Significant, large effect; favors the purified core"
     ],
     [
      "Success rate (DSC ≥ 0.70)",
      "36.5%",
      "23.5%",
-     "—"
+     "—",
+     "Significant; favors the click disk"
     ],
     [
      "Leakage rate (|*M*| > 2|*G*|)",
      "30.5%",
      "14.4%",
-     "—"
+     "—",
+     "Significant; favors the purified core"
     ]
    ],
    "widths": [
-    2.6,
-    1.4,
-    1.4,
-    0.8
+    2.1,
+    1.1,
+    1.1,
+    0.7,
+    2.7
    ],
    "note": "Means and rates of P_ESRG_nopurify (the click disk used directly) and P_ESRG (the disk reduced to its core, the default in manual mode). *r* is positive when the purified core scored higher (Wilcoxon signed-rank test; rates: exact McNemar test); after Holm adjustment, every *p* is < .001."
   },

@@ -149,8 +149,9 @@ def build(d):
         "signed-rank test and paired rates with the exact McNemar test, as specified in Section 3.1.2. With "
         f"{n:,} paired slices almost every difference is statistically significant, so the tables report the effect "
         "size *r* = *Z*/√*N* (Section 3.1.2), where |*r*| near .1, .3, and .5 indicates a small, medium, and large "
-        "effect, and give *p* values only where they add information; unless a table states otherwise, every "
-        "Holm-adjusted *p* value is below .001. Means and medians are reported without standard deviations because "
+        "effect. The tables of Sections 4.2.1 to 4.2.3 add an Interpretation column that states, for each "
+        "comparison, whether the Holm-adjusted *p* value is below .05 (significant), the size of the effect, and "
+        "which configuration the result favors. Means and medians are reported without standard deviations because "
         "per-slice DSC is bounded and bimodal (Figure 4.1); the standard deviations, test statistics, and confidence "
         "intervals of every comparison are given in the appendix workbooks.")
 
