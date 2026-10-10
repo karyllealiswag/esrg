@@ -10,6 +10,9 @@ Function : CustomTkinter app in a header / 3-column / footer grid. Left: input,
           view that explains the selected stage end to end (inputs, equation,
           computation, outputs; esrg/stage_report.py). Footer: one
           line of evaluation metrics. The pipeline runs off the UI thread.
+          A browser-style tab strip above it all (RunTabs) holds several independent
+          sessions in one window, each a fresh copy of the system, so earlier runs stay
+          one click away for visual comparison.
 Notes   : Strictly flat: no gradients, bevels or shadows; every widget is square
           (corner_radius=0) apart from the radio buttons' circular indicators.
 """
@@ -121,14 +124,15 @@ def _gray_rgb(a):
 
 
 class ESRGApp:
-    def __init__(self, root):
-        self.root = root
-        ctk.set_appearance_mode("light")
-        root.title("Enhanced Seeded Region Growing Algorithm in MRI Image Segmentation")
-        root.configure(fg_color=WHITE)
-        self._fit_window(1440, 880, 1120, 700)
+    """One complete session of the system (input, controls, run, viewer, telemetry) built
+    inside `parent`. RunTabs keeps several of them in one window, one per tab."""
 
-        self._init_ttk_style()
+    def __init__(self, root, parent, on_title=None):
+        self.root = root
+        self.frame = parent
+        self._on_title = on_title  # called when tab_title() may have changed
+        self.closed = False
+        self.busy = False
 
         self.cfg = Config()
         self.image_path = None
@@ -180,30 +184,32 @@ class ESRGApp:
     def _px(self, n):
         return int(round(n * self._scale))
 
-    def _fit_window(self, w, h, min_w, min_h):
-        """Open at (w, h) in CTk's DPI-independent units, shrunk to fit the screen with
-        room for the taskbar, and centred horizontally. CTk multiplies the size by the
-        display scale but takes the +x+y offset in physical pixels."""
-        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        w, h = min(w, int(sw * 0.94)), min(h, int(sh * 0.88))
-        x = max(0, int((sw - w) * self._scale / 2))
-        self.root.geometry(f"{w}x{h}+{x}+{self._px(8)}")
-        self.root.minsize(min(min_w, w), min(min_h, h))
+    # ── Tab lifecycle (driven by RunTabs) ────────────────────────────────────
+    def tab_title(self):
+        """Short label for this session's tab: slice name, then the method once it has run."""
+        if not self.image_path:
+            return "New session"
+        # Long dataset names share a prefix; keep the tail, which tells slices apart.
+        name = os.path.splitext(os.path.basename(self.image_path))[0]
+        if len(name) > 22:
+            name = "…" + name[-21:]
+        if self.busy:
+            return f"{name} · running…"
+        if self.result is None:
+            return name
+        return f"{name} · {str(self.result.meta.get('method', '')).upper()}"
 
-    def _init_ttk_style(self):
-        """Flat Treeview + no bevels: the only ttk widget in the app is the seed table."""
-        style = ttk.Style(self.root)
-        style.theme_use("clam")
-        row_h = tkfont.Font(font=TK_UI).metrics("linespace") + 10
-        style.configure("Seeds.Treeview", background=WHITE, fieldbackground=WHITE,
-                        foreground=TEXT, rowheight=row_h, borderwidth=0, relief="flat",
-                        font=TK_UI)
-        style.configure("Seeds.Treeview.Heading", background=PANEL, foreground=MUTED,
-                        relief="flat", borderwidth=0, font=TK_BOLD, padding=(6, 5))
-        style.map("Seeds.Treeview", background=[("selected", BLUE)],
-                  foreground=[("selected", WHITE)])
-        style.map("Seeds.Treeview.Heading", background=[("active", BORDER)])
-        style.layout("Seeds.Treeview", [("Treeview.treearea", {"sticky": "nswe"})])
+    def _notify_title(self):
+        if self._on_title and not self.closed:
+            self._on_title()
+
+    def close(self):
+        """Tear the session down. A run still in flight finishes in the background and is
+        dropped, since its callbacks check `closed` before touching any widget."""
+        self.closed = True
+        if getattr(self, "_ctl_pending", None):
+            self.root.after_cancel(self._ctl_pending)
+        self.frame.destroy()
 
     # ── Widget factories ─────────────────────────────────────────────────────
     def _btn(self, parent, text, command, primary=False, width=None, height=30, font=F_BODY):
@@ -241,7 +247,7 @@ class ESRGApp:
 
     # ── Master Layout ────────────────────────────────────────────────────────
     def _build(self):
-        r = self.root
+        r = self.frame
         r.grid_columnconfigure(0, weight=1)
         r.grid_rowconfigure(2, weight=1)
 
@@ -315,7 +321,7 @@ class ESRGApp:
     def _set_left_width(self, w):
         """Resize the control panel, keeping the viewer and the telemetry column usable."""
         right = (self.tel_panel if self.tel_visible else self.rail).cget("width")
-        room = self.root.winfo_width() / self._scale - right - CENTER_MIN
+        room = self.frame.winfo_width() / self._scale - right - CENTER_MIN
         w = int(round(max(LEFT_MIN, min(LEFT_MAX, room, w))))
         if w == self._left_w:
             return
@@ -488,7 +494,7 @@ class ESRGApp:
 
     def _refresh_after_controls(self):
         self._ctl_pending = None
-        if self.result is not None:
+        if self.result is not None and not self.closed:
             self._refresh_telemetry()
 
     def _on_seed_mode_change(self):
@@ -1018,6 +1024,7 @@ class ESRGApp:
         self._sync_obj_buttons()
         self._update_metrics()
         self._render_panes()
+        self._notify_title()
 
     def _clear_seeds(self):
         self.manual_points = []
@@ -1062,12 +1069,14 @@ class ESRGApp:
         self.run_btn.configure(state="disabled", text="PROCESSING…", fg_color=BORDER_DARK,
                                border_color=BORDER_DARK)
         self.status_lbl.configure(text="Segmenting slice…", text_color=BLUE)
+        self.busy = True
+        self._notify_title()
 
         def worker():
             try:
                 res = run(self.image_path, cfg, manual_points=list(self.manual_points),
                           record=True, progress=lambda m: self.root.after(
-                              0, lambda m=m: self.status_lbl.configure(text=m)))
+                              0, lambda m=m: self.closed or self.status_lbl.configure(text=m)))
                 self.root.after(0, self._done, res, None)
             except Exception as e:
                 self.root.after(0, self._done, None, e)
@@ -1075,9 +1084,13 @@ class ESRGApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _done(self, res, err):
+        if self.closed:  # the tab was closed while the pipeline ran
+            return
+        self.busy = False
         self.run_btn.configure(state="normal", text="RUN PIPELINE", fg_color=BLUE,
                                border_color=BLUE)
         if err:
+            self._notify_title()
             self.status_lbl.configure(text="Pipeline execution failed.", text_color=FAIL_CLR)
             messagebox.showerror("Execution Error", str(err))
             return
@@ -1089,6 +1102,7 @@ class ESRGApp:
         self._sync_overlay_toggle()
         self._update_metrics()
         self._select("final")
+        self._notify_title()
 
     # ── Stage tabs ───────────────────────────────────────────────────────────
     def _clear_stages(self):
@@ -1134,7 +1148,7 @@ class ESRGApp:
         self._render_panes()
 
     def _reveal_current_tab(self):
-        if self.result is not None:
+        if self.result is not None and not self.closed:
             self._scroll_tab_into_view(self.stage_buttons.get(self.current))
 
     def _scroll_tab_into_view(self, btn):
@@ -1357,7 +1371,7 @@ class ESRGApp:
 
     def _render_panes(self):
         self._render_pending = False
-        if not hasattr(self, "canvases"):
+        if self.closed or not hasattr(self, "canvases"):
             return
         left, right, cap_l, cap_r, legend = self._pane_images()
         self.captions[0].configure(text=cap_l)
@@ -1383,7 +1397,165 @@ class ESRGApp:
         canvas.create_image(ox, oy, anchor=tk.NW, image=self._photos[canvas])
 
 
+class RunTabs:
+    """Window shell: a browser-style strip of session tabs over a stack of ESRGApp sessions.
+    Each new tab is a fresh copy of the system; switching only hides / shows sessions, so
+    every earlier run keeps its image, settings, stage, zoom and telemetry for comparison.
+    Ctrl+T opens a tab, Ctrl+W closes it, Ctrl+Tab / Ctrl+Shift+Tab cycle through them."""
+
+    def __init__(self, root):
+        self.root = root
+        ctk.set_appearance_mode("light")
+        root.title("Enhanced Seeded Region Growing Algorithm in MRI Image Segmentation")
+        root.configure(fg_color=WHITE)
+        self._fit_window(1440, 880, 1120, 700)
+        self._init_ttk_style()
+
+        root.grid_columnconfigure(0, weight=1)
+        root.grid_rowconfigure(2, weight=1)
+
+        # pack_propagate(False): however many tabs are open, the strip never widens the window.
+        self.bar = ctk.CTkFrame(root, fg_color=PANEL, corner_radius=0, height=36)
+        self.bar.grid(row=0, column=0, sticky="ew")
+        self.bar.pack_propagate(False)
+        self.add_btn = ctk.CTkButton(self.bar, text="+", width=34, height=30, corner_radius=0,
+                                     border_width=0, font=F_BOLD, fg_color=PANEL,
+                                     hover_color=BORDER, text_color=TEXT, command=self.new_tab)
+        self.add_btn.pack(side="left", padx=(2, 0), pady=(6, 0))
+        ctk.CTkLabel(self.bar, text="Ctrl+T new tab · Ctrl+W close · Ctrl+Tab switch",
+                     font=("Segoe UI", 11), text_color=FAINT).pack(side="right", padx=14)
+        _rule(root).grid(row=1, column=0, sticky="ew")
+
+        self.stack = ctk.CTkFrame(root, fg_color=WHITE, corner_radius=0)
+        self.stack.grid(row=2, column=0, sticky="nsew")
+        self.stack.grid_rowconfigure(0, weight=1)
+        self.stack.grid_columnconfigure(0, weight=1)
+
+        self.sessions = []  # dicts: app, tab, accent, label, close, n
+        self.active = None
+        self._next_n = 1
+
+        for seq, fn in (("<Control-t>", self.new_tab), ("<Control-T>", self.new_tab),
+                        ("<Control-w>", self.close_active), ("<Control-W>", self.close_active),
+                        ("<Control-Tab>", lambda: self._cycle(1)),
+                        ("<Control-Shift-Tab>", lambda: self._cycle(-1)),
+                        ("<Control-ISO_Left_Tab>", lambda: self._cycle(-1))):
+            try:
+                root.bind(seq, lambda e, fn=fn: (fn(), "break")[1])
+            except tk.TclError:  # keysym unknown on this platform (ISO_Left_Tab on Windows)
+                pass
+
+        self.new_tab()
+
+    @property
+    def _scale(self):
+        return self.root._get_window_scaling()
+
+    def _fit_window(self, w, h, min_w, min_h):
+        """Open at (w, h) in CTk's DPI-independent units, shrunk to fit the screen with
+        room for the taskbar, and centred horizontally. CTk multiplies the size by the
+        display scale but takes the +x+y offset in physical pixels."""
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        w, h = min(w, int(sw * 0.94)), min(h, int(sh * 0.88))
+        x = max(0, int((sw - w) * self._scale / 2))
+        self.root.geometry(f"{w}x{h}+{x}+{int(round(8 * self._scale))}")
+        self.root.minsize(min(min_w, w), min(min_h, h))
+
+    def _init_ttk_style(self):
+        """Flat Treeview + no bevels: the only ttk widget in the app is the seed table."""
+        style = ttk.Style(self.root)
+        style.theme_use("clam")
+        row_h = tkfont.Font(font=TK_UI).metrics("linespace") + 10
+        style.configure("Seeds.Treeview", background=WHITE, fieldbackground=WHITE,
+                        foreground=TEXT, rowheight=row_h, borderwidth=0, relief="flat",
+                        font=TK_UI)
+        style.configure("Seeds.Treeview.Heading", background=PANEL, foreground=MUTED,
+                        relief="flat", borderwidth=0, font=TK_BOLD, padding=(6, 5))
+        style.map("Seeds.Treeview", background=[("selected", BLUE)],
+                  foreground=[("selected", WHITE)])
+        style.map("Seeds.Treeview.Heading", background=[("active", BORDER)])
+        style.layout("Seeds.Treeview", [("Treeview.treearea", {"sticky": "nswe"})])
+
+    # ── Tabs ─────────────────────────────────────────────────────────────────
+    def new_tab(self):
+        frame = ctk.CTkFrame(self.stack, fg_color=WHITE, corner_radius=0)
+        s = {"n": self._next_n}
+        self._next_n += 1
+        s["app"] = ESRGApp(self.root, frame, on_title=lambda: self._relabel(s))
+
+        # Tab: 2px accent line (blue when active) over [label][×], packed before the + button.
+        tab = tk.Frame(self.bar, bg=OBJ_IDLE)
+        tab.pack(side="left", padx=(0, 1), pady=(6, 0), before=self.add_btn)
+        if not self.sessions:
+            tab.pack_configure(padx=(8, 1))
+        accent = tk.Frame(tab, bg=OBJ_IDLE, height=2)
+        accent.pack(side="top", fill="x")
+        label = ctk.CTkButton(tab, text="", height=28, corner_radius=0, border_width=0,
+                              font=F_SMALL, anchor="w", fg_color=OBJ_IDLE, hover_color=BORDER,
+                              text_color=MUTED, command=lambda: self.select(s))
+        label.pack(side="left")
+        close = ctk.CTkButton(tab, text="×", width=24, height=28, corner_radius=0,
+                              border_width=0, font=F_BOLD, fg_color=OBJ_IDLE,
+                              hover_color=BORDER, text_color=MUTED,
+                              command=lambda: self.close(s))
+        close.pack(side="left")
+        s.update(tab=tab, accent=accent, label=label, close=close)
+        self.sessions.append(s)
+        self._relabel(s)
+        self.select(s)
+
+    def _relabel(self, s):
+        s["label"].configure(text=f"  {s['n']}   {s['app'].tab_title()}")
+
+    def select(self, s):
+        if self.active is s:
+            return
+        if self.active is not None:
+            _hide(self.active["app"].frame)
+        self.active = s
+        s["app"].frame.grid(row=0, column=0, sticky="nsew")
+        for t in self.sessions:
+            on = t is s
+            bg = WHITE if on else OBJ_IDLE
+            t["tab"].configure(bg=bg)
+            t["accent"].configure(bg=BLUE if on else bg)
+            for w in (t["label"], t["close"]):
+                w.configure(fg_color=bg, hover_color=PANEL if on else BORDER,
+                            text_color=TEXT if on else MUTED)
+            t["label"].configure(font=F_BOLD if on else F_SMALL)
+        # The window may have been resized while this session was hidden.
+        self.root.update_idletasks()
+        s["app"]._render_panes()
+
+    def close(self, s):
+        app = s["app"]
+        if app.busy or app.result is not None:
+            what = "is still running" if app.busy else "will be discarded"
+            if not messagebox.askyesno("Close Tab", f"Close tab {s['n']}? Its run {what}."):
+                return
+        i = self.sessions.index(s)
+        self.sessions.remove(s)
+        s["tab"].destroy()
+        if self.active is s:
+            self.active = None
+        app.close()
+        if not self.sessions:
+            self.new_tab()  # closing the last tab starts a fresh session
+        elif self.active is None:
+            self.select(self.sessions[min(i, len(self.sessions) - 1)])
+        self.sessions[0]["tab"].pack_configure(padx=(8, 1))
+
+    def close_active(self):
+        if self.active is not None:
+            self.close(self.active)
+
+    def _cycle(self, step):
+        if len(self.sessions) > 1:
+            i = self.sessions.index(self.active)
+            self.select(self.sessions[(i + step) % len(self.sessions)])
+
+
 if __name__ == "__main__":
     root = ctk.CTk()
-    ESRGApp(root)
+    RunTabs(root)
     root.mainloop()
