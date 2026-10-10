@@ -2,11 +2,12 @@
 explain.py — Traceable computation of every evaluation metric for one slice.
 
 Purpose : Back the GUI's Evaluation step: for the slice just segmented, show each
-          metric's value together with where every variable comes from, the
-          equation, the substituted numbers, and the result.
+          metric's value together with the equation, the substituted numbers, and
+          the result.
 Function : explain(result, leak_ratio) returns one entry per metric in METRICS,
-          each a dict with the value, a one-line verdict, the sources of its
-          variables, the equation, and the worked steps. Values are recomputed
+          each a dict with the value, a one-line verdict, the equation, and the
+          worked steps. The pixel counts the metrics share (|M|, |G|, TP, FP, FN,
+          TN) come from counts() / count_lines(), shown once and referenced. Values are recomputed
           here from the masks the run produced, using the same definitions as
           esrg.metrics (Chapter 3, Equations 3.32–3.39), so the panel and the
           batch evaluation agree to the last digit.
@@ -48,19 +49,17 @@ def _counts(pred, gt):
             "M": int(pred.sum()), "G": int(gt.sum()), "px": int(pred.size)}
 
 
-def _sources(result, c):
-    gt_path = result.meta.get("ground_truth") or "—"
-    h, w = result.mask.shape
-    return [
-        ("M", f"|M| = {_n(c['M'])} px", "predicted tumor mask, Stage 7 · Final (Eq. 3.31)"),
-        ("G", f"|G| = {_n(c['G'])} px", f"ground-truth mask: {gt_path.replace(chr(92), '/').split('/')[-1]}"),
-        ("Ω", f"{w} × {h} = {_n(c['px'])} px", "image grid: every pixel is compared once"),
-    ]
+def counts(result):
+    """The pixel counts the metrics share, or None without a ground truth."""
+    if result.gt is None or result.mask is None:
+        return None
+    return _counts(result.mask.astype(bool), result.gt.astype(bool))
 
 
-def _count_steps(c):
+def count_lines(c):
+    """M compared with G pixel by pixel; shown once, above every metric."""
     return [
-        "Compare M and G pixel by pixel:",
+        f"|M| = {_n(c['M'])} px,  |G| = {_n(c['G'])} px",
         f"TP = |M ∩ G| = {_n(c['tp'])}   (M = 1, G = 1)",
         f"FP = |M \\ G| = {_n(c['fp'])}   (M = 1, G = 0)",
         f"FN = |G \\ M| = {_n(c['fn'])}   (M = 0, G = 1)",
@@ -81,8 +80,8 @@ def _dsc(c):
                f"success (DSC ≥ {SUCCESS_DSC:.2f})" if v >= SUCCESS_DSC else
                f"below the {SUCCESS_DSC:.2f} success threshold")
     return v, verdict, ["DSC = 2TP / (2TP + FP + FN)   (Eq. 3.32)",
-                        "    = 2|M ∩ G| / (|M| + |G|)"], _count_steps(c) + [
-        "Substitute:",
+                        "    = 2|M ∩ G| / (|M| + |G|)"], [
+        "Substitute the pixel counts:",
         f"DSC = 2({_n(c['tp'])}) / (2({_n(c['tp'])}) + {_n(c['fp'])} + {_n(c['fn'])})",
         f"    = {_n(num)} / {_n(den)}" if den else "    = 0 / 0",
         f"    = {_f(v)}",
@@ -96,8 +95,8 @@ def _iou(c):
     d = _ratio(2 * c["tp"], 2 * c["tp"] + c["fp"] + c["fn"])
     return v, "overlap divided by union of M and G", [
         "IoU = TP / (TP + FP + FN)   (Eq. 3.33)",
-        "    = |M ∩ G| / |M ∪ G|"], _count_steps(c) + [
-        "Substitute:",
+        "    = |M ∩ G| / |M ∪ G|"], [
+        "Substitute the pixel counts:",
         f"IoU = {_n(c['tp'])} / ({_n(c['tp'])} + {_n(c['fp'])} + {_n(c['fn'])})",
         f"    = {_n(c['tp'])} / {_n(den)}",
         f"    = {_f(v)}",
@@ -111,8 +110,8 @@ def _recall(c):
     return v, f"{_f(100 * (1 - v), 1)}% of the tumor was missed", [
         "Recall = TP / (TP + FN)   (Eq. 3.35)",
         "       = |M ∩ G| / |G|",
-        "Missed share = FN / |G| = 1 − Recall"], _count_steps(c) + [
-        "Substitute:",
+        "Missed share = FN / |G| = 1 − Recall"], [
+        "Substitute the pixel counts:",
         f"Recall = {_n(c['tp'])} / ({_n(c['tp'])} + {_n(c['fn'])})",
         f"       = {_n(c['tp'])} / {_n(c['tp'] + c['fn'])}",
         f"       = {_f(v)}",
@@ -128,8 +127,8 @@ def _precision(c):
     return v, verdict, [
         "Precision = TP / (TP + FP)   (Eq. 3.34)",
         "          = |M ∩ G| / |M|",
-        "Spill share = FP / |M| = 1 − Precision"], _count_steps(c) + [
-        "Substitute:",
+        "Spill share = FP / |M| = 1 − Precision"], [
+        "Substitute the pixel counts:",
         f"Precision = {_n(c['tp'])} / ({_n(c['tp'])} + {_n(c['fp'])})",
         f"          = {_n(c['tp'])} / {_n(den)}" if den else "          = 0 / 0",
         f"          = {_f(v)}",
@@ -147,10 +146,7 @@ def _leakage(c, lam):
         f"Leaked  ⇔  ρ > λ,  λ = {lam:g}   (Eq. 3.39)",
         "Leakage Rate = share of slices",
         "with Leaked = 1 (batch level)"], [
-        f"|M| = {_n(c['M'])} px  (pixels of Stage 7 mask)",
-        f"|G| = {_n(c['G'])} px  (pixels of ground truth)",
-        f"λ   = {lam:g}  (Table 3.4, leak_ratio)",
-        "Substitute:",
+        "Substitute the pixel counts:",
         f"ρ = {_n(c['M'])} / {_n(c['G'])} = {_f(r, 3)}",
         f"{_f(r, 3)} {'>' if leaked else '≤'} {lam:g}  →  Leaked = {int(leaked)}",
         f"FP pixels outside the tumor: {_n(c['fp'])}",
@@ -300,7 +296,7 @@ def explain(result, leak_ratio=2.0):
         entry = {"key": key, "label": label, "objective": objective}
         if key in NEEDS_GT and gt is None:
             entry.update(value=None, verdict="requires a ground-truth mask",
-                         sources=[], formula=[], steps=[
+                         formula=[], steps=[
                              "No ground-truth mask was found next to",
                              "this image (../masks/<name>.png), so",
                              "this metric cannot be computed."])
@@ -322,8 +318,7 @@ def explain(result, leak_ratio=2.0):
             v, verdict, formula, steps = _assd(pred, gt, c)
         else:
             v, verdict, formula, steps = _seed(result, gt)
-        entry.update(value=v, verdict=verdict, formula=_fit(formula), steps=_fit(steps),
-                     sources=_sources(result, c) if key in NEEDS_GT and key != "seed" else [])
+        entry.update(value=v, verdict=verdict, formula=_fit(formula), steps=_fit(steps))
         out[key] = entry
     return out
 

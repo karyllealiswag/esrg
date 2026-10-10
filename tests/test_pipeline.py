@@ -9,7 +9,9 @@ Function : Small synthetic cases with known answers — perfect/disjoint DSC, ou
           evaluation pipeline (Cochran sample size, equal allocation, the
           statistics, worst-case distances), the GUI's metric explanations, and
           the stage telemetry (growth recording changes nothing and every logged
-          decision obeys Eq. 3.8–3.11; every stage has a report).
+          decision obeys Eq. 3.8–3.11; every stage has a report), and the SRG
+          baseline with ESRG modules applied (off = the published rule; with
+          termination every region-1 decision obeys T_L and T_G).
 Notes   : Run with pytest, or directly: python tests/test_pipeline.py
 """
 import os, sys, numpy as np
@@ -189,46 +191,110 @@ def test_growth_recording_changes_nothing_and_obeys_eq_3_8_to_3_11():
     assert absorbed == r1.sum() - core.sum()
 
 
-def test_stage_report_covers_every_stage():
-    """The Details view has a report, with INPUT and OUTPUT, for every stage of a real run."""
+def _test_images():
     import glob
+    return sorted(glob.glob(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                         "segmentation_task", "test", "images", "*.jpg")))
+
+
+def test_stage_report_covers_every_stage():
+    """The telemetry has a report, titled first and with an OUTPUT, for every stage of a real run."""
     from esrg import run
     from esrg.stage_report import report
-    files = sorted(glob.glob(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                          "segmentation_task", "test", "images", "*.jpg")))
+    files = _test_images()
     if not files:
         return                                   # dataset not present: nothing to run on
-    for cfg in (Config(), Config(method="srg")):
+    for cfg in (Config(), Config(method="srg"),
+                Config(method="srg", srg_use_log_local=True, srg_use_stopping=True)):
         res = run(files[0], cfg, record=True)
         for st in res.stages:
             kinds = [k for k, _ in report(res, cfg, st.key)]
-            assert kinds[0] == "flow" and "output" in kinds, (cfg.method, st.key)
+            assert kinds[0] == "head" and "output" in kinds, (cfg.method, st.key)
+            assert "flow" not in kinds and "settings" not in kinds
         assert any(k == "output" for k, _ in report(res, cfg, "evaluation", ["dsc"]))
 
 
 def test_stage_report_reflects_the_runs_own_settings():
-    """Toggled ablations and adjusted hyperparameters are shown as run, flagged, and still check out."""
-    import glob
+    """Adjusted hyperparameters and switched-off modules are what the report shows, and still check out."""
     from esrg import run
     from esrg.stage_report import report
-    files = sorted(glob.glob(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                          "segmentation_task", "test", "images", "*.jpg")))
+    files = _test_images()
     if not files:
         return
     cfg = Config().replace(k_local=2.5, otsu_classes=4, rank_use_contrast=False, use_log_local=False)
     res = run(files[1], cfg, record=True)
-    flagged, q_rows = set(), []
+    text, q_rows = [], []
     for st in res.stages:
         for kind, p in report(res, Config(), st.key):     # a default cfg must not override the run's
-            if kind == "settings":
-                flagged |= {(label, value) for label, value, changed, _ in p if changed}
+            if kind == "eq":
+                text += p
             if kind == "table" and "Q from eq." in p["cols"]:
                 q_rows += p["rows"]
-    assert {("k_L", "2.5"), ("K, Otsu classes", "4"), ("rank by contrast", "OFF"),
-            ("local log measure (Obj 2)", "OFF")} <= flagged, flagged
+    assert any("k_L = 2.5" in line for line in text), text
+    assert any("ablation: global reference" in line for line in text)
+    assert any("contrast term off" in line for line in text)
     assert q_rows and all(r[6] == r[7] for r in q_rows)
     for d in res.stage("growth").info["_trace"]["pass_detail"]:
         assert d["k_L"] == 2.5 and abs(d["T_L"] - 2.5 * d["sigma"]) < 1e-12
+
+
+def _srg_case():
+    img = np.full((50, 50), 60.0); img[15:35, 15:35] = 180.0
+    img += np.random.RandomState(1).normal(0, 3, img.shape)
+    img = normalize(img)
+    mask = np.ones(img.shape, bool)
+    core = np.zeros(img.shape, bool); core[23:27, 23:27] = True
+    return img, mask, core
+
+
+def test_srg_modules_off_is_the_published_algorithm():
+    """With no module applied, region 1 follows the 1994 rule: unconditional, region-mean delta."""
+    from esrg.growing import grow_srg, grow_srg_auto
+    img, mask, core = _srg_case()
+    region, trace = grow_srg_auto(img, mask, core, Config(), record=True)
+    assert trace["stop_reason"].startswith("tessellation complete (no stopping")
+    assert all(e[8] == "absorb" for e in trace["events"])
+    assert len(trace["events"]) == region.sum() - core.sum()
+    labels = core.astype(np.int32); labels[2, 2] = 2
+    lab, t2 = grow_srg(img, labels, record=True)
+    assert (lab > 0).all() and all(e[8] == "absorb" for e in t2["events"])
+
+
+def test_srg_with_termination_obeys_its_bounds():
+    """SRG + adaptive termination: every region-1 decision follows T_L and T_G, declined
+    pixels go to the background, and the tumor never crosses the square's edge. (The
+    background grid also seeds inside the square, so region 1 shares it, as in SRG.)"""
+    from esrg.growing import grow_srg_auto
+    img, mask, core = _srg_case()
+    L = log_transform(img)
+    stop = dict(k_L=1.5, k_G=3.0, sigma_floor=0.02)
+    region, trace = grow_srg_auto(L, mask, core, Config(), record=True, local_radius=3, stop=stop)
+    for r, c, g, ref, d, dev, t_l, t_g, verdict in trace["events"]:
+        assert abs(d - abs(g - ref)) < 1e-12
+        if verdict == "absorb":
+            assert d <= t_l and dev <= t_g
+        elif verdict == "decline >T_L":
+            assert d > t_l
+        else:
+            assert verdict == "decline >T_G" and dev > t_g
+    assert trace["declined"] == sum(1 for e in trace["events"] if e[8] != "absorb")
+    truth = np.zeros(img.shape, bool); truth[15:35, 15:35] = True
+    assert region.sum() > core.sum() and not (region & ~truth).any()
+    assert trace["declined"] > 0
+
+
+def test_srg_lists_only_the_stages_it_uses():
+    """Plain SRG has no log stage; SRG manual also has no head-mask or candidate stage."""
+    from esrg import run
+    files = _test_images()
+    if not files:
+        return
+    keys = lambda cfg, pts=None: [s.key for s in run(files[0], cfg, manual_points=pts).stages]
+    assert "log" not in keys(Config(method="srg"))
+    pts = [(200, 200, 1), (40, 40, 2)]
+    k = keys(Config(method="srg", seed_mode="manual"), pts)
+    assert not {"mask", "candidates", "log"} & set(k), k
+    assert "log" in keys(Config(method="srg", seed_mode="manual", srg_use_stopping=True), pts)
 
 
 if __name__ == "__main__":

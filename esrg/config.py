@@ -96,6 +96,14 @@ class Config:
     # ── Baseline SRG ──────────────────────────────────────────────────
     bg_seed_step: int = 8           # grid step for automatic background seeds
                                     # (SRG + automatic seeding only)
+    # ESRG modules grafted onto the baseline, one at a time, to measure what each
+    # adds to SRG on its own (GUI "Applied Methods"). Off = the 1994 algorithm, so
+    # every batch configuration dict(method="srg") is unchanged. They act on the
+    # tumor region (region 1) only; background regions keep the original rule.
+    srg_use_log_local: bool = False # Objective 2: grow on L = ln(I + eps) with the
+                                    # local measure delta = |L - mu_loc| (radius local_radius)
+    srg_use_stopping: bool = False  # Objective 3: region 1 absorbs only within
+                                    # T_L = k_local*sigma_A and T_G = k_global*sigma_A
 
     # ── Post-processing ───────────────────────────────────────────────
     post_open_radius: int = 1

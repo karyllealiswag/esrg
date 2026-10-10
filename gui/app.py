@@ -4,12 +4,13 @@ app.py — Desktop GUI for the ESRG pipeline.
 Purpose : Load an MRI slice, run the pipeline, inspect any stage, and read
           evaluation scores in a flat, light, clinical-workstation interface.
 Function : CustomTkinter app in a header / 3-column / footer grid. Left: input,
-          method, seeding, ablation and hyperparameter controls. Centre: stage
-          tabs over two equal panes (Original | Segmented Output) with zoom / pan
-          controls. Right: collapsible stage telemetry: a seed table and a Details
-          view that explains the selected stage end to end (inputs, equation,
-          computation, outputs; esrg/stage_report.py). Footer: one
-          line of evaluation metrics. The pipeline runs off the UI thread.
+          algorithm, seeding, applied methods and (on request) hyperparameter
+          controls. Centre: stage tabs over two equal panes (Original | Segmented
+          Output) with zoom / pan controls. Right: stage telemetry, collapsed until
+          opened, that explains the selected stage end to end (inputs, equation,
+          computation, outputs; esrg/stage_report.py), with explanations as hover
+          tooltips on the terms. Footer: one line of evaluation metrics. The
+          pipeline runs off the UI thread.
           A browser-style tab strip above it all (RunTabs) holds several independent
           sessions in one window, each a fresh copy of the system, so earlier runs stay
           one click away for visual comparison.
@@ -20,8 +21,7 @@ import os
 import sys
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
-from tkinter import font as tkfont
+from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 import numpy as np
@@ -31,9 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from esrg import Config, run
 from esrg import explain as evalx
-from esrg import pixel_report
 from esrg import stage_report
-from esrg import preprocessing as pre
 from esrg import visualize as viz
 from esrg.io_utils import find_mask_for, load_image
 
@@ -64,8 +62,7 @@ FAIL_CLR    = "#C5221F"
 # region 2+ are the other competing regions. SRG itself does not distinguish them.
 SEED_RGB = viz.SEED_COLORS
 
-DIAG_PANEL_W = 380    # telemetry panel width in Seeds mode (px)
-DETAIL_PANEL_W = 520  # wider in Details mode, where stage tables are shown
+TEL_PANEL_W  = 520  # telemetry panel width (px), wide enough for the stage tables
 RAIL_W       = 34   # width of the strip left behind when telemetry is collapsed
 LEFT_W       = 232  # default width of the control panel; drag its right edge to resize
 LEFT_MIN     = 218  # narrowest that still fits the longest checkbox label
@@ -76,7 +73,21 @@ ZOOM_MIN = 0.25
 ZOOM_MAX = 8.0
 
 # Header OBJ buttons jump to the stage that shows each thesis objective's output.
-OBJ_STAGE = {1: "seed", 2: "log", 3: "growth"}
+# Objectives 2 and 3 both act in region growing; each scrolls the telemetry to its
+# own part of that stage (stage_report "anchor" blocks).
+OBJ_STAGE = {1: "seed", 2: "growth", 3: "growth"}
+OBJ_ANCHOR = {2: "obj2", 3: "obj3"}
+
+# Adjust Parameters: (attribute, Config field, label, lo, hi, step, format). With the
+# toggle off every one of them runs at its Table 3.4 default.
+PARAMS = (
+    ("k_local", "k_local", "k_L — Local Stopping Factor", 0.5, 4.0, 0.1, "{:.1f}"),
+    ("k_global", "k_global", "k_G — Global Drift Guard", 1.0, 6.0, 0.1, "{:.1f}"),
+    ("max_passes", "max_passes", "P_max — Maximum Growing Passes", 1, 10, 1, "{:.0f}"),
+    ("radius", "local_radius", "r — Neighborhood Radius", 1, 8, 1, "{:.0f}"),
+    ("classes", "otsu_classes", "K — Otsu Threshold Classes", 2, 5, 1, "{:.0f}"),
+    ("core_frac", "seed_core_frac", "α — Seed Core Fraction", 0.3, 1.0, 0.05, "{:.2f}"),
+)
 
 # Footer metrics: (label, key in Result.scores, format)
 FOOTER_METRICS = (
@@ -118,6 +129,39 @@ def _hide(w):
     w._last_geometry_manager_call = None
 
 
+class _Tooltip:
+    """Flat borderless popup that follows the pointer; used for the telemetry's explained terms."""
+
+    def __init__(self, owner):
+        self.win = tk.Toplevel(owner)
+        self.win.withdraw()
+        self.win.overrideredirect(True)
+        self.win.configure(bg=BORDER_DARK)
+        self.label = tk.Label(self.win, bg=WHITE, fg=TEXT, font=TK_UI, justify="left",
+                              wraplength=360, padx=8, pady=6)
+        self.label.pack(padx=1, pady=1)
+        self.text = None
+
+    def show(self, text, x, y):
+        if text != self.text:
+            self.text = text
+            self.label.configure(text=text)
+        # Keep the popup on screen: flip to the left of / above the pointer near an edge.
+        self.win.update_idletasks()
+        w, h = self.win.winfo_reqwidth(), self.win.winfo_reqheight()
+        sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
+        px = x + 16 if x + 16 + w < sw else x - w - 8
+        py = y + 18 if y + 18 + h < sh else y - h - 8
+        self.win.geometry(f"+{max(0, px)}+{max(0, py)}")
+        self.win.deiconify()
+        self.win.lift()
+
+    def hide(self):
+        if self.text is not None:
+            self.text = None
+            self.win.withdraw()
+
+
 def _gray_rgb(a):
     g = np.clip(a, 0, 255).astype(np.uint8)
     return np.stack([g] * 3, axis=-1)
@@ -139,9 +183,7 @@ class ESRGApp:
         self.result = None
         self.current = "final"
         self.manual_points = []
-        self._run_points = set()  # (row, col, type) clicks the last run actually used
         self.raw_image = None  # grayscale float64 preview shown before the pipeline runs
-        self.norm_image = None  # pre.normalize(raw_image): what the pipeline grows on
         self.zoom = 1.0
         self.pan_x = 0.0
         self.pan_y = 0.0
@@ -151,27 +193,35 @@ class ESRGApp:
         self._photos = {}
         self._pane_cache = (None, None)
         self._render_pending = False
-        self.tel_visible = True
+        self.tel_visible = False  # stage telemetry stays collapsed until opened
         self._left_w = LEFT_W
         self.pan_tool = tk.BooleanVar(value=False)
-        # Evaluation step: which metrics the Details view computes and explains.
+        # Evaluation step: which metrics the telemetry computes and explains.
         self.eval_vars = {k: tk.BooleanVar(value=True) for k, _, _ in evalx.METRICS}
         self.run_cfg = None  # configuration of the last run (supplies λ for leakage)
+        self._obj_clicked = None  # OBJ button that opened the current stage, if any
+        self._tips = {}  # telemetry tag -> tooltip text, rebuilt on every redraw
 
         self.opacity = tk.DoubleVar(value=0.55)
         self.error_mode = tk.BooleanVar(value=False)
-        self.compare_overlay = tk.BooleanVar(value=False)
         self.method = tk.StringVar(value="esrg")
         self.seed_mode = tk.StringVar(value="auto")
         self.seed_type = tk.IntVar(value=1)
-        self.use_local = tk.BooleanVar(value=True)
-        self.use_stop = tk.BooleanVar(value=True)
-        self.use_log = tk.BooleanVar(value=self.cfg.use_log)
+        # Applied methods. The log domain and the local measure are one module: the
+        # local measure compares log-domain values. ESRG has them all on by default;
+        # the SRG baseline keeps its own set, off by default (the 1994 algorithm).
+        self.esrg_log_local = tk.BooleanVar(value=self.cfg.use_log and self.cfg.use_log_local)
+        self.esrg_stop = tk.BooleanVar(value=self.cfg.use_stopping)
         self.purify_manual_seed = tk.BooleanVar(value=self.cfg.purify_manual_seed)
+        self.srg_log_local = tk.BooleanVar(value=self.cfg.srg_use_log_local)
+        self.srg_stop = tk.BooleanVar(value=self.cfg.srg_use_stopping)
+        self.adjust_params = tk.BooleanVar(value=False)
         self.k_local = tk.DoubleVar(value=self.cfg.k_local)
+        self.k_global = tk.DoubleVar(value=self.cfg.k_global)
+        self.max_passes = tk.IntVar(value=self.cfg.max_passes)
         self.radius = tk.IntVar(value=self.cfg.local_radius)
         self.classes = tk.IntVar(value=self.cfg.otsu_classes)
-        self.tel_mode = tk.StringVar(value="Seeds")
+        self.core_frac = tk.DoubleVar(value=self.cfg.seed_core_frac)
 
         self._build()
 
@@ -271,19 +321,23 @@ class ESRGApp:
         self._build_center(center)
         _rule(body, True).grid(row=0, column=3, sticky="ns")
 
-        self.tel_panel = ctk.CTkFrame(body, fg_color=WHITE, corner_radius=0, width=DIAG_PANEL_W)
-        self.tel_panel.grid(row=0, column=4, sticky="ns")
+        # Collapsed by default: only the rail shows until its button opens the panel.
+        self.tel_panel = ctk.CTkFrame(body, fg_color=WHITE, corner_radius=0, width=TEL_PANEL_W)
         self.tel_panel.grid_propagate(False)
         self._build_telemetry(self.tel_panel)
 
         self.rail = ctk.CTkFrame(body, fg_color=PANEL, corner_radius=0, width=RAIL_W)
+        self.rail.grid(row=0, column=4, sticky="ns")
         self.rail.grid_propagate(False)
         self._btn(self.rail, "|<", self._toggle_telemetry, width=RAIL_W - 8, height=28,
                   font=F_CAP).place(x=4, y=8)
+        rail_lbl = tk.Label(self.rail, text="\n".join("TELEMETRY"), bg=PANEL, fg=MUTED,
+                            font=TK_BOLD, cursor="hand2")
+        rail_lbl.place(relx=0.5, y=self._px(48), anchor="n")
+        rail_lbl.bind("<Button-1>", lambda e: self._toggle_telemetry())
 
         _rule(r).grid(row=3, column=0, sticky="ew")
         self._build_footer(r)
-        self._sync_overlay_toggle()
         self._sync_obj_buttons()
         self._update_metrics()
 
@@ -363,11 +417,15 @@ class ESRGApp:
 
     def _on_obj(self, n):
         if self._obj_enabled(n):
-            self._select(OBJ_STAGE[n])
+            self._select(OBJ_STAGE[n], obj=n)
 
     def _sync_obj_buttons(self):
-        self._obj_active = next(
-            (n for n, k in OBJ_STAGE.items() if self._obj_enabled(n) and self.current == k), None)
+        clicked = self._obj_clicked
+        if clicked and self._obj_enabled(clicked) and self.current == OBJ_STAGE[clicked]:
+            self._obj_active = clicked
+        else:
+            self._obj_active = next(
+                (n for n, k in OBJ_STAGE.items() if self._obj_enabled(n) and self.current == k), None)
         for n, b in self.obj_buttons.items():
             if not self._obj_enabled(n):
                 b.configure(state="disabled", fg_color=OBJ_IDLE, text_color=FAINT)
@@ -392,8 +450,7 @@ class ESRGApp:
         action = ctk.CTkFrame(p, fg_color=PANEL, corner_radius=0)
         action.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 12))
         _rule(action).pack(fill="x", pady=(0, 10))
-        self.run_btn = self._btn(action, "RUN PIPELINE", self._run, primary=True, height=42,
-                                 font=F_RUN)
+        self.run_btn = self._btn(action, "RUN", self._run, primary=True, height=42, font=F_RUN)
         self.run_btn.pack(fill="x")
         self.status_lbl = ctk.CTkLabel(action, text="Ready", font=F_SMALL, text_color=MUTED,
                                        anchor="w", justify="left", wraplength=LEFT_W - 50)
@@ -410,22 +467,19 @@ class ESRGApp:
                                      text_color=FAINT, anchor="w", justify="left", wraplength=LEFT_W - 50)
         self.file_lbl.pack(fill="x")
 
-        self._section_header(sc, "Pipeline Method")
-        for val, lab in (("esrg", "ESRG (Enhanced Model)"), ("srg", "SRG Baseline (1994)")):
-            self._radio(sc, lab, self.method, val,
-                        lambda: (self._update_seed_region_visibility(),
-                                 self._controls_changed())).pack(anchor="w", pady=2)
+        self._section_header(sc, "Algorithm")
+        self._segmented(sc, self.method, (("esrg", "ESRG"), ("srg", "SRG (1994)")),
+                        self._on_method_change)
 
-        self._section_header(sc, "Seeding Strategy")
-        for val, lab in (("auto", "Automated Seeding"), ("manual", "Manual Seeding")):
-            self._radio(sc, lab, self.seed_mode, val,
-                        self._on_seed_mode_change).pack(anchor="w", pady=2)
+        self._section_header(sc, "Seeding Method")
+        self._segmented(sc, self.seed_mode, (("auto", "Automatic"), ("manual", "Manual")),
+                        self._on_seed_mode_change)
 
         # Seed region palette + Clear button: clicks are planted as the selected region.
         # Only meaningful for Manual seeding (and the SRG baseline, which tessellates the
         # head between all planted regions — region 2+ is what stops the tumor region from
         # swallowing the whole slice), so it lives in a slot that collapses to nothing in
-        # Automated mode (see _update_seed_region_visibility).
+        # Automatic mode (see _update_seed_region_visibility).
         self.region_slot = ctk.CTkFrame(sc, fg_color="transparent", height=1)
         self.region_slot.pack(fill="x")
         self.region_box = ctk.CTkFrame(self.region_slot, fg_color="transparent")
@@ -442,28 +496,68 @@ class ESRGApp:
                   font=F_SMALL).pack(fill="x", pady=(6, 2))
         self._update_seed_region_visibility()
 
-        self._section_header(sc, "Ablation Controls")
-        for var, lab in ((self.use_log, "Log-Domain Transform (Obj 2)"),
-                         (self.use_local, "Local Log Measure (Obj 2)"),
-                         (self.use_stop, "Adaptive Termination (Obj 3)"),
-                         (self.purify_manual_seed, "Purify Manual Seed (ESRG only)")):
-            self._check(sc, lab, var, self._controls_changed).pack(anchor="w", pady=3)
+        # Applied methods: one checkbox set per algorithm, shown for the selected one
+        # (_sync_controls). Seeding (Objective 1) is the Seeding Method choice above.
+        self._section_header(sc, "Applied Methods")
+        self.methods_box = ctk.CTkFrame(sc, fg_color="transparent")
+        self.methods_box.pack(fill="x")
 
+        def check(var, label):
+            return self._check(self.methods_box, label, var, self._on_methods_change)
+
+        # (checkbox, seeding mode it applies to or None for both)
+        self.method_checks = {
+            "esrg": [(check(self.esrg_log_local, "Log-Domain Local Measure (Obj 2)"), None),
+                     (check(self.esrg_stop, "Adaptive Termination (Obj 3)"), None),
+                     (check(self.purify_manual_seed, "Purify Manual Seed"), "manual")],
+            "srg": [(check(self.srg_log_local, "Log-Domain Local Measure (Obj 2)"), None),
+                    (check(self.srg_stop, "Adaptive Termination (Obj 3)"), None)],
+        }
+
+        # Hyperparameters stay at their tuned defaults unless Adjust Parameters is on;
+        # then only the ones the selected algorithm and methods read are shown.
         self._section_header(sc, "Hyperparameters")
-        self._slider(sc, "k_L — Local Stopping Factor", self.k_local, 0.5, 4.0, 0.1, "{:.1f}",
-                     self._controls_changed)
-        self._slider(sc, "r — Neighborhood Radius", self.radius, 1, 8, 1, "{:.0f}", self._controls_changed)
-        self._slider(sc, "K — Otsu Threshold Classes", self.classes, 2, 5, 1, "{:.0f}",
-                     self._controls_changed)
+        self._check(sc, "Adjust Parameters", self.adjust_params,
+                    self._on_methods_change).pack(anchor="w", pady=(0, 4))
+        self.param_box = ctk.CTkFrame(sc, fg_color="transparent", height=1)
+        self.param_box.pack(fill="x")
+        self.param_rows = {attr: self._slider(self.param_box, label, getattr(self, attr), lo, hi,
+                                              step, fmt, self._controls_changed)
+                           for attr, _, label, lo, hi, step, fmt in PARAMS}
+        self.param_none = ctk.CTkLabel(self.param_box, text="No hyperparameter applies to this "
+                                       "combination.", font=F_SMALL, text_color=FAINT, anchor="w",
+                                       justify="left", wraplength=LEFT_W - 50)
 
         self._section_header(sc, "Display")
         self._slider(sc, "Overlay Opacity", self.opacity, 0.0, 1.0, 0.05, "{:.2f}",
                      self._schedule_render)
         self._check(sc, "Show Error Heatmap (TP/FP/FN)", self.error_mode,
                     self._schedule_render).pack(anchor="w", pady=(4, 8))
+        self._sync_controls()
+
+    def _segmented(self, parent, var, options, command):
+        """Side-by-side square toggle buttons bound to `var`; the selected one is solid blue."""
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=(0, 2))
+        buttons = {}
+
+        def pick(value):
+            changed = var.get() != value
+            var.set(value)
+            for v, btn in buttons.items():
+                self._style_toggle(btn, v == value)
+            if changed:
+                command()
+
+        for i, (value, text) in enumerate(options):
+            row.grid_columnconfigure(i, weight=1, uniform="seg")
+            btn = self._btn(row, text, lambda v=value: pick(v), height=30, font=F_SMALL)
+            btn.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 4, 0))
+            buttons[value] = btn
+        pick(var.get())
 
     def _slider(self, p, label, var, lo, hi, step, fmt, cmd=None):
-        """Flat track, solid square thumb, live numeric readout."""
+        """Flat track, solid square thumb, live numeric readout. Returns its (packed) frame."""
         box = ctk.CTkFrame(p, fg_color="transparent")
         box.pack(fill="x", pady=(2, 6))
         head = ctk.CTkFrame(box, fg_color="transparent")
@@ -484,6 +578,58 @@ class ESRGApp:
                       button_corner_radius=2, button_length=4, border_width=6,
                       fg_color=BORDER_DARK, progress_color=BLUE, button_color=BLUE,
                       button_hover_color=BLUE_HOV).pack(fill="x", pady=(4, 0))
+        return box
+
+    def _applied(self):
+        """(log-domain local measure, adaptive termination) of the selected algorithm."""
+        if self.method.get() == "esrg":
+            return self.esrg_log_local.get(), self.esrg_stop.get()
+        return self.srg_log_local.get(), self.srg_stop.get()
+
+    def _used_params(self):
+        """Hyperparameters the selected algorithm, seeding and applied methods read."""
+        esrg, auto = self.method.get() == "esrg", self.seed_mode.get() == "auto"
+        local, stop = self._applied()
+        used = set()
+        if stop:
+            used |= {"k_local", "k_global"} | ({"max_passes"} if esrg else set())
+        if local:
+            used.add("radius")
+        if auto:
+            used.add("classes")
+        if auto or (esrg and self.purify_manual_seed.get()):
+            used.add("core_frac")
+        return used
+
+    def _sync_controls(self):
+        """Show the applied-method checkboxes of the selected algorithm and, when Adjust
+        Parameters is on, the sliders of the hyperparameters that the run will read."""
+        for checks in self.method_checks.values():
+            for cb, _ in checks:
+                cb.pack_forget()
+        for cb, only in self.method_checks[self.method.get()]:
+            if only is None or only == self.seed_mode.get():
+                cb.pack(anchor="w", pady=3)
+        for box in self.param_rows.values():
+            box.pack_forget()
+        self.param_none.pack_forget()
+        if self.adjust_params.get():
+            used = self._used_params()
+            for attr, *_ in PARAMS:
+                if attr in used:
+                    self.param_rows[attr].pack(fill="x", pady=(2, 6))
+            if not used:
+                self.param_none.pack(fill="x", pady=(0, 6))
+        # A frame whose children are all unpacked keeps its last size; shrink it.
+        self.param_box.configure(height=1)
+
+    def _on_method_change(self):
+        self._update_seed_region_visibility()
+        self._on_methods_change()
+
+    def _on_methods_change(self):
+        self._sync_controls()
+        self._controls_changed()
 
     def _controls_changed(self):
         """A control moved: refresh the telemetry once (debounced) so its 'controls
@@ -499,6 +645,7 @@ class ESRGApp:
 
     def _on_seed_mode_change(self):
         self._update_seed_region_visibility()
+        self._sync_controls()
         self._refresh_telemetry()
 
     def _update_seed_region_visibility(self):
@@ -515,7 +662,7 @@ class ESRGApp:
         p.grid_rowconfigure(1, weight=1)
 
         # Stage tabs. The strip is a horizontally scrolling Canvas rather than a plain
-        # Frame: a Frame's natural width (every stage tab + Compare + Evaluation) would
+        # Frame: a Frame's natural width (every stage tab + Evaluation) would
         # otherwise inflate the centre column's requested width and squeeze the other
         # columns. A Canvas's requested size is independent of its scrollable content.
         strip = ctk.CTkFrame(p, fg_color=WHITE, corner_radius=0)
@@ -525,10 +672,6 @@ class ESRGApp:
         # Scroll arrows keep tabs beyond the visible width discoverable.
         self._btn(strip, "‹", lambda: self._tab_canvas.xview_scroll(-3, "units"), width=26,
                   font=F_BOLD).pack(side="left", padx=(0, 4))
-        # Compare view only: superimpose the ESRG mask on the ground truth instead of side by side.
-        self.overlay_chk = self._check(strip, "Overlay", self.compare_overlay,
-                                       self._on_overlay_toggle)
-        self.overlay_chk.pack(side="right", padx=(8, 0))
         self._btn(strip, "›", lambda: self._tab_canvas.xview_scroll(3, "units"), width=26,
                   font=F_BOLD).pack(side="right", padx=(4, 0))
         self._tab_canvas = tk.Canvas(strip, bg=WHITE, height=self._px(32), highlightthickness=0)
@@ -537,7 +680,7 @@ class ESRGApp:
         self.stage_buttons = {}
         self._tab_canvas.create_window((0, 0), window=self.stage_bar, anchor="nw")
         self.stage_bar.bind("<Configure>", self._on_stage_bar_resize)
-        # Resizing the strip (window drag, telemetry collapse, wider Details panel) can push
+        # Resizing the strip (window drag, telemetry open / collapse) can push
         # the selected tab out of view; bring it back without disturbing manual scrolling.
         self._tab_canvas.bind("<Configure>", lambda e: self.root.after_idle(self._reveal_current_tab))
 
@@ -617,82 +760,22 @@ class ESRGApp:
         for c in self.canvases:
             c.configure(cursor="fleur" if self.pan_tool.get() else "")
 
-    def _sync_overlay_toggle(self):
-        """Overlay needs a ground truth to superimpose; otherwise it is greyed out and cleared."""
-        usable = self.result is not None and self.result.gt is not None
-        if not usable:
-            self.compare_overlay.set(False)
-        self.overlay_chk.configure(state="normal" if usable else "disabled")
-
-    def _on_overlay_toggle(self):
-        # Overlay only changes the Compare view, so ticking it from another tab opens Compare.
-        if self.compare_overlay.get() and self.current != "compare":
-            self._select("compare")
-        else:
-            self._render_panes()
-
-    # ── Right column: collapsible seed telemetry ─────────────────────────────
+    # ── Right column: collapsible stage telemetry ────────────────────────────
     def _build_telemetry(self, p):
         p.grid_columnconfigure(0, weight=1)
-        p.grid_rowconfigure(2, weight=1)
+        p.grid_rowconfigure(1, weight=1)
 
         head = ctk.CTkFrame(p, fg_color=WHITE, corner_radius=0)
         head.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
         ctk.CTkLabel(head, text="STAGE TELEMETRY", font=F_CAP, text_color=BLUE).pack(side="left")
         self._btn(head, ">|", self._toggle_telemetry, width=36, height=26,
                   font=F_CAP).pack(side="right")
+        ctk.CTkLabel(head, text="hover an underlined term to explain it", font=("Segoe UI", 11),
+                     text_color=FAINT).pack(side="right", padx=(0, 10))
 
-        modes = ctk.CTkFrame(p, fg_color=WHITE, corner_radius=0)
-        modes.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 8))
-        self.tel_btns = {}
-        for name in ("Seeds", "Details"):
-            b = self._btn(modes, name, lambda n=name: self._set_tel_mode(n), width=84, height=26,
-                          font=F_SMALL)
-            b.pack(side="left", padx=(0, 4))
-            self.tel_btns[name] = b
-        self._style_toggle(self.tel_btns["Seeds"], True)
-
-        body = ctk.CTkFrame(p, fg_color=WHITE, corner_radius=0)
-        body.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0, 12))
-        body.grid_rowconfigure(0, weight=1)
-        body.grid_columnconfigure(0, weight=1)
-
-        # Seeds view: flat table (+ empty-state message shown in its place).
-        self.seed_view = ctk.CTkFrame(body, fg_color=WHITE, corner_radius=0)
-        self.seed_view.grid_rowconfigure(0, weight=1)
-        self.seed_view.grid_columnconfigure(0, weight=1)
-        cols = ("row", "col", "raw", "norm", "status")
-        self.tree = ttk.Treeview(self.seed_view, columns=cols, style="Seeds.Treeview",
-                                 selectmode="browse")
-        self.tree.heading("#0", text="Seed", anchor="w")
-        self.tree.column("#0", width=self._px(112), minwidth=self._px(80), stretch=True)
-        for key, text, w, anchor in (("row", "Row", 40, "e"), ("col", "Col", 40, "e"),
-                                     ("raw", "Raw", 46, "e"), ("norm", "Norm", 56, "e"),
-                                     ("status", "Status", 88, "w")):
-            self.tree.heading(key, text=text, anchor=anchor)
-            self.tree.column(key, width=self._px(w), minwidth=self._px(w), anchor=anchor,
-                             stretch=key == "status")
-        self.tree.tag_configure("group", background=PANEL, font=TK_BOLD)
-        self.tree.tag_configure("good", foreground=OK_CLR)
-        self.tree.tag_configure("warn", foreground=WARN_CLR)
-        self.tree.tag_configure("bad", foreground=FAIL_CLR)
-        self.tree.tag_configure("muted", foreground=MUTED)
-        sb = ctk.CTkScrollbar(self.seed_view, command=self.tree.yview, corner_radius=0,
-                              fg_color=WHITE, button_color=BORDER_DARK,
-                              button_hover_color=MUTED, width=12)
-        self.tree.configure(yscrollcommand=sb.set)
-        self.tree.grid(row=0, column=0, sticky="nsew")
-        sb.grid(row=0, column=1, sticky="ns")
-        ctk.CTkLabel(self.seed_view, anchor="w", justify="left", font=("Segoe UI", 11),
-                     text_color=MUTED, wraplength=340,
-                     text="row = y, col = x (0-based) · Raw = file value · Norm = value the "
-                          "algorithm uses (0–255) · group row = mean of its pixels"
-                     ).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
-        self.seed_msg = ctk.CTkLabel(body, text="", font=F_SMALL, text_color=MUTED, anchor="nw",
-                                     justify="left", wraplength=330)
-
-        # Details view: metric picker (Evaluation only) over the worked-computation text.
-        self.detail_view = ctk.CTkFrame(body, fg_color=WHITE, corner_radius=0)
+        # Metric picker (Evaluation only) over the worked-computation text.
+        self.detail_view = ctk.CTkFrame(p, fg_color=WHITE, corner_radius=0)
+        self.detail_view.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
         self.detail_view.grid_rowconfigure(1, weight=1)
         self.detail_view.grid_columnconfigure(0, weight=1)
         self.eval_picker = ctk.CTkFrame(self.detail_view, fg_color=WHITE, corner_radius=0)
@@ -721,17 +804,11 @@ class ESRGApp:
         self.diag.configure(yscrollcommand=dsb.set)
         self.diag.grid(row=0, column=0, sticky="nsew")
         dsb.grid(row=0, column=1, sticky="ns")
-        self.diag.tag_config("head", foreground=BLUE, font=TK_MONO + ("bold",))
         self.diag.tag_config("muted", foreground=MUTED)
         self.diag.tag_config("avg", foreground=TEXT, font=TK_MONO + ("bold",))
-        self.diag.tag_config("metric", foreground=TEXT, font=(TK_MONO[0], 11, "bold"))
-        self.diag.tag_config("sub", foreground=BLUE, font=TK_MONO + ("bold",))
         self.diag.tag_config("good", foreground=OK_CLR, font=TK_MONO + ("bold",))
         self.diag.tag_config("bad", foreground=FAIL_CLR, font=TK_MONO + ("bold",))
-        self.diag.tag_config("indent", lmargin1=18, lmargin2=18)
         # Stage report blocks (esrg/stage_report.py).
-        self.diag.tag_config("flow", foreground=FAINT, font=TK_UI)
-        self.diag.tag_config("flow_cur", foreground=WHITE, background=BLUE, font=TK_BOLD)
         self.diag.tag_config("stage", foreground=TEXT, font=(TK_UI[0], 12, "bold"),
                              spacing1=6, spacing3=2)
         self.diag.tag_config("section", foreground=BLUE, font=TK_BOLD, spacing1=10, spacing3=3)
@@ -744,11 +821,27 @@ class ESRGApp:
         self.diag.tag_config("table", wrap=tk.NONE, lmargin1=4)
         self.diag.tag_config("thead", foreground=MUTED, font=TK_MONO + ("bold",), underline=True)
         self.diag.tag_config("note", foreground=MUTED, font=TK_UI, lmargin1=4, lmargin2=4)
-        self.diag.tag_config("changed", foreground=WARN_CLR, font=TK_MONO + ("bold",))
         self.diag.tag_config("stale", foreground=WHITE, background=WARN_CLR, font=TK_BOLD,
                              lmargin1=6, lmargin2=6, rmargin=6, spacing1=4, spacing3=4)
+        self.diag.tag_config("tip", underline=True)
+
+        # Tooltips: one pointer handler finds the "tip:<n>" tag under the pointer.
+        self._tooltip = _Tooltip(self.diag)
+        self.diag.bind("<Motion>", self._on_diag_motion)
+        self.diag.bind("<Leave>", lambda e: self._tooltip.hide())
+        self.diag.bind("<MouseWheel>", lambda e: self._tooltip.hide(), add="+")
 
         self._refresh_telemetry()
+
+    def _on_diag_motion(self, event):
+        tags = self.diag.tag_names(f"@{event.x},{event.y}")
+        tip = next((self._tips[t] for t in tags if t in self._tips), None)
+        if tip is None:
+            self.diag.configure(cursor="")
+            self._tooltip.hide()
+        else:
+            self.diag.configure(cursor="question_arrow")
+            self._tooltip.show(tip, event.x_root, event.y_root)
 
     def _toggle_telemetry(self):
         """Hide / show the telemetry column. The centre column holds the only grid weight,
@@ -758,121 +851,51 @@ class ESRGApp:
             _hide(self.rail)
             self.tel_panel.grid(row=0, column=4, sticky="ns")
         else:
+            self._tooltip.hide()
             _hide(self.tel_panel)
             self.rail.grid(row=0, column=4, sticky="ns")
         # Recompute geometry now so the redraw already sees the new canvas size.
         self.root.update_idletasks()
         self._render_panes()
 
-    def _set_tel_mode(self, mode):
-        self.tel_mode.set(mode)
-        for name, b in self.tel_btns.items():
-            self._style_toggle(b, name == mode)
-        self._refresh_telemetry()
+    def _refresh_telemetry(self, anchor=None):
+        """Redraw the telemetry for the current stage; `anchor` scrolls to a report anchor."""
+        self._sync_eval_picker(self.result is not None and self.current == "evaluation")
+        self._fill_details(anchor)
 
-    def _telemetry_groups(self):
-        """(groups, None) when there are seed pixels to list, else (None, message)."""
-        if self.raw_image is None:
-            return None, "Load an MRI slice to inspect its seed pixels."
-        if self.seed_mode.get() == "manual":
-            groups = pixel_report.manual_groups(self.manual_points)
-            if not groups:
-                return None, "Click on the image to select seed pixels."
-            return groups, None
-        # The last run may have been made in Manual mode; its core is not a
-        # system selection, so only an auto run is shown here.
-        if not self.result or self.result.meta.get("seed_mode") != "auto":
-            return None, "Run the pipeline in Automated mode to see the pixels the system selects."
-        groups = pixel_report.auto_groups(self.result.stage("seed").image)
-        if not groups:
-            return None, "No tumor candidate — the system selected no seed pixels."
-        return groups, None
-
-    def _seed_status(self, label, r, c):
-        """(text, tag) status of one seed pixel, derived only from what the last run did."""
-        res = self.result
-        if self.seed_mode.get() == "auto":
-            if res.gt is not None:
-                return ("In tumor", "good") if res.gt[r, c] else ("Off tumor", "bad")
-            return "Active", "good"
-        region = int(label.split()[1])
-        ran = res is not None and res.meta.get("seed_mode") == "manual"
-        if not ran or (r, c, region) not in self._run_points:
-            return "Placed", "muted"       # no run yet, or clicked after the last run
-        if res.meta.get("method") != "esrg":
-            return "Active", "good"        # SRG grows every planted region over the whole image
-        # ESRG grows only Region 1, inside the head mask.
-        if region != 1:
-            return "Ignored", "muted"
-        if not res.stage("mask").image[r, c]:
-            return "Outside head", "bad"
-        if res.stage("seed").image[r, c]:
-            return "Active", "good"
-        return "Purified out", "warn"
-
-    def _refresh_telemetry(self):
-        details = self.tel_mode.get() == "Details"
-        evaluating = details and self.result is not None and self.current == "evaluation"
-        self._sync_eval_picker(evaluating)
-        if details:
-            _hide(self.seed_view)
-            _hide(self.seed_msg)
-            self.detail_view.grid(row=0, column=0, sticky="nsew")
-            self._fill_details()
-        else:
-            _hide(self.detail_view)
-            self._fill_seed_table()
-
-    def _fill_seed_table(self):
-        self.tree.delete(*self.tree.get_children())
-        groups, msg = self._telemetry_groups()
-        if msg:
-            _hide(self.seed_view)
-            self.seed_msg.configure(text=msg)
-            self.seed_msg.grid(row=0, column=0, sticky="nsew", padx=2, pady=4)
-            return
-        _hide(self.seed_msg)
-        self.seed_view.grid(row=0, column=0, sticky="nsew")
-        for g in pixel_report.describe(groups, self.raw_image, self.norm_image):
-            parent = self.tree.insert(
-                "", "end", text=g["label"], open=True, tags=("group",),
-                values=("", "", f"{g['mean_raw']:.1f}", f"{g['mean_norm']:.2f}", f"{g['n']} px"))
-            for i, p in enumerate(g["pixels"], 1):
-                status, tag = self._seed_status(g["label"], p["row"], p["col"])
-                self.tree.insert(parent, "end", text=str(i), tags=(tag,),
-                                 values=(p["row"], p["col"], f"{p['raw']:.0f}",
-                                         f"{p['norm']:.2f}", status))
-
-    def _fill_details(self):
+    def _fill_details(self, anchor=None):
         d = self.diag
         top = d.yview()[0]
+        self._tooltip.hide()
         d.config(state=tk.NORMAL)
         d.delete("1.0", tk.END)
+        for tag in self._tips:
+            d.tag_delete(tag)
+        self._tips = {}
         if self.result is None:
-            d.insert(tk.END, "Run the pipeline to see the worked computation of each stage.\n",
+            d.insert(tk.END, "Run the system to see the worked computation of each stage.\n",
                      "muted")
         else:
             run_cfg = self.result.meta.get("_cfg") or self.run_cfg
             if run_cfg is not None and run_cfg != self._current_config():
                 d.insert(tk.END, "Controls changed since this run. The values below are for the run as "
-                                 "executed; press RUN PIPELINE to apply the new settings.\n", "stale")
+                                 "executed; press RUN to apply the new settings.\n", "stale")
             chosen = [k for k, _, _ in evalx.METRICS if self.eval_vars[k].get()]
             self._render_blocks(stage_report.report(self.result, self.run_cfg or self.cfg,
                                                     self.current, chosen))
-        d.yview_moveto(top)
+        if anchor and anchor in d.mark_names():
+            d.yview(anchor)
+        else:
+            d.yview_moveto(top)
         d.config(state=tk.DISABLED)
 
     def _render_blocks(self, blocks):
-        """Draw stage_report blocks: flow strip, INPUT / OUTPUT bands, equations, tables."""
+        """Draw stage_report blocks: INPUT / OUTPUT bands, equations, tables, and the
+        tooltips ("tips") on the terms they explain."""
         d = self.diag
+        tips = {}
         for kind, p in blocks:
-            if kind == "flow":
-                for i, (_, name, cur) in enumerate(p):
-                    if i:
-                        d.insert(tk.END, " → ", "flow")
-                    d.insert(tk.END, f" {name} " if cur else name, "flow_cur" if cur else "flow")
-                d.insert(tk.END, "\n")
-            elif kind == "head":
+            if kind == "head":
                 d.insert(tk.END, p + "\n", "stage")
             elif kind == "sub":
                 d.insert(tk.END, p + "\n", "section")
@@ -891,20 +914,37 @@ class ESRGApp:
                 for k, v in p:
                     d.insert(tk.END, f"{k}: ", "muted")
                     d.insert(tk.END, f"{v}\n")
-            elif kind == "settings":
-                d.insert(tk.END, "SETTINGS USED IN THIS RUN\n", "section")
-                for label, value, changed, note in p:
-                    d.insert(tk.END, f"{label}: ", "muted")
-                    d.insert(tk.END, value, "changed" if changed else "avg")
-                    d.insert(tk.END, f"   {note}\n" if note else "\n", "muted")
             elif kind == "table":
                 self._render_table(p)
             elif kind == "note":
                 d.insert(tk.END, p + "\n", "note")
             elif kind in ("good", "bad"):
                 d.insert(tk.END, p + "\n", kind)
+            elif kind == "anchor":
+                d.mark_set(p, "end-1c")
+                d.mark_gravity(p, "left")
+            elif kind == "tips":
+                tips.update(p)
             else:
                 d.insert(tk.END, str(p) + "\n")
+        self._apply_tips(tips)
+
+    def _apply_tips(self, tips):
+        """Underline every occurrence of each explained term and remember its text."""
+        d = self.diag
+        for i, (term, text) in enumerate(tips.items()):
+            tag = f"tip:{i}"
+            idx = "1.0"
+            while True:
+                idx = d.search(term, idx, stopindex=tk.END, exact=True)
+                if not idx:
+                    break
+                end = f"{idx}+{len(term)}c"
+                d.tag_add(tag, idx, end)
+                d.tag_add("tip", idx, end)
+                idx = end
+            if d.tag_ranges(tag):
+                self._tips[tag] = text
 
     @staticmethod
     def _is_number(v):
@@ -936,12 +976,10 @@ class ESRGApp:
         d.insert(tk.END, "\n")
 
     def _sync_eval_picker(self, evaluating):
-        """Widen the panel in Details mode; show the metric picker only for the Evaluation step."""
-        details = self.tel_mode.get() == "Details"
-        self.tel_panel.configure(width=DETAIL_PANEL_W if details else DIAG_PANEL_W)
-        if evaluating and not self.eval_picker.winfo_ismapped():
+        """Show the metric picker only for the Evaluation step."""
+        if evaluating:
             self.eval_picker.grid(row=0, column=0, sticky="ew")
-        elif not evaluating:
+        else:
             _hide(self.eval_picker)
 
     def _set_all_metrics(self, value):
@@ -977,7 +1015,7 @@ class ESRGApp:
                                             text_color=TEXT if ok else FAINT)
         if res is None:
             msg, color = (("Load an MRI slice to begin.", MUTED) if self.raw_image is None
-                          else ("Slice loaded — press RUN PIPELINE.", MUTED))
+                          else ("Slice loaded — press RUN.", MUTED))
         elif res.status == "NO TUMOR CANDIDATE":
             msg, color = "NO TUMOR CANDIDATE — seeds were filtered during interior checks.", FAIL_CLR
         elif not scores:
@@ -999,20 +1037,17 @@ class ESRGApp:
         self.image_path = path
         self.result = None
         self.manual_points = []
-        self._run_points = set()
 
         try:
             self.raw_image, _ = load_image(path, self.cfg.max_side)
-            self.norm_image = pre.normalize(self.raw_image)
         except Exception as e:
             self.raw_image = None
-            self.norm_image = None
             self._refresh_telemetry()
             messagebox.showerror("Load Failed", f"Could not read this image:\n{e}")
             return
 
         self._zoom_reset()
-        self._set_tel_mode("Seeds")
+        self._refresh_telemetry()
 
         gt = find_mask_for(path)
         self.file_lbl.configure(
@@ -1020,7 +1055,6 @@ class ESRGApp:
                  f"• {'Ground truth detected' if gt else 'No ground truth found'}",
             text_color=MUTED)
         self._init_empty_stage_tabs()
-        self._sync_overlay_toggle()
         self._sync_obj_buttons()
         self._update_metrics()
         self._render_panes()
@@ -1046,13 +1080,20 @@ class ESRGApp:
             self._render_panes()
 
     def _current_config(self):
-        return self.cfg.replace(
-            method=self.method.get(), seed_mode=self.seed_mode.get(),
-            use_log_local=self.use_local.get(), use_stopping=self.use_stop.get(),
-            use_log=self.use_log.get(), purify_manual_seed=self.purify_manual_seed.get(),
-            k_local=round(float(self.k_local.get()), 1),
-            k_global=max(round(float(self.k_local.get()), 1) + 1.0, 3.0),
-            local_radius=int(self.radius.get()), otsu_classes=int(self.classes.get()))
+        """The controls as a Config. The Obj 2 checkbox drives both the log transform and
+        the local measure; hyperparameters are the tuned defaults unless Adjust
+        Parameters is on."""
+        kw = dict(method=self.method.get(), seed_mode=self.seed_mode.get(),
+                  use_log=self.esrg_log_local.get(), use_log_local=self.esrg_log_local.get(),
+                  use_stopping=self.esrg_stop.get(), purify_manual_seed=self.purify_manual_seed.get(),
+                  srg_use_log_local=self.srg_log_local.get(), srg_use_stopping=self.srg_stop.get())
+        if self.adjust_params.get():
+            for attr, field, _, lo, hi, step, _ in PARAMS:
+                v = float(getattr(self, attr).get())
+                kw[field] = int(round(v)) if isinstance(step, int) else round(v, 2)
+            # Config requires k_G > k_L.
+            kw["k_global"] = max(kw["k_global"], round(kw["k_local"] + 0.1, 2))
+        return self.cfg.replace(**kw)
 
     def _run(self):
         if not self.image_path:
@@ -1065,7 +1106,6 @@ class ESRGApp:
 
         cfg = self._current_config()
         self.run_cfg = cfg
-        self._run_points = {tuple(p) for p in self.manual_points}
         self.run_btn.configure(state="disabled", text="PROCESSING…", fg_color=BORDER_DARK,
                                border_color=BORDER_DARK)
         self.status_lbl.configure(text="Segmenting slice…", text_color=BLUE)
@@ -1087,7 +1127,7 @@ class ESRGApp:
         if self.closed:  # the tab was closed while the pipeline ran
             return
         self.busy = False
-        self.run_btn.configure(state="normal", text="RUN PIPELINE", fg_color=BLUE,
+        self.run_btn.configure(state="normal", text="RUN", fg_color=BLUE,
                                border_color=BLUE)
         if err:
             self._notify_title()
@@ -1099,7 +1139,6 @@ class ESRGApp:
         self.status_lbl.configure(text=f"Status: {res.status}",
                                   text_color=OK_CLR if res.status == "OK" else WARN_CLR)
         self._build_stage_buttons()
-        self._sync_overlay_toggle()
         self._update_metrics()
         self._select("final")
         self._notify_title()
@@ -1123,14 +1162,14 @@ class ESRGApp:
         self._clear_stages()
         for st in self.result.stages:
             self._add_tab(st.key, st.name)
-        if self.result.gt is not None:
-            self._add_tab("compare", "Compare")
-        # Always offered after a run; without a ground truth the Details view
+        # Always offered after a run; without a ground truth the telemetry
         # explains what is missing.
         self._add_tab("evaluation", "Evaluation")
 
-    def _select(self, key):
+    def _select(self, key, obj=None):
+        """Show stage `key`; `obj` is the OBJ button that asked for it, if any."""
         self.current = key
+        self._obj_clicked = obj
         status_colors = {"WARN": WARN_CLR, "FAIL": FAIL_CLR}
         for k, b in self.stage_buttons.items():
             if k == key:
@@ -1141,9 +1180,7 @@ class ESRGApp:
                             text_color=status_colors.get(st.status, TEXT) if st else TEXT)
 
         self._sync_obj_buttons()
-        # Every stage tab is explained in Details (Seeds stays one click away). Switching
-        # views can resize the telemetry panel, so settle that before scrolling the tab in.
-        self._set_tel_mode("Details")
+        self._refresh_telemetry(OBJ_ANCHOR.get(obj))
         self._scroll_tab_into_view(self.stage_buttons.get(key))
         self._render_panes()
 
@@ -1319,7 +1356,7 @@ class ESRGApp:
         resize, since only the placement changes there."""
         key = (id(self.result), self.current, round(self.opacity.get(), 3),
                self.error_mode.get(), self.seed_mode.get(), id(self.manual_points),
-               len(self.manual_points), id(self.raw_image), self.compare_overlay.get())
+               len(self.manual_points), id(self.raw_image))
         if self._pane_cache[0] == key:
             return self._pane_cache[1]
 
@@ -1331,19 +1368,6 @@ class ESRGApp:
             # Raw scan preview, so the user can confirm the right slice was loaded.
             out = (self._stamp_seeds(_gray_rgb(self.raw_image)), None, "ORIGINAL",
                    "SEGMENTED OUTPUT", "")
-        elif self.current == "compare" and res.gt is not None:
-            base = res.stage("input").image
-            if self.compare_overlay.get():
-                # Both masks superimposed on one pane; the other keeps the plain slice for reference.
-                legend = ("TP green · FP red · FN orange" if self.error_mode.get()
-                          else "ESRG prediction red fill · ground truth green outline")
-                out = (_gray_rgb(self.raw_image if self.raw_image is not None else base),
-                       viz.overlay_result(base, res.mask, res.gt, op, self.error_mode.get()),
-                       "ORIGINAL", "OVERLAY · ESRG vs GROUND TRUTH", legend)
-            else:
-                out = (self._mask_rgb(base, res.mask, viz.RED, op),
-                       self._mask_rgb(base, res.gt, viz.GREEN, op),
-                       "ESRG PREDICTION", "GROUND TRUTH", "")
         else:
             left = _gray_rgb(self.raw_image if self.raw_image is not None
                              else res.stage("input").image)
@@ -1378,7 +1402,7 @@ class ESRGApp:
         self.captions[1].configure(text=cap_r)
         self.legends[1].configure(text=legend)
         hints = ("Open an MRI slice to begin\nScroll to zoom · drag to pan",
-                 "The segmented output appears here\nafter RUN PIPELINE")
+                 "The segmented output appears here\nafter RUN")
         for cv, rgb, hint in zip(self.canvases, (left, right), hints):
             self._paint(cv, rgb, hint)
 
@@ -1409,7 +1433,6 @@ class RunTabs:
         root.title("Enhanced Seeded Region Growing Algorithm in MRI Image Segmentation")
         root.configure(fg_color=WHITE)
         self._fit_window(1440, 880, 1120, 700)
-        self._init_ttk_style()
 
         root.grid_columnconfigure(0, weight=1)
         root.grid_rowconfigure(2, weight=1)
@@ -1460,21 +1483,6 @@ class RunTabs:
         x = max(0, int((sw - w) * self._scale / 2))
         self.root.geometry(f"{w}x{h}+{x}+{int(round(8 * self._scale))}")
         self.root.minsize(min(min_w, w), min(min_h, h))
-
-    def _init_ttk_style(self):
-        """Flat Treeview + no bevels: the only ttk widget in the app is the seed table."""
-        style = ttk.Style(self.root)
-        style.theme_use("clam")
-        row_h = tkfont.Font(font=TK_UI).metrics("linespace") + 10
-        style.configure("Seeds.Treeview", background=WHITE, fieldbackground=WHITE,
-                        foreground=TEXT, rowheight=row_h, borderwidth=0, relief="flat",
-                        font=TK_UI)
-        style.configure("Seeds.Treeview.Heading", background=PANEL, foreground=MUTED,
-                        relief="flat", borderwidth=0, font=TK_BOLD, padding=(6, 5))
-        style.map("Seeds.Treeview", background=[("selected", BLUE)],
-                  foreground=[("selected", WHITE)])
-        style.map("Seeds.Treeview.Heading", background=[("active", BORDER)])
-        style.layout("Seeds.Treeview", [("Treeview.treearea", {"sticky": "nswe"})])
 
     # ── Tabs ─────────────────────────────────────────────────────────────────
     def new_tab(self):

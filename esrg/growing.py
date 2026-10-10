@@ -207,7 +207,80 @@ def grow_esrg(L, mask, core, sigma_floor, cfg, record=False):
     return region, trace
 
 
-def grow_srg(img, seed_labels, record=False):
+class _Region1:
+    """ESRG modules grafted onto SRG's tumor region (cfg.srg_use_log_local /
+    srg_use_stopping). Only region 1 consults it; background regions keep the
+    1994 rule, so they still claim whatever the tumor region declines.
+
+    local_radius : None -> region mean (original); r -> mu_loc over the region-1
+                   pixels in the (2r+1)^2 window around x (Eq. 3.8)
+    stop         : None -> unconditional (original); dict(k_L, k_G, sigma_floor) ->
+                   absorb only if delta <= k_L*sigma_A and |g - mu_A| <= k_G*sigma_A.
+                   SRG has no passes, so sigma_A = max(s_A, sigma_floor) is read from
+                   the running statistics at each decision; a declined pixel is never
+                   offered to region 1 again.
+    """
+
+    def __init__(self, img, core, local_radius, stop):
+        self.img, self.stop = img, stop
+        self.local = _LocalMean(img.shape, local_radius) if local_radius else None
+        self.stats = _Welford()
+        self.declined = np.zeros(img.shape, bool)
+        for r, c in zip(*np.nonzero(core)):
+            self.add(r, c)
+
+    def add(self, r, c):
+        if self.local is not None:
+            self.local.add(r, c, self.img[r, c])
+        self.stats.add(self.img[r, c])
+
+    def reference(self, r, c, region_mean):
+        if self.local is None:
+            return region_mean
+        m = self.local.mean(r, c)
+        return region_mean if m is None else m
+
+    def sigma(self):
+        return max(self.stats.sigma(), self.stop["sigma_floor"]) if self.stop else None
+
+    def decide(self, r, c, d):
+        """'absorb', or the reason region 1 declines x (which then stays declined)."""
+        if self.stop is None:
+            return "absorb"
+        sigma = self.sigma()
+        if d > self.stop["k_L"] * sigma:
+            verdict = "decline >T_L"
+        elif abs(self.img[r, c] - self.stats.mean) > self.stop["k_G"] * sigma:
+            verdict = "decline >T_G"
+        else:
+            return "absorb"
+        self.declined[r, c] = True
+        return verdict
+
+    def event(self, r, c, ref, d, verdict):
+        """(row, col, g, reference, delta, |g - mu_A|, T_L, T_G, decision), GUI only."""
+        g, sigma = float(self.img[r, c]), self.sigma()
+        return (int(r), int(c), g, float(ref), float(d), abs(g - self.stats.mean),
+                None if sigma is None else self.stop["k_L"] * sigma,
+                None if sigma is None else self.stop["k_G"] * sigma, verdict)
+
+    def to_trace(self, trace):
+        if self.local is not None or self.stop is not None:
+            trace["declined"] = int(self.declined.sum())
+
+
+def _seed_stats(img, core):
+    n = int(core.sum())
+    return {"n": n, "mean": float(img[core].mean()),
+            "s": float(img[core].std(ddof=1)) if n > 1 else 0.0}
+
+
+def _stop_reason(stop):
+    return ("tessellation complete (no stopping criterion)" if stop is None
+            else "tessellation complete (region 1 bounded by T_L and T_G)")
+
+
+def grow_srg(img, seed_labels, record=False, local_radius=None, stop=None):
     """
     Adams & Bischof (1994) seeded region growing, exactly as published.
 
@@ -224,6 +297,9 @@ def grow_srg(img, seed_labels, record=False):
     together (including background/scalp), or those pixels get divided up
     among whichever regions happen to reach them first.
 
+    local_radius / stop graft the ESRG modules onto region 1 only (_Region1);
+    with both None (the default) the loop is the published one.
+
     Returns (label, trace). label is the full partition of img. Which id is
     "the structure of interest" is not decided here -- that is left to the
     caller, since SRG itself has no concept of a privileged region.
@@ -234,15 +310,20 @@ def grow_srg(img, seed_labels, record=False):
     ids = [int(i) for i in np.unique(label) if i > 0]
     sums = {i: float(img[label == i].sum()) for i in ids}
     counts = {i: int((label == i).sum()) for i in ids}
+    r1 = _Region1(img, label == 1, local_radius, stop)
 
     ssl = []
-    # record (GUI only): the region mean each region-1 entry was scored against.
+    # record (GUI only): the reference each region-1 entry was scored against.
     refs, events = ({}, []) if record else (None, None)
 
     def enqueue(r, c, lid):
         """delta is computed once, here, against the region mean of the moment."""
         if 0 <= r < H and 0 <= c < W and label[r, c] == 0:
             ref = sums[lid] / counts[lid]
+            if lid == 1:
+                if r1.declined[r, c]:
+                    return
+                ref = r1.reference(r, c, ref)
             d = abs(img[r, c] - ref)
             heapq.heappush(ssl, (d, r, c, lid))
             if record and lid == 1:
@@ -256,32 +337,42 @@ def grow_srg(img, seed_labels, record=False):
         d, r, c, lid = heapq.heappop(ssl)
         if label[r, c] != 0:
             continue                    # a better-fitting region reached it first
-        if record and lid == 1:
-            events.append((int(r), int(c), float(img[r, c]), float(refs[(d, r, c)]), float(d), 1))
-        label[r, c] = lid               # unconditional: no stopping rule, no re-scoring
+        if lid == 1:
+            if r1.declined[r, c]:
+                continue
+            verdict = r1.decide(r, c, d)
+            if record:
+                events.append(r1.event(r, c, refs[(d, r, c)], d, verdict))
+            if verdict != "absorb":
+                continue                # left to the other regions
+            r1.add(r, c)
+        label[r, c] = lid               # unconditional unless region 1 declined it
         sums[lid] += float(img[r, c])
         counts[lid] += 1
         for dr, dc in NEIGH4:
             enqueue(r + dr, c + dc, lid)
 
     trace = {
-        "stop_reason": "tessellation complete (no stopping criterion)",
+        "stop_reason": _stop_reason(stop),
         "n_seed_regions": len(ids),
         "unlabeled": int((label == 0).sum()),
         "region_areas": {i: int(counts[i]) for i in ids},
         "region_means": {i: round(sums[i] / counts[i], 2) for i in ids},
     }
+    r1.to_trace(trace)
     if record:
         trace["events"] = events
         trace["seed_areas"] = {i: int((seed_labels == i).sum()) for i in ids}
-    if len(ids) < 2:
+        if 1 in ids:
+            trace["seed_stats"] = _seed_stats(img, seed_labels == 1)
+    if len(ids) < 2 and stop is None:
         trace["warning"] = ("Only one seed region was planted. SRG has no stopping "
                             "rule, so with nothing to compete against, that single "
                             "region absorbs the entire image.")
     return label, trace
 
 
-def grow_srg_auto(img, mask, core, cfg, record=False):
+def grow_srg_auto(img, mask, core, cfg, record=False, local_radius=None, stop=None):
     """
     Adams & Bischof (1994) under the automatic seeding protocol.
 
@@ -289,7 +380,8 @@ def grow_srg_auto(img, mask, core, cfg, record=False):
     (cfg.bg_seed_step) planted inside the head mask, so no manual competing
     regions are needed. delta is the raw distance to the region mean, and
     absorption is unconditional -- the algorithm runs until every pixel in
-    the mask is allocated.
+    the mask is allocated. local_radius / stop graft the ESRG modules onto the
+    tumor region only (_Region1); both None is the published algorithm.
     """
     H, W = img.shape
     label = np.zeros((H, W), np.int32)     # 0 unlabeled, 1 tumor, >=2 background
@@ -297,6 +389,7 @@ def grow_srg_auto(img, mask, core, cfg, record=False):
 
     sums = {1: float(img[core].sum())}
     counts = {1: int(core.sum())}
+    r1 = _Region1(img, core, local_radius, stop)
 
     # Background seeds on a regular grid, skipping the tumor core and its margin
     guard = ndi.binary_dilation(core, ndi.generate_binary_structure(2, 2), iterations=6)
@@ -313,17 +406,27 @@ def grow_srg_auto(img, mask, core, cfg, record=False):
     events = [] if record else None
     seed_mean = sums[1] / counts[1]
 
+    def best_region(r, c):
+        """(delta, id, reference) of the best-fitting adjacent region, or None."""
+        best = None
+        for dr, dc in NEIGH4:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < H and 0 <= nc < W and label[nr, nc] > 0:
+                lid = label[nr, nc]
+                if lid == 1 and r1.declined[r, c]:
+                    continue
+                ref = sums[lid] / counts[lid]
+                if lid == 1:
+                    ref = r1.reference(r, c, ref)
+                d = abs(img[r, c] - ref)
+                if best is None or d < best[0]:
+                    best = (d, lid, ref)
+        return best
+
     def enqueue(r, c):
         if (0 <= r < H and 0 <= c < W and mask[r, c]
                 and label[r, c] == 0 and not queued[r, c]):
-            best = None
-            for dr, dc in NEIGH4:
-                nr, nc = r + dr, c + dc
-                if 0 <= nr < H and 0 <= nc < W and label[nr, nc] > 0:
-                    lid = label[nr, nc]
-                    d = abs(img[r, c] - sums[lid] / counts[lid])
-                    if best is None or d < best[0]:
-                        best = (d, lid)
+            best = best_region(r, c)
             if best:
                 heapq.heappush(ssl, (best[0], r, c, best[1]))
                 queued[r, c] = True
@@ -337,22 +440,20 @@ def grow_srg_auto(img, mask, core, cfg, record=False):
         if label[r, c] != 0:
             continue
         # Re-evaluate against the current neighbourhood before absorbing
-        best = None
-        for dr, dc in NEIGH4:
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < H and 0 <= nc < W and label[nr, nc] > 0:
-                l2 = label[nr, nc]
-                d2 = abs(img[r, c] - sums[l2] / counts[l2])
-                if best is None or d2 < best[0]:
-                    best = (d2, l2)
+        best = best_region(r, c)
+        if best is not None and best[1] == 1:
+            verdict = r1.decide(r, c, best[0])
+            if record:
+                events.append(r1.event(r, c, best[2], best[0], verdict))
+            if verdict != "absorb":
+                best = best_region(r, c)        # region 1 declined: next best region
         if best is None:
             queued[r, c] = False
             continue
         lid = best[1]
-        if record and lid == 1:
-            events.append((int(r), int(c), float(img[r, c]), float(sums[1] / counts[1]),
-                           float(best[0]), 1))
-        label[r, c] = lid                       # unconditional: no stopping rule
+        if lid == 1:
+            r1.add(r, c)
+        label[r, c] = lid                       # unconditional unless region 1 declined it
         sums[lid] += float(img[r, c])
         counts[lid] += 1
         for dr, dc in NEIGH4:
@@ -364,11 +465,12 @@ def grow_srg_auto(img, mask, core, cfg, record=False):
                          "added": int(region.sum() - core.sum()),
                          "area": int(region.sum()),
                          "stop": "all pixels allocated"}],
-             "stop_reason": "tessellation complete (no stopping criterion)",
+             "stop_reason": _stop_reason(stop),
              "n_background_seeds": nxt - 2}
+    r1.to_trace(trace)
     if record:
         trace["events"] = events
-        trace["seed_stats"] = {"n": int(core.sum()), "mean": seed_mean}
+        trace["seed_stats"] = _seed_stats(img, core)
         trace["allocated"] = int((label > 0).sum())
         trace["mask_px"] = int(mask.sum())
     return region, trace

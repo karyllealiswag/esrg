@@ -9,6 +9,9 @@ Function : run() executes input -> head mask -> log -> candidates -> seed -> gro
           scores when a ground-truth mask is available.
 Notes   : Each Stage keeps its display array and a status (OK/WARN/FAIL). The stage
           the GUI reads is not necessarily where a fact should be written elsewhere.
+          Only the stages a run uses are listed: the SRG baseline lists Stage 3 only
+          when an ESRG module is applied to it (cfg.srg_use_*), and under manual
+          seeding it lists neither the head mask nor the candidates.
 """
 import time
 from dataclasses import dataclass, field
@@ -95,8 +98,14 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None,
     # ── Stage 2: head mask ───────────────────────────────────────────────────
     say("Masking head…")
     (mask, depth, ss_info), dt = timed(lambda: pre.head_mask(img, cfg))
-    stages.append(Stage("mask", "2 · Head mask", mask, "mask", ss_info, dt,
-                        "WARN" if ss_info["warnings"] else "OK"))
+    # SRG with manual seeding grows on the whole image (the 1994 algorithm has no
+    # skull stripping), so the head mask is not one of its stages; it is still
+    # computed for the |M|/|H| leakage warning at the end.
+    srg = cfg.method == "srg"
+    srg_manual = srg and cfg.seed_mode == "manual" and planted_core is None
+    if not srg_manual:
+        stages.append(Stage("mask", "2 · Head mask", mask, "mask", ss_info, dt,
+                            "WARN" if ss_info["warnings"] else "OK"))
     img_masked = np.where(mask, img, 0.0)
 
     # ── Stage 2b: N4 (ablation only) ─────────────────────────────────────────
@@ -112,24 +121,35 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None,
                                 {"error": str(e)}, 0.0, "FAIL"))
 
     # ── Stage 3: log domain ──────────────────────────────────────────────────
-    if cfg.use_log:
+    # ESRG always lists it (with the transform off it still yields the noise floor).
+    # SRG grows on intensity, over the whole image under manual seeding, unless the
+    # Objective 2 module is applied, and needs the noise floor only for the
+    # Objective 3 module; it lists Stage 3 only when one of them is on.
+    if srg:
+        base = img if srg_manual else img_masked
+        nf_region = np.ones_like(mask) if srg_manual else mask
+        use_log, show = cfg.srg_use_log_local, cfg.srg_use_log_local or cfg.srg_use_stopping
+    else:
+        base, nf_region, use_log, show = img_masked, mask, cfg.use_log, True
+    if use_log:
         say("Log transform…")
-        L, dt = timed(lambda: pre.log_transform(img_masked, cfg.log_eps))
+        L, dt = timed(lambda: pre.log_transform(base, cfg.log_eps))
     else:
         # Ablation: growth and the noise floor run on the normalized intensity itself.
-        L, dt = img_masked.copy(), 0.0
-    nf = pre.noise_floor_details(L, mask, cfg.sigma_floor_min)
-    sigma_floor = nf["sigma_floor"]
-    stages.append(Stage("log", "3 · Log domain" if cfg.use_log else "3 · Log domain (off)",
-                        L, "heat",
-                        {"transform": f"L = ln(I + {cfg.log_eps:g})" if cfg.use_log
-                                      else "off — L = I (no log transform)",
-                         "range": f"{L[mask].min():.2f}–{L[mask].max():.2f}",
-                         "noise floor σ": round(sigma_floor, 4),
-                         "note": "multiplicative bias becomes additive" if cfg.use_log
-                                 else "multiplicative bias stays multiplicative",
-                         "_use_log": cfg.use_log, "_eps": cfg.log_eps,
-                         "_noise_floor": nf}, dt))
+        L, dt = base.copy(), 0.0
+    nf = pre.noise_floor_details(L, nf_region, cfg.sigma_floor_min) if show else None
+    sigma_floor = nf["sigma_floor"] if nf else None
+    if show:
+        name = ("3 · Log domain" if use_log else "3 · Noise floor" if srg else "3 · Log domain (off)")
+        stages.append(Stage("log", name, L, "heat",
+                            {"transform": f"L = ln(I + {cfg.log_eps:g})" if use_log
+                                          else "off — L = I (no log transform)",
+                             "range": f"{L[nf_region].min():.2f}–{L[nf_region].max():.2f}",
+                             "noise floor σ": round(sigma_floor, 4),
+                             "note": "multiplicative bias becomes additive" if use_log
+                                     else "multiplicative bias stays multiplicative",
+                             "_use_log": use_log, "_eps": cfg.log_eps, "_noise_floor": nf,
+                             "_region": nf_region, "_base": base}, dt))
 
     # ── Stage 4–5: seed selection ────────────────────────────────────────────
     say("Selecting seed…")
@@ -161,11 +181,12 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None,
         except Exception:
             cand = np.zeros_like(mask)
 
-    stages.append(Stage("candidates", "4 · Candidates", cand, "mask",
-                        {"thresholds": s_info.get("thresholds"),
-                         "components found": s_info.get("n_raw"),
-                         "components kept": s_info.get("n_kept"),
-                         "detail": s_info.get("components", [])[:8], "_s_info": s_info}, dt))
+    if not srg_manual:  # SRG uses the clicks as they are: no candidate step
+        stages.append(Stage("candidates", "4 · Candidates", cand, "mask",
+                            {"thresholds": s_info.get("thresholds"),
+                             "components found": s_info.get("n_raw"),
+                             "components kept": s_info.get("n_kept"),
+                             "detail": s_info.get("components", [])[:8], "_s_info": s_info}, dt))
     stages.append(Stage("seed", "5 · Seed core", core, "mask",
                         {"status": s_info["status"], "chosen": s_info.get("chosen"),
                          "core area": s_info.get("core_area"),
@@ -186,17 +207,22 @@ def run(image_path, cfg, mask_path=None, manual_points=None, progress=None,
 
     # ── Stage 6: region growing ──────────────────────────────────────────────
     say("Growing region…")
-    if cfg.method == "srg" and (cfg.seed_mode == "auto" or planted_core is not None):
+    # Applied ESRG modules for the SRG baseline (region 1 only; both None = 1994 SRG).
+    srg_local = cfg.local_radius if cfg.srg_use_log_local else None
+    srg_stop = (dict(k_L=cfg.k_local, k_G=cfg.k_global, sigma_floor=sigma_floor)
+                if cfg.srg_use_stopping else None)
+    if srg and not srg_manual:
         # No planted competitors: the auto core competes with a grid of
         # background seeds inside the head mask.
-        (region, trace), dt = timed(lambda: growing.grow_srg_auto(img_masked, mask, core, cfg, record))
+        (region, trace), dt = timed(lambda: growing.grow_srg_auto(L, mask, core, cfg, record,
+                                                                     srg_local, srg_stop))
         growth_info = {"stop reason": trace["stop_reason"], "passes": trace["passes"],
                        "background seeds": trace["n_background_seeds"]}
-    elif cfg.method == "srg":
+    elif srg:
         # Whole image, unmasked: the published algorithm has no skull-stripping step
         # and leaves no pixel unallocated. Every planted id grows under the same
         # rule; grow_srg has no notion of "tumor" at all.
-        (label_map, trace), dt = timed(lambda: growing.grow_srg(img, seed_labels, record))
+        (label_map, trace), dt = timed(lambda: growing.grow_srg(L, seed_labels, record, srg_local, srg_stop))
         stages.append(Stage("tessellation", "6a · Full tessellation", label_map, "labels",
                             {"seed regions": trace["n_seed_regions"],
                              "region areas": trace["region_areas"],

@@ -199,7 +199,7 @@ def _row_from_result(row, res, gt, cfg):
     row["seed_area"] = int(seed.sum())
     row["seed_in_gt_px"] = int((seed & gt).sum())
     row["seed_in_gt_frac"] = float((seed & gt).sum() / seed.sum()) if seed.any() else None
-    row["sigma_floor"] = res.stage("log").info.get("noise floor σ")
+    row["sigma_floor"] = res.stage("log").info.get("noise floor σ") if res.stage("log") else None
     g = res.stage("growth")
     if g is not None:
         row["stop_reason"] = g.info.get("stop reason")
