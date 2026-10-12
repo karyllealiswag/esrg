@@ -1,3 +1,5 @@
 # BRISC 2025 dataset (large, local download)
 brisc2025/
+# BraTS 2015 slice subset (local export from experiments/prepare_brats2015.py)
+brats2015/
 node_modules/
