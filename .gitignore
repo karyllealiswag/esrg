@@ -2,4 +2,8 @@
 brisc2025/
 # BraTS 2015 slice subset (local export from experiments/prepare_brats2015.py)
 brats2015/
+# BraTS 2023 GLI slice subset (same export script)
+brats2023/
+# BraTS 2023 meningioma slice subset (same export script)
+bratsmen/
 node_modules/
