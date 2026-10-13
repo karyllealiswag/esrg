@@ -4,20 +4,20 @@ Set: test | n = 600 patients (one slice each) | arms: 12. Calls: Holm p < .05 an
 
 ## E1: A_ESRG vs P_ESRG vs P_SRG
 
-| Scope | Metric | Median A_ESRG / P_ESRG / P_SRG | Friedman p | Kendall W | A_ESRG vs P_SRG | P_ESRG vs P_SRG | A_ESRG vs P_ESRG |
+| Scope | Metric | Median A_ESRG / P_ESRG / P_SRG_solo / P_SRG | Friedman p | Kendall W | A_ESRG vs P_SRG | P_ESRG vs P_SRG | A_ESRG vs P_ESRG |
 |---|---|---|---|---|---|---|---|
-| glioma | DSC | 0.265 / 0.562 / 0.684 | < .001 | 0.25 | -0.152 (p < .001, r -0.62) worse | -0.038 (p < .001, r -0.35) worse | -0.127 (p < .001, r -0.46) worse |
-| glioma | Recall | 0.172 / 0.426 / 0.782 | < .001 | 0.37 | -0.330 (p < .001, r -0.72) worse | -0.093 (p < .001, r -0.67) worse | -0.120 (p < .001, r -0.43) worse |
-| glioma | Precision | 0.945 / 1.000 / 0.991 | < .001 | 0.17 | -0.014 (p < .001, r -0.43) worse | 0.000 (p < .001, r 0.37) better | -0.015 (p < .001, r -0.56) worse |
-| glioma | HD95 (px) | 57.431 / 24.867 / 22.253 | < .001 | 0.14 | -8.504 (p < .001, r -0.40) worse | -0.966 (p .043, r -0.12) worse | -17.321 (p < .001, r -0.56) worse |
-| meningioma | DSC | 0.866 / 0.876 / 0.931 | < .001 | 0.19 | -0.037 (p < .001, r -0.57) worse | -0.023 (p < .001, r -0.42) worse | 0.000 (p < .001, r -0.23) worse |
-| meningioma | Recall | 0.840 / 0.854 / 0.948 | < .001 | 0.49 | -0.093 (p < .001, r -0.81) worse | -0.075 (p < .001, r -0.77) worse | 0.000 (p < .001, r -0.25) worse |
-| meningioma | Precision | 0.975 / 0.984 / 0.955 | < .001 | 0.19 | 0.008 (p < .001, r 0.22) better | 0.015 (p < .001, r 0.54) better | 0.000 (p < .001, r -0.28) worse |
-| meningioma | HD95 (px) | 9.997 / 9.074 / 5.996 | < .001 | 0.09 | -1.000 (p < .001, r -0.29) worse | -0.611 (p .009, r -0.15) worse | 0.000 (p < .001, r -0.22) worse |
-| pooled | DSC | 0.703 / 0.788 / 0.852 | < .001 | 0.21 | -0.061 (p < .001, r -0.59) worse | -0.028 (p < .001, r -0.38) worse | -0.001 (p < .001, r -0.38) worse |
-| pooled | Recall | 0.586 / 0.735 / 0.915 | < .001 | 0.42 | -0.148 (p < .001, r -0.74) worse | -0.082 (p < .001, r -0.71) worse | -0.004 (p < .001, r -0.38) worse |
-| pooled | Precision | 0.965 / 0.994 / 0.969 | < .001 | 0.11 | 0.000 (p < .001, r -0.13) worse | 0.006 (p < .001, r 0.45) better | 0.000 (p < .001, r -0.44) worse |
-| pooled | HD95 (px) | 23.345 / 16.211 / 13.023 | < .001 | 0.11 | -1.752 (p < .001, r -0.34) worse | -0.822 (p < .001, r -0.14) worse | -0.002 (p < .001, r -0.42) worse |
+| glioma | DSC | 0.265 / 0.562 / 0.023 / 0.684 | < .001 | 0.53 | -0.152 (p < .001, r -0.62) worse | -0.038 (p < .001, r -0.35) worse | -0.127 (p < .001, r -0.46) worse |
+| glioma | Recall | 0.172 / 0.426 / 1.000 / 0.782 | < .001 | 0.72 | -0.330 (p < .001, r -0.72) worse | -0.093 (p < .001, r -0.67) worse | -0.120 (p < .001, r -0.43) worse |
+| glioma | Precision | 0.945 / 1.000 / 0.012 / 0.991 | < .001 | 0.51 | -0.014 (p < .001, r -0.43) worse | 0.000 (p < .001, r 0.37) better | -0.015 (p < .001, r -0.56) worse |
+| glioma | HD95 (px) | 57.431 / 24.867 / 369.645 / 22.253 | < .001 | 0.66 | -8.504 (p < .001, r -0.40) worse | -0.966 (p .043, r -0.12) worse | -17.321 (p < .001, r -0.56) worse |
+| meningioma | DSC | 0.866 / 0.876 / 0.015 / 0.931 | < .001 | 0.60 | -0.037 (p < .001, r -0.57) worse | -0.023 (p < .001, r -0.42) worse | 0.000 (p < .001, r -0.23) worse |
+| meningioma | Recall | 0.840 / 0.854 / 1.000 / 0.948 | < .001 | 0.80 | -0.093 (p < .001, r -0.81) worse | -0.075 (p < .001, r -0.77) worse | 0.000 (p < .001, r -0.25) worse |
+| meningioma | Precision | 0.975 / 0.984 / 0.008 / 0.955 | < .001 | 0.59 | 0.008 (p < .001, r 0.22) better | 0.015 (p < .001, r 0.54) better | 0.000 (p < .001, r -0.28) worse |
+| meningioma | HD95 (px) | 9.997 / 9.074 / 375.439 / 5.996 | < .001 | 0.67 | -1.000 (p < .001, r -0.29) worse | -0.611 (p .009, r -0.15) worse | 0.000 (p < .001, r -0.22) worse |
+| pooled | DSC | 0.703 / 0.788 / 0.019 / 0.852 | < .001 | 0.55 | -0.061 (p < .001, r -0.59) worse | -0.028 (p < .001, r -0.38) worse | -0.001 (p < .001, r -0.38) worse |
+| pooled | Recall | 0.586 / 0.735 / 1.000 / 0.915 | < .001 | 0.76 | -0.148 (p < .001, r -0.74) worse | -0.082 (p < .001, r -0.71) worse | -0.004 (p < .001, r -0.38) worse |
+| pooled | Precision | 0.965 / 0.994 / 0.010 / 0.969 | < .001 | 0.50 | 0.000 (p < .001, r -0.13) worse | 0.006 (p < .001, r 0.45) better | 0.000 (p < .001, r -0.44) worse |
+| pooled | HD95 (px) | 23.345 / 16.211 / 372.216 / 13.023 | < .001 | 0.66 | -1.752 (p < .001, r -0.34) worse | -0.822 (p < .001, r -0.14) worse | -0.002 (p < .001, r -0.42) worse |
 
 ### Seed hit rate (A_ESRG)
 
@@ -92,6 +92,15 @@ Set: test | n = 600 patients (one slice each) | arms: 12. Calls: Holm p < .05 an
 | S1 | Equal operator effort: one tumor click for both algorithms | pooled | DSC | 0.019 | 0.788 | 0.763 | < .001 | 0.87 | better |
 | S1 | Equal operator effort: one tumor click for both algorithms | pooled | Precision | 0.010 | 0.994 | 0.971 | < .001 | 0.87 | better |
 | S1 | Equal operator effort: one tumor click for both algorithms | pooled | Recall | 1.000 | 0.735 | -0.265 | < .001 | -0.86 | worse |
+| S2 | Same automatic tumor seed for both algorithms (SRG with planted competing seeds) | glioma | DSC | 0.370 | 0.265 | -0.018 | < .001 | -0.49 | worse |
+| S2 | Same automatic tumor seed for both algorithms (SRG with planted competing seeds) | glioma | Precision | 0.881 | 0.945 | 0.000 | .435 | 0.05 | no effect |
+| S2 | Same automatic tumor seed for both algorithms (SRG with planted competing seeds) | glioma | Recall | 0.644 | 0.172 | -0.034 | < .001 | -0.63 | worse |
+| S2 | Same automatic tumor seed for both algorithms (SRG with planted competing seeds) | meningioma | DSC | 0.917 | 0.866 | -0.019 | < .001 | -0.49 | worse |
+| S2 | Same automatic tumor seed for both algorithms (SRG with planted competing seeds) | meningioma | Precision | 0.940 | 0.975 | 0.007 | < .001 | 0.41 | better |
+| S2 | Same automatic tumor seed for both algorithms (SRG with planted competing seeds) | meningioma | Recall | 0.938 | 0.840 | -0.062 | < .001 | -0.75 | worse |
+| S2 | Same automatic tumor seed for both algorithms (SRG with planted competing seeds) | pooled | DSC | 0.804 | 0.703 | -0.019 | < .001 | -0.49 | worse |
+| S2 | Same automatic tumor seed for both algorithms (SRG with planted competing seeds) | pooled | Precision | 0.935 | 0.965 | 0.000 | < .001 | 0.25 | better |
+| S2 | Same automatic tumor seed for both algorithms (SRG with planted competing seeds) | pooled | Recall | 0.886 | 0.586 | -0.049 | < .001 | -0.69 | worse |
 
 ## Objective verdicts
 

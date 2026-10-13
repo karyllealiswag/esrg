@@ -221,7 +221,7 @@ def build():
       "resolution of the slice. Each objective is judged by the metric that responds most directly to its "
       "problem (Maier-Hein et al., 2024; Taha & Hanbury, 2015): the seed hit rate for Objective 1, recall for "
       "undersegmentation (Objective 2), and precision and HD95 for boundary leakage (Objective 3). The Dice "
-      "similarity coefficient is the overall measure. The overlap metrics are computed from three pixel counts: "
+      "similarity coefficient is the overall measure, and the processing time per slice measures efficiency. The overlap metrics are computed from three pixel counts: "
       "the true positives (TP), tumor in both M and G; the false positives (FP), tumor only in M; and the false "
       "negatives (FN), tumor only in G.")
 
@@ -271,13 +271,21 @@ def build():
           ("d(p, ∂G)", "the Euclidean distance from pixel p to the nearest pixel of ∂G"),
           ("*P*_{95}", "the 95th percentile of the list D"))
 
+    p("**Processing Time** is the time the system needs to segment one slice, from the start of the run to the "
+      "finished mask, without the scoring against the ground truth. It measures computational efficiency. A lower "
+      "value is better. Because the batch evaluation runs several slices in parallel on one laptop, the times indicate "
+      "the relative speed of the configurations, not their absolute speed.")
+    eq("time", "Processing Time Formula", ["t = ", sub("t", "end"), " − ", sub("t", "start")])
+    where(("*t*", "the processing time of one slice, in seconds"),
+          ("*t*_{start} and *t*_{end}", "the clock readings at the start and at the end of the segmentation"))
+
     h4("Statistical Treatment")
     p("Results are reported separately for glioma and meningioma, because the two tumor types differ markedly "
       "in how they enhance. Because per-slice DSC values are bounded and often skewed, each configuration is "
       "described by its median and interquartile range together with its mean and standard deviation. Every "
       "configuration was run on the same slices, so configurations are compared with paired tests. Differences "
-      "are oriented so that a positive value favors the enhanced configuration; for HD95, where lower is "
-      "better, the sign is reversed. All tests are two-sided at α = .05.")
+      "are oriented so that a positive value favors the enhanced configuration; for HD95 and processing time, "
+      "where lower is better, the sign is reversed. All tests are two-sided at α = .05.")
     p("**The Shapiro–Wilk test** (Shapiro & Wilk, 1965) checks whether the paired differences are normally "
       "distributed. A p value below .05 means they are not, which justifies the rank-based tests below instead "
       "of a paired t-test.")
@@ -290,7 +298,7 @@ def build():
     eq("effect", "Wilcoxon Effect Size Formula", ["r = ", {"f": ["Z", {"sqrt": "N"}]}])
     where(("*Z*", "the standardized Wilcoxon statistic"), ("*N*", "the number of paired slices"))
     p("**The Friedman test** (Friedman, 1937) compares more than two related configurations on the same slices, "
-      "namely the three complete methods of E1 and the automatic and planted placements of E2. Each slice ranks "
+      "namely the four configurations of E1 and the automatic and planted placements of E2. Each slice ranks "
       "the configurations, and a p value below .05 means at least one configuration differs from the others; "
       "pairwise Wilcoxon tests then show which.")
     eq("friedman", "Friedman Test Statistic",
@@ -344,7 +352,7 @@ def build():
         ["_C", "the ESRG is run with competing seeds, as the SRG is"]]})
     table("3.2", "Summary of Experiments",
           ["Experiment", "Purpose", "Configurations", "Metrics", "Statistical tests"],
-          [["E1 Overall and seeding", "Complete system, effect of automatic seeding, seed hit rate (Objective 1)", "A_ESRG, P_ESRG, P_SRG", "DSC (primary), recall, precision, HD95; SHR", "Friedman, Kendall’s W, Wilcoxon with Holm; Wilson interval"],
+          [["E1 Overall and seeding", "Complete algorithms at different operator input (none, one seed, three seeds), effect of automatic seeding, seed hit rate (Objective 1)", "A_ESRG, P_ESRG, P_SRG_solo, P_SRG", "DSC (primary), recall, precision, HD95, time; SHR", "Friedman, Kendall’s W, Wilcoxon with Holm; Wilson interval"],
            ["E2a, E2b Seeding consistency (Objective 1)", "Dependence of the result on seed placement; automatic vs. planted", "A_ESRG or A_SRG; P_SRG, P_SRG_2, P_SRG_3", "DSC", "Friedman, Kendall’s W, Wilcoxon with Holm"],
            ["E3 LLDM added (Objective 2)", "Sufficiency of LLDM in the baseline", "P_SRG → P_SRG_L", "Recall (primary); DSC (no-harm)", "Wilcoxon with Holm"],
            ["E4 LLDM removed (Objective 2)", "Necessity of LLDM in the ESRG", "P_ESRG_noL → P_ESRG", "Recall (primary); DSC (no-harm)", "Wilcoxon with Holm"],
@@ -352,14 +360,15 @@ def build():
            ["E5b ASC as a stopping rule (Objective 3)", "Effect of ASC when SRG has no competitors", "P_SRG_solo → P_SRG_solo_S", "Precision, HD95", "Wilcoxon with Holm"],
            ["E6 ASC removed (Objective 3)", "Necessity of ASC in the ESRG", "P_ESRG_C_noS → P_ESRG_C", "Precision, HD95 (primary); DSC (no-harm)", "Wilcoxon with Holm"],
            {"group": "Secondary comparison (added after the test run; descriptive)"},
-           ["S1 Equal operator effort", "Both algorithms given the same single tumor click", "P_SRG_solo → P_ESRG", "DSC, precision, recall", "Wilcoxon with Holm"]],
+           ["S2 Same automatic seed", "Both algorithms started from the same automatic tumor seed", "A_SRG → A_ESRG", "DSC, precision, recall", "Wilcoxon with Holm"]],
           [1.6, 2.0, 1.6, 1.5, 1.5],
           note=("→ denotes baseline → enhanced. The ESRG configurations without a suffix run with LLDM and ASC on. "
                 "The baseline of E5b absorbs the whole image by design, so it illustrates the stopping rule rather "
                 "than testing it against a competent baseline. The upper bound σ_{cap} is omitted in the ASC-only "
                 "configurations because it is calibrated in log units. Determinism is verified by running A_ESRG and "
-                "A_SRG twice more and comparing the masks. S1 was defined after the test run, uses results already "
-                "collected, and does not enter the decision rules."),
+                "A_SRG twice more and comparing the masks. P_SRG_solo, which is the baseline of E5b, joined the overall "
+                "comparison E1 after the test run, to compare the algorithms at equal input, and S2 was defined after "
+                "the test run; both use results already collected, and the decision rules still use P_SRG as the baseline."),
           align=["l", "l", "l", "l", "l"])
 
     # ═══ 3.2 Algorithm and architecture ══════════════════════════════════════

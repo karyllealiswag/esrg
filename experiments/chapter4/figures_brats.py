@@ -1,12 +1,10 @@
 """
 figures_brats.py — Figures of Chapter 4 (BraTS 2023 evaluation).
 
-Purpose : Draw the three figures of the results chapter from a results folder of
+Purpose : Draw the figure of the results chapter from a results folder of
           experiments/evaluate.py (raw_results.csv, manual_seeds.csv).
-Function : fig_dsc() Figure 4.1, DSC distribution of the three complete configurations per tumor
-          type; fig_seed() Figure 4.2, DSC of automatic ESRG when the seed hits or misses the tumor;
-          fig_examples() Figure 4.3, one typical slice per tumor type (the slice whose P_SRG DSC is
-          closest to the tumor type's median) segmented by six configurations, re-run with the
+Function : fig_examples() Figure 4.1, one typical slice per tumor type (the slice whose P_SRG DSC is
+          closest to the tumor type's median) segmented by seven configurations, re-run with the
           logged seeds so that the masks equal the evaluated ones (checked by mask hash).
           CLI: python -P experiments/chapter4/figures_brats.py <results folder> <out folder>
 """
@@ -31,50 +29,13 @@ from experiments.sampling import BRATS_OUT, read_split
 plt.rcParams.update({"font.family": "serif", "font.serif": ["Times New Roman", "DejaVu Serif"], "font.size": 11})
 TYPES = [("glioma", "Glioma"), ("meningioma", "Meningioma")]
 E1 = [("A_ESRG", "ESRG\n(automatic)"), ("P_ESRG", "ESRG\n(planted)"), ("P_SRG", "SRG\n(planted)")]
-SHADE = {"A_ESRG": "#bdbdbd", "P_ESRG": "#f0f0f0", "P_SRG": "#737373"}
-EXAMPLES = [("P_SRG", "SRG (planted)"), ("P_ESRG", "ESRG (planted)"), ("A_ESRG", "ESRG (automatic)"),
+EXAMPLES = [("P_SRG", "SRG (3 planted)"), ("P_SRG_solo", "SRG (1 planted)"), ("P_ESRG", "ESRG (1 planted)"), ("A_ESRG", "ESRG (automatic)"),
             ("P_SRG_L", "SRG + LLDM"), ("P_SRG_solo_S", "SRG + ASC,\ntumor seed only"), ("P_ESRG_C_noS", "ESRG without ASC\n(compete mode)")]
 
 
 def load(d):
     df = pd.read_csv(os.path.join(d, "raw_results.csv"), low_memory=False)
     return df[df.error.isna()] if "error" in df else df
-
-
-def _box(ax, data, labels, shades):
-    b = ax.boxplot(data, widths=0.55, patch_artist=True, showmeans=True, medianprops=dict(color="black", lw=1.6),
-                   meanprops=dict(marker="D", markerfacecolor="white", markeredgecolor="black", markersize=5),
-                   flierprops=dict(marker="o", markersize=2.5, markerfacecolor="none", markeredgecolor="#555555"))
-    for patch, c in zip(b["boxes"], shades):
-        patch.set_facecolor(c); patch.set_edgecolor("black")
-    ax.set_xticks(range(1, len(labels) + 1), labels)
-
-
-def fig_dsc(df, out):
-    fig, axs = plt.subplots(1, 2, figsize=(9, 4.2), sharey=True)
-    for ax, (t, name) in zip(axs, TYPES):
-        s = df[df.tumor == t]
-        _box(ax, [s[s.config == a].dsc.dropna().values for a, _ in E1], [l for _, l in E1], [SHADE[a] for a, _ in E1])
-        ax.set_title(f"{name} (n = {s.file.nunique()})"); ax.set_ylim(-0.02, 1.02)
-        ax.axhline(0.7, ls=":", color="black", lw=0.9)
-        ax.grid(axis="y", color="#dddddd", lw=0.6); ax.set_axisbelow(True)
-    axs[0].set_ylabel("Dice similarity coefficient")
-    fig.tight_layout(); fig.savefig(out, dpi=200, facecolor="white"); plt.close(fig)
-
-
-def fig_seed(df, out):
-    a = df[df.config == "A_ESRG"].copy()
-    a["hit"] = a.seed_hit.fillna(False).astype(bool)
-    fig, axs = plt.subplots(1, 2, figsize=(8, 4), sharey=True)
-    for ax, (t, name) in zip(axs, TYPES):
-        s = a[a.tumor == t]
-        data = [s[s.hit].dsc.fillna(0).values, s[~s.hit].dsc.fillna(0).values]
-        _box(ax, data, [f"Seed inside tumor\n(n = {len(data[0])})", f"Seed outside tumor\n(n = {len(data[1])})"],
-             ["#f0f0f0", "#969696"])
-        ax.set_title(name); ax.set_ylim(-0.02, 1.02)
-        ax.grid(axis="y", color="#dddddd", lw=0.6); ax.set_axisbelow(True)
-    axs[0].set_ylabel("DSC of ESRG with automatic seeding")
-    fig.tight_layout(); fig.savefig(out, dpi=200, facecolor="white"); plt.close(fig)
 
 
 def _typical(df, t):
@@ -126,9 +87,7 @@ def main(d, out_dir):
     os.makedirs(out_dir, exist_ok=True)
     df = load(d)
     set_name = df.set.iloc[0]
-    fig_dsc(df, os.path.join(out_dir, "figure_4_1.png"))
-    fig_seed(df, os.path.join(out_dir, "figure_4_2.png"))
-    files, checks = fig_examples(df, d, set_name, os.path.join(out_dir, "figure_4_3.png"))
+    files, checks = fig_examples(df, d, set_name, os.path.join(out_dir, "figure_4_1.png"))
     json.dump({"examples": files, "mask_hash_matches": checks}, open(os.path.join(out_dir, "figures.json"), "w"), indent=1)
     print("figures written; examples:", files, "| hash matches:", checks)
 

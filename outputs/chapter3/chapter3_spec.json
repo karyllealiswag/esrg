@@ -213,7 +213,7 @@
   },
   {
    "t": "p",
-   "text": "Each predicted tumor mask M is compared with the expert ground-truth tumor-core mask G at the working resolution of the slice. Each objective is judged by the metric that responds most directly to its problem (Maier-Hein et al., 2024; Taha & Hanbury, 2015): the seed hit rate for Objective 1, recall for undersegmentation (Objective 2), and precision and HD95 for boundary leakage (Objective 3). The Dice similarity coefficient is the overall measure. The overlap metrics are computed from three pixel counts: the true positives (TP), tumor in both M and G; the false positives (FP), tumor only in M; and the false negatives (FN), tumor only in G."
+   "text": "Each predicted tumor mask M is compared with the expert ground-truth tumor-core mask G at the working resolution of the slice. Each objective is judged by the metric that responds most directly to its problem (Maier-Hein et al., 2024; Taha & Hanbury, 2015): the seed hit rate for Objective 1, recall for undersegmentation (Objective 2), and precision and HD95 for boundary leakage (Objective 3). The Dice similarity coefficient is the overall measure, and the processing time per slice measures efficiency. The overlap metrics are computed from three pixel counts: the true positives (TP), tumor in both M and G; the false positives (FP), tumor only in M; and the false negatives (FN), tumor only in G."
   },
   {
    "t": "p",
@@ -341,12 +341,42 @@
    "noindent": true
   },
   {
+   "t": "p",
+   "text": "**Processing Time** is the time the system needs to segment one slice, from the start of the run to the finished mask, without the scoring against the ground truth. It measures computational efficiency. A lower value is better. Because the batch evaluation runs several slices in parallel on one laptop, the times indicate the relative speed of the configurations, not their absolute speed."
+  },
+  {
+   "t": "eq",
+   "num": "3.8",
+   "title": "Processing Time Formula",
+   "math": [
+    "t = ",
+    {
+     "sub": [
+      "t",
+      "end"
+     ]
+    },
+    " − ",
+    {
+     "sub": [
+      "t",
+      "start"
+     ]
+    }
+   ]
+  },
+  {
+   "t": "p",
+   "text": "where *t* is the processing time of one slice, in seconds, and *t*_{start} and *t*_{end} are the clock readings at the start and at the end of the segmentation.",
+   "noindent": true
+  },
+  {
    "t": "h4",
    "text": "Statistical Treatment"
   },
   {
    "t": "p",
-   "text": "Results are reported separately for glioma and meningioma, because the two tumor types differ markedly in how they enhance. Because per-slice DSC values are bounded and often skewed, each configuration is described by its median and interquartile range together with its mean and standard deviation. Every configuration was run on the same slices, so configurations are compared with paired tests. Differences are oriented so that a positive value favors the enhanced configuration; for HD95, where lower is better, the sign is reversed. All tests are two-sided at α = .05."
+   "text": "Results are reported separately for glioma and meningioma, because the two tumor types differ markedly in how they enhance. Because per-slice DSC values are bounded and often skewed, each configuration is described by its median and interquartile range together with its mean and standard deviation. Every configuration was run on the same slices, so configurations are compared with paired tests. Differences are oriented so that a positive value favors the enhanced configuration; for HD95 and processing time, where lower is better, the sign is reversed. All tests are two-sided at α = .05."
   },
   {
    "t": "p",
@@ -358,7 +388,7 @@
   },
   {
    "t": "eq",
-   "num": "3.8",
+   "num": "3.9",
    "title": "Wilcoxon Effect Size Formula",
    "math": [
     "r = ",
@@ -379,11 +409,11 @@
   },
   {
    "t": "p",
-   "text": "**The Friedman test** (Friedman, 1937) compares more than two related configurations on the same slices, namely the three complete methods of E1 and the automatic and planted placements of E2. Each slice ranks the configurations, and a p value below .05 means at least one configuration differs from the others; pairwise Wilcoxon tests then show which."
+   "text": "**The Friedman test** (Friedman, 1937) compares more than two related configurations on the same slices, namely the four configurations of E1 and the automatic and planted placements of E2. Each slice ranks the configurations, and a p value below .05 means at least one configuration differs from the others; pairwise Wilcoxon tests then show which."
   },
   {
    "t": "eq",
-   "num": "3.9",
+   "num": "3.10",
    "title": "Friedman Test Statistic",
    "math": [
     {
@@ -429,7 +459,7 @@
   },
   {
    "t": "eq",
-   "num": "3.10",
+   "num": "3.11",
    "title": "Kendall’s W Formula",
    "math": [
     "W = ",
@@ -458,7 +488,7 @@
   },
   {
    "t": "eq",
-   "num": "3.11",
+   "num": "3.12",
    "title": "Wilson Score Interval Formula",
    "math": [
     "CI = ",
@@ -530,7 +560,7 @@
   },
   {
    "t": "eq",
-   "num": "3.12",
+   "num": "3.13",
    "title": "Holm Adjusted p Value Formula",
    "math": [
     {
@@ -629,9 +659,9 @@
    "rows": [
     [
      "E1 Overall and seeding",
-     "Complete system, effect of automatic seeding, seed hit rate (Objective 1)",
-     "A_ESRG, P_ESRG, P_SRG",
-     "DSC (primary), recall, precision, HD95; SHR",
+     "Complete algorithms at different operator input (none, one seed, three seeds), effect of automatic seeding, seed hit rate (Objective 1)",
+     "A_ESRG, P_ESRG, P_SRG_solo, P_SRG",
+     "DSC (primary), recall, precision, HD95, time; SHR",
      "Friedman, Kendall’s W, Wilcoxon with Holm; Wilson interval"
     ],
     [
@@ -680,9 +710,9 @@
      "group": "Secondary comparison (added after the test run; descriptive)"
     },
     [
-     "S1 Equal operator effort",
-     "Both algorithms given the same single tumor click",
-     "P_SRG_solo → P_ESRG",
+     "S2 Same automatic seed",
+     "Both algorithms started from the same automatic tumor seed",
+     "A_SRG → A_ESRG",
      "DSC, precision, recall",
      "Wilcoxon with Holm"
     ]
@@ -694,7 +724,7 @@
     1.5,
     1.5
    ],
-   "note": "→ denotes baseline → enhanced. The ESRG configurations without a suffix run with LLDM and ASC on. The baseline of E5b absorbs the whole image by design, so it illustrates the stopping rule rather than testing it against a competent baseline. The upper bound σ_{cap} is omitted in the ASC-only configurations because it is calibrated in log units. Determinism is verified by running A_ESRG and A_SRG twice more and comparing the masks. S1 was defined after the test run, uses results already collected, and does not enter the decision rules.",
+   "note": "→ denotes baseline → enhanced. The ESRG configurations without a suffix run with LLDM and ASC on. The baseline of E5b absorbs the whole image by design, so it illustrates the stopping rule rather than testing it against a competent baseline. The upper bound σ_{cap} is omitted in the ASC-only configurations because it is calibrated in log units. Determinism is verified by running A_ESRG and A_SRG twice more and comparing the masks. P_SRG_solo, which is the baseline of E5b, joined the overall comparison E1 after the test run, to compare the algorithms at equal input, and S2 was defined after the test run; both use results already collected, and the decision rules still use P_SRG as the baseline.",
    "align": [
     "l",
     "l",
@@ -1211,7 +1241,7 @@
   },
   {
    "t": "eq",
-   "num": "3.13",
+   "num": "3.14",
    "title": "Between-Class Variance Formula",
    "math": [
     {
@@ -1318,7 +1348,7 @@
   },
   {
    "t": "eq",
-   "num": "3.14",
+   "num": "3.15",
    "title": "Clearance Formula",
    "math": [
     {
@@ -1361,7 +1391,7 @@
   },
   {
    "t": "eq",
-   "num": "3.15",
+   "num": "3.16",
    "title": "Candidate Ranking Score Formula",
    "math": [
     {
@@ -1513,7 +1543,7 @@
   },
   {
    "t": "eq",
-   "num": "3.16",
+   "num": "3.17",
    "title": "Bias-Field Model in the Log Domain",
    "math": [
     "ln I",
@@ -1541,7 +1571,7 @@
   },
   {
    "t": "eq",
-   "num": "3.17",
+   "num": "3.18",
    "title": "Cancellation of the Bias Field Between Neighboring Pixels",
    "math": [
     "L",
@@ -1591,7 +1621,7 @@
   },
   {
    "t": "eq",
-   "num": "3.18",
+   "num": "3.19",
    "title": "Log-Domain Transformation Formula",
    "math": [
     "L",
@@ -1629,7 +1659,7 @@
   },
   {
    "t": "eq",
-   "num": "3.19",
+   "num": "3.20",
    "title": "Difference Measure of the Original SRG",
    "math": [
     {
@@ -1670,7 +1700,7 @@
   },
   {
    "t": "eq",
-   "num": "3.20",
+   "num": "3.21",
    "title": "Local Log-Domain Difference Measure",
    "math": [
     "δ",
@@ -1842,7 +1872,7 @@
   },
   {
    "t": "eq",
-   "num": "3.21",
+   "num": "3.22",
    "title": "Region Standard Deviation Formula",
    "math": [
     {
@@ -1894,7 +1924,7 @@
   },
   {
    "t": "eq",
-   "num": "3.22",
+   "num": "3.23",
    "title": "Local and Global Acceptance Bounds",
    "math": [
     {
@@ -1949,7 +1979,7 @@
   },
   {
    "t": "eq",
-   "num": "3.23",
+   "num": "3.24",
    "title": "Acceptance Condition",
    "math": [
     "δ",
@@ -1998,7 +2028,7 @@
   },
   {
    "t": "eq",
-   "num": "3.24",
+   "num": "3.25",
    "title": "Flood Guard Rule",
    "math": [
     "|A| > φ|B|  ⇒  ",

@@ -28,14 +28,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from experiments.stats import desc, friedman, holm, shapiro, wilcoxon, wilson
 
 ALPHA, R_MIN = 0.05, 0.1
-LOWER_BETTER = {"hd95_wc"}
+LOWER_BETTER = {"hd95_wc", "seconds"}
 
 TYPES = ["glioma", "meningioma"]
 SCOPES = TYPES + ["pooled"]
 METRICS = ["dsc", "recall", "precision", "hd95_wc"]
-LABEL = {"dsc": "DSC", "recall": "Recall", "precision": "Precision", "hd95_wc": "HD95 (px)"}
+LABEL = {"dsc": "DSC", "recall": "Recall", "precision": "Precision", "hd95_wc": "HD95 (px)", "seconds": "Time (s)"}
 SHR_TARGET = 70.0
-E1_ARMS = ["A_ESRG", "P_ESRG", "P_SRG"]
+E1_ARMS = ["A_ESRG", "P_ESRG", "P_SRG_solo", "P_SRG"]
+E1_METRICS = METRICS + ["seconds"]
 PLACEMENTS = ["P_SRG", "P_SRG_2", "P_SRG_3"]
 
 # exp: (baseline, enhanced, tested metrics (primary first), guard, objective, what changes)
@@ -52,13 +53,15 @@ PAIRED = {
 SECONDARY = {
     "S1": ("P_SRG_solo", "P_ESRG", ["dsc", "precision", "recall"], None, "secondary",
            "Equal operator effort: one tumor click for both algorithms"),
+    "S2": ("A_SRG", "A_ESRG", ["dsc", "precision", "recall"], None, "secondary",
+           "Same automatic tumor seed for both algorithms (SRG with planted competing seeds)"),
 }
 
 
 # ─── table helpers ───────────────────────────────────────────────────────────
 def load(d):
     df = pd.read_csv(os.path.join(d, "raw_results.csv"), low_memory=False)
-    for c in ("dsc", "recall", "precision", "hd95_wc"):
+    for c in ("dsc", "recall", "precision", "hd95_wc", "seconds"):
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df["seed_hit"] = df["seed_hit"].astype(str).eq("True")
     return df
@@ -120,17 +123,19 @@ def family(df, exp, scope):
 
 
 def e1(df, scope):
-    """Three-arm overall comparison: Friedman + Kendall's W per metric, post-hoc Wilcoxon with Holm over the 3 pairs."""
+    """Overall comparison of four configurations: Friedman + Kendall's W per metric, post-hoc Wilcoxon with Holm
+    over the six pairs. Time (seconds per slice) is analysed like HD95 (lower is better)."""
     out = {"arms": E1_ARMS, "metrics": {}}
-    for m in METRICS:
+    pairs = [("A_ESRG", "P_SRG_solo"), ("P_ESRG", "P_SRG_solo"), ("A_ESRG", "P_SRG"), ("P_ESRG", "P_SRG"),
+             ("A_ESRG", "P_ESRG"), ("P_SRG", "P_SRG_solo")]
+    for m in E1_METRICS:
         mat = pd.concat([wide(df, a, m, scope).rename(a) for a in E1_ARMS], axis=1).dropna()
-        fr = friedman(mat if m != "hd95_wc" else -mat)          # friedman() ranks higher = better
-        pairs = [("A_ESRG", "P_SRG"), ("P_ESRG", "P_SRG"), ("A_ESRG", "P_ESRG")]
+        fr = friedman(-mat if m in LOWER_BETTER else mat)         # friedman() ranks higher = better
         post = {}
         for a, b in pairs:
             x, y = mat[b], mat[a]                                  # enhanced a vs baseline b
-            t = wilcoxon(y, x) if m == "hd95_wc" else wilcoxon(x, y)
-            d = (x - y) if m == "hd95_wc" else (y - x)
+            t = wilcoxon(y, x) if m in LOWER_BETTER else wilcoxon(x, y)
+            d = (x - y) if m in LOWER_BETTER else (y - x)
             post[f"{a} vs {b}"] = {**t, "median_paired_diff": float(np.nanmedian(d))}
         for k, pa in zip(post, holm([v["p"] for v in post.values()])):
             post[k]["p_holm"] = pa
@@ -196,7 +201,7 @@ def write_summary(R, d):
          f"Set: {R['set']} | n = {R['n_slices']} patients (one slice each) | arms: {len(R['arms'])}. "
          "Calls: Holm p < .05 and |r| >= 0.1; positive median difference = enhanced better.", ""]
     L += ["## E1: A_ESRG vs P_ESRG vs P_SRG", "",
-          "| Scope | Metric | Median A_ESRG / P_ESRG / P_SRG | Friedman p | Kendall W | A_ESRG vs P_SRG | P_ESRG vs P_SRG | A_ESRG vs P_ESRG |",
+          "| Scope | Metric | Median A_ESRG / P_ESRG / P_SRG_solo / P_SRG | Friedman p | Kendall W | A_ESRG vs P_SRG | P_ESRG vs P_SRG | A_ESRG vs P_ESRG |",
           "|---|---|---|---|---|---|---|---|"]
     for sc in SCOPES:
         for m in METRICS:
