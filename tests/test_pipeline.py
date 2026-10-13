@@ -153,7 +153,7 @@ def test_explain_agrees_with_metrics():
     res = SimpleNamespace(mask=pred, gt=gt, stages=[st], meta={"seconds": 1.0, "seed_mode": "auto"},
                           stage=lambda k: st if k == "seed" else None)
     e, m = explain(res), evaluate(pred, gt)
-    for k, mk in (("dsc", "dsc"), ("iou", "iou"), ("recall", "recall"), ("precision", "precision"),
+    for k, mk in (("dsc", "dsc"), ("recall", "recall"), ("precision", "precision"),
                   ("hd95", "hd95"), ("assd", "assd"), ("leakage", "area_ratio")):
         assert abs(e[k]["value"] - m[mk]) < 1e-12, k
     assert e["seed"]["value"] == 1.0
@@ -247,28 +247,33 @@ def _srg_case():
     return img, mask, core
 
 
+def _with_competitor(core):
+    """Seed map: the tumor core as id 1 and one planted competitor (id 2) in the corner."""
+    labels = core.astype(np.int32)
+    labels[2:5, 2:5] = 2
+    return labels
+
+
 def test_srg_modules_off_is_the_published_algorithm():
-    """With no module applied, region 1 follows the 1994 rule: unconditional, region-mean delta."""
-    from esrg.growing import grow_srg, grow_srg_auto
+    """With no module applied, region 1 follows the 1994 rule: unconditional, region-mean
+    delta, and the tessellation allocates every pixel."""
+    from esrg.growing import grow_srg
     img, mask, core = _srg_case()
-    region, trace = grow_srg_auto(img, mask, core, Config(), record=True)
+    lab, trace = grow_srg(img, _with_competitor(core), record=True)
     assert trace["stop_reason"].startswith("tessellation complete (no stopping")
-    assert all(e[8] == "absorb" for e in trace["events"])
-    assert len(trace["events"]) == region.sum() - core.sum()
-    labels = core.astype(np.int32); labels[2, 2] = 2
-    lab, t2 = grow_srg(img, labels, record=True)
-    assert (lab > 0).all() and all(e[8] == "absorb" for e in t2["events"])
+    assert (lab > 0).all() and all(e[8] == "absorb" for e in trace["events"])
+    assert len(trace["events"]) == (lab == 1).sum() - core.sum()
 
 
 def test_srg_with_termination_obeys_its_bounds():
     """SRG + adaptive termination: every region-1 decision follows T_L and T_G, declined
-    pixels go to the background, and the tumor never crosses the square's edge. (The
-    background grid also seeds inside the square, so region 1 shares it, as in SRG.)"""
-    from esrg.growing import grow_srg_auto
+    pixels go to the competitor, and the tumor never crosses the square's edge."""
+    from esrg.growing import grow_srg
     img, mask, core = _srg_case()
     L = log_transform(img)
     stop = dict(k_L=1.5, k_G=3.0, sigma_floor=0.02)
-    region, trace = grow_srg_auto(L, mask, core, Config(), record=True, local_radius=3, stop=stop)
+    lab, trace = grow_srg(L, _with_competitor(core), record=True, local_radius=3, stop=stop)
+    region = lab == 1
     for r, c, g, ref, d, dev, t_l, t_g, verdict in trace["events"]:
         assert abs(d - abs(g - ref)) < 1e-12
         if verdict == "absorb":
@@ -283,6 +288,106 @@ def test_srg_with_termination_obeys_its_bounds():
     assert trace["declined"] > 0
 
 
+def test_srg_alone_fills_the_image_and_asc_stops_it():
+    """E7b: one seed and no stopping rule absorbs everything; ASC alone bounds the tumor."""
+    from esrg.growing import grow_srg
+    img, mask, core = _srg_case()
+    lab, trace = grow_srg(img, core.astype(np.int32))
+    assert (lab == 1).all() and "warning" in trace
+    L = log_transform(img)
+    lab, _ = grow_srg(L, core.astype(np.int32), stop=dict(k_L=1.5, k_G=3.0, sigma_floor=0.02))
+    truth = np.zeros(img.shape, bool); truth[15:35, 15:35] = True
+    assert (lab == 1).sum() > core.sum() and not ((lab == 1) & ~truth).any()
+
+
+def test_esrg_compete_mode():
+    """No competitor pixel = ESRG as proposed; with competitors and ASC off every pixel is
+    allocated; with ASC on the tumor stays inside the square."""
+    from esrg.growing import grow_esrg
+    img, mask, core = _srg_case()
+    L = log_transform(img)
+    cfg = Config()
+    plain, _ = grow_esrg(L, mask, core, 0.02, cfg)
+    same, _ = grow_esrg(L, mask, core, 0.02, cfg, competitors=np.zeros(L.shape, np.int32))
+    assert (plain == same).all()
+    comp = _with_competitor(core); comp[comp == 1] = 0
+    _, tr = grow_esrg(L, mask, core, 0.02, cfg.replace(use_stopping=False), competitors=comp)
+    assert (tr["labels"] > 0).all() and tr["unlabeled"] == 0
+    region, tr = grow_esrg(L, mask, core, 0.02, cfg, competitors=comp)
+    truth = np.zeros(img.shape, bool); truth[15:35, 15:35] = True
+    assert region.sum() > core.sum() and not (region & ~truth).any()
+    # The competitor took the rest, except declined pixels the tumor encloses (unreachable,
+    # as with SRG + ASC); post-processing fills those holes.
+    left = tr["labels"] == 0
+    assert tr["unlabeled"] == left.sum() and not (left & ~truth).any()
+
+
+def _stripped_case(edge_tumor=False, radius=9):
+    """A skull-stripped slice: zero outside a disk 'brain', a zero hole (CSF) inside it,
+    and a bright tumor, either deep or touching the brain edge."""
+    yy, xx = np.mgrid[:120, :120]
+    brain = (yy - 60) ** 2 + (xx - 60) ** 2 <= 50 ** 2
+    img = np.where(brain, 100.0, 0.0) + np.random.RandomState(2).normal(0, 2, brain.shape) * brain
+    img[55:60, 55:60] = 0.0                            # dark CSF pocket inside the brain
+    cy, cx = (60, 17) if edge_tumor else (60, 80)
+    tumor = ((yy - cy) ** 2 + (xx - cx) ** 2 <= radius ** 2) & brain
+    img[tumor] = 220.0
+    return np.clip(img, 0, 255), brain, tumor
+
+
+def test_pre_stripped_brain_mask_and_default_path():
+    """pre_stripped: H is the non-zero brain with holes filled; the BRISC default path is untouched."""
+    from esrg.preprocessing import head_mask
+    img, brain, _ = _stripped_case()
+    H, depth, info = head_mask(img, Config(pre_stripped=True))
+    assert info.get("pre_stripped") and (H == brain).all()
+    assert depth[60, 60] > depth[60, 15] and depth[~H].max() == 0
+    _, _, info0 = head_mask(img, Config())
+    assert "pre_stripped" not in info0 and "otsu_t" in info0["_steps"]
+
+
+def test_min_clearance_decides_cortical_tumors():
+    """A tumor touching the brain edge is rejected by the clearance filter at its BRISC
+    value and kept at 0, which is why 0 is in the BraTS seeding grid."""
+    from esrg.preprocessing import head_mask
+    from esrg.seeds import select_seed
+    img, _, tumor = _stripped_case(edge_tumor=True)
+    for clearance, kept in ((8.0, False), (0.0, True)):
+        cfg = Config(pre_stripped=True, min_clearance=clearance, interior_frac=0.0)
+        H, depth, _ = head_mask(img, cfg)
+        core, info = select_seed(img, H, depth, cfg)
+        assert core.any() == kept, (clearance, info["components"])
+        if kept:
+            assert not (core & ~tumor).any()
+
+
+def test_seed_protocol_obeys_its_rules():
+    """Planted seeds: tumor inside the core, P2/P3 4-8 mm from P1, healthy seed in the
+    other hemisphere and far from the core, background outside the brain."""
+    from experiments.evaluate import seed_protocol, MM, HEALTHY_CLEAR, BG_CLEAR
+    from scipy import ndimage as ndi
+    # Brain about 360 px across, as on a 512-px BraTS slice; tumor right of the midline.
+    yy, xx = np.mgrid[:512, :512]
+    brain = (yy - 256) ** 2 + (xx - 256) ** 2 <= 180 ** 2
+    tumor = (yy - 256) ** 2 + (xx - 340) ** 2 <= 30 ** 2
+    img = np.where(brain, 100.0, 0.0)
+    img[tumor] = 220.0
+    seeds, log = seed_protocol(img, tumor, Config(), "synthetic.png")
+    p1 = seeds[1][0]
+    assert seeds[1][0][:2] == np.unravel_index(int(np.argmax(ndi.distance_transform_edt(tumor))), tumor.shape)
+    for k in (2, 3):
+        d = np.hypot(seeds[k][0][0] - p1[0], seeds[k][0][1] - p1[1]) / MM
+        assert tumor[seeds[k][0][:2]] and 4 <= d <= 8, d
+    away = ndi.distance_transform_edt(~tumor)
+    for k in (1, 2, 3):
+        (tr, tc, t1), (hr, hc, t2), (br, bc, t3) = seeds[k]
+        assert (t1, t2, t3) == (1, 2, 3)
+        assert brain[hr, hc] and away[hr, hc] >= HEALTHY_CLEAR
+        assert not brain[br, bc] and ndi.distance_transform_edt(~brain)[br, bc] >= BG_CLEAR
+    assert log["healthy_rule"] == "contralateral" and all(seeds[k][1][1] < 256 for k in (1, 2, 3))
+    assert seed_protocol(img, tumor, Config(), "synthetic.png")[0] == seeds  # deterministic
+
+
 def test_srg_lists_only_the_stages_it_uses():
     """Plain SRG has no log stage; SRG manual also has no head-mask or candidate stage."""
     from esrg import run
@@ -295,6 +400,167 @@ def test_srg_lists_only_the_stages_it_uses():
     k = keys(Config(method="srg", seed_mode="manual"), pts)
     assert not {"mask", "candidates", "log"} & set(k), k
     assert "log" in keys(Config(method="srg", seed_mode="manual", srg_use_stopping=True), pts)
+
+
+def test_brisc_fair_subsample_is_nested_and_stratified():
+    """25% subsample: 27 per tumor x plane stratum, all inside the original sample, deterministic."""
+    import csv
+    from experiments.evaluate_fair import draw_sample, SRC, PER_STRATUM
+    if not os.path.isfile(os.path.join(SRC, "frame.csv")):
+        return
+    rows = draw_sample()
+    with open(os.path.join(SRC, "sample.csv"), newline="") as f:
+        original = {r["file"] for r in csv.DictReader(f)}
+    strata = {}
+    for r in rows:
+        strata[r["stratum"]] = strata.get(r["stratum"], 0) + 1
+    assert len(rows) == 9 * PER_STRATUM and set(strata.values()) == {PER_STRATUM}
+    assert {r["file"] for r in rows} <= original
+    assert [r["file"] for r in draw_sample()] == [r["file"] for r in rows]
+
+
+def test_brisc_fair_seed_protocol_obeys_its_rules():
+    """One seed of each type per placement, in its pool: tumor P1 deepest, P2/P3 8-16 px away
+    inside the tumor; healthy deep in the head and >= 12 px from it; air >= 8 px outside the
+    head; scalp at depth 2-8 px and >= 12 px from the tumor; deterministic."""
+    from experiments.evaluate_fair import seed_protocol, GT_CLEAR, AIR_CLEAR, NEAR
+    from esrg.preprocessing import head_mask, normalize
+    from scipy import ndimage as ndi
+    yy, xx = np.mgrid[:512, :512]
+    r2 = (yy - 256) ** 2 + (xx - 256) ** 2
+    img = np.where(r2 <= 200 ** 2, 220.0, 0.0)            # scalp fat (bright rim)
+    img[r2 <= 190 ** 2] = 100.0                           # brain
+    tumor = (yy - 256) ** 2 + (xx - 330) ** 2 <= 30 ** 2
+    img[tumor] = 180.0
+    cfg = Config()
+    seeds, log = seed_protocol(img, tumor, cfg, "synthetic.png")
+    H, depth, _ = head_mask(normalize(img), cfg)
+    away = ndi.distance_transform_edt(~tumor)
+    out = ndi.distance_transform_edt(~H)
+    p1 = seeds[1][0]
+    assert p1[:2] == np.unravel_index(int(np.argmax(ndi.distance_transform_edt(tumor))), tumor.shape)
+    for k in (1, 2, 3):
+        by = {t: (r, c) for r, c, t in seeds[k]}
+        assert sorted(by) == [1, 2, 3, 4]
+        assert tumor[by[1]]
+        if k > 1:
+            assert NEAR[0] <= np.hypot(by[1][0] - p1[0], by[1][1] - p1[1]) <= NEAR[1]
+        assert H[by[2]] and depth[by[2]] > 0.4 * depth[H].max() and away[by[2]] >= GT_CLEAR
+        assert not H[by[3]] and out[by[3]] >= AIR_CLEAR
+        assert H[by[4]] and 2 <= depth[by[4]] <= 8 and away[by[4]] >= GT_CLEAR
+    assert seed_protocol(img, tumor, cfg, "synthetic.png")[0] == seeds
+
+
+def test_fair_analysis_decision_rule_and_placement_sd():
+    """An effect counts only with Holm p < .05 and |r| >= 0.1; placement SD is the n-1 SD over P1-P3."""
+    import pandas as pd
+    from experiments.analyze_fair import _call, placement_sd
+    assert _call({"p_holm": 0.01, "r": 0.25}) == "better"
+    assert _call({"p_holm": 0.01, "r": -0.25}) == "worse"
+    assert _call({"p_holm": 0.01, "r": 0.05}) == "no effect"
+    assert _call({"p_holm": 0.20, "r": 0.60}) == "no effect"
+    df = pd.DataFrame({"file": ["a"] * 3 + ["b"] * 3, "tumor": "glioma",
+                       "config": ["P_SRG", "P_SRG_2", "P_SRG_3"] * 2,
+                       "dsc": [0.6, 0.7, 0.8, 0.5, 0.5, 0.5]})
+    sd = placement_sd(df, "pooled")
+    assert abs(sd["a"] - 0.1) < 1e-12 and sd["b"] == 0
+
+
+def test_sigma_cap_and_flood_guard_defaults_off_and_behave():
+    """Defaults leave growth unchanged; the cap clamps sigma_A (the floor always wins); the flood
+    guard regrows a flooding region with a tighter bound."""
+    from esrg.growing import grow_esrg, _sigma_A
+    assert _sigma_A(0.30, 0.02) == 0.30 and _sigma_A(0.30, 0.02, 0.06) == 0.06
+    assert _sigma_A(0.01, 0.02, 0.06) == 0.02 and _sigma_A(0.30, 0.05, 0.03) == 0.05
+    img, mask, core = _srg_case()
+    L = log_transform(img)
+    base, tb = grow_esrg(L, mask, core, 0.02, Config())
+    same, _ = grow_esrg(L, mask, core, 0.02, Config(sigma_cap=None, flood_frac=None))
+    assert (base == same).all()
+    tight, tt = grow_esrg(L, mask, core, 0.02, Config(sigma_cap=0.02))
+    assert tight.sum() <= base.sum() and all(p["sigma"] <= 0.0201 for p in tt["passes"])
+    # whole pipeline: a stopping bound loose enough to flood a flat noisy image, then guarded
+    from esrg import run
+    files = _test_images()
+    if not files:
+        return
+    loose = Config(k_local=6.0, k_global=9.0)
+    flooded = run(files[0], loose, manual_points=None)
+    guarded = run(files[0], loose.replace(flood_frac=0.05, flood_shrink=0.5, flood_tries=4))
+    g_info = guarded.stage("growth").info
+    if flooded.stage("growth").image.sum() > 0.05 * flooded.stage("mask").image.sum():
+        assert g_info.get("flood guard retries", 0) >= 1
+        assert guarded.stage("growth").image.sum() < flooded.stage("growth").image.sum()
+    off = run(files[0], loose)
+    assert (off.mask == flooded.mask).all()
+
+
+def test_v3_acceptance_rule_truth_table():
+    """_esrg_decide: rule 'off' is the earlier order (local bound, then global); veto rejects
+    healthy-near pixels; rescue absorbs a local failure that passes the global bound and is
+    not healthy-near, and otherwise skips instead of ending the pass."""
+    from esrg.growing import _esrg_decide as D
+    # g, d, ref_mu, t_local, t_global, mu_H, rule, stopping
+    assert D(5.0, 0.5, 5.0, 0.2, 1.0, None, "off", True) == ("stop", "stop")
+    assert D(6.5, 0.1, 5.0, 0.2, 1.0, None, "off", True) == ("reject", "reject")
+    assert D(5.1, 0.1, 5.0, 0.2, 1.0, None, "off", True) == ("absorb", "absorb")
+    assert D(4.1, 0.1, 5.0, 0.2, 1.0, 4.0, "veto", True) == ("reject", "veto")      # nearer healthy 4.0
+    assert D(4.1, 0.1, 5.0, 0.2, 1.0, 4.0, "veto", False) == ("reject", "veto")     # veto without ASC
+    assert D(5.6, 0.5, 5.0, 0.2, 1.0, 4.0, "rescue", True) == ("absorb", "rescue")
+    assert D(4.3, 0.5, 5.0, 0.2, 1.0, 4.0, "rescue", True) == ("skip", "skip")      # healthy-near
+    assert D(6.5, 0.5, 5.0, 0.2, 1.0, 4.0, "rescue", True) == ("skip", "skip")      # beyond T_G
+    assert D(5.6, 0.5, 5.0, 0.2, 1.0, 4.0, "both", True) == ("absorb", "rescue")
+    assert D(4.3, 0.1, 5.0, 0.2, 1.0, 4.0, "both", True) == ("reject", "veto")
+
+
+def test_v3_healthy_prototype_estimators():
+    """median / mode / otsu3 all find the dominant healthy level of a brain with a bright lesion."""
+    from esrg.preprocessing import healthy_prototype
+    rng = np.random.RandomState(3)
+    g = np.concatenate([rng.normal(4.5, 0.05, 9000), rng.normal(3.5, 0.05, 500), rng.normal(5.6, 0.05, 500)])
+    G = g.reshape(100, 100); region = np.ones_like(G, bool)
+    for how in ("median", "mode", "otsu3"):
+        assert abs(healthy_prototype(G, region, how) - 4.5) < 0.1, how
+
+
+def test_v3_srg_mirror_uses_the_same_decision():
+    """SRG's region 1 with the healthy rule declines exactly the pixels _esrg_decide rejects."""
+    from esrg.growing import _Region1, _esrg_decide
+    img = np.array([[5.0, 5.1, 4.1, 5.6]]); core = np.array([[True, False, False, False]])
+    r1 = _Region1(img, core, None, dict(k_L=1.5, k_G=3.0, sigma_floor=0.2), dict(mu=4.0, rule="both"))
+    for c, d in ((1, 0.1), (2, 0.9), (3, 0.6)):
+        act, _ = _esrg_decide(img[0, c], d, r1.stats.mean, 1.5 * r1.sigma(), 3.0 * r1.sigma(), 4.0, "both", True)
+        assert (r1.decide(0, c, d) == "absorb") == (act == "absorb")
+
+
+def test_v3_srg_connectivity_option():
+    """8-connected SRG (as published) and the 4-connected reproduction both tessellate fully."""
+    from esrg.growing import grow_srg
+    img, mask, core = _srg_case()
+    seeds = _with_competitor(core)
+    for k in (4, 8):
+        lab, _ = grow_srg(img, seeds, connectivity=k)
+        assert (lab > 0).all()
+
+
+def test_brats_arms_mirror_esrg_settings():
+    """Final BraTS evaluation: SRG mirrors read ESRG's settings (no separate SRG tuning), the ASC-only
+    arms omit the log-unit sigma cap, SRG is 8-connected, TEST needs explicit approval."""
+    import experiments.evaluate as E
+    if not os.path.isfile(E.FROZEN):
+        return
+    b = E.base_config()
+    cfg = {k: b.replace(seed_mode=v[2], **v[1]) for k, v in E.CONFIGS.items()}
+    assert b.global_running and b.healthy_rule == "off" and b.srg_k_local is None and b.srg_local_radius is None
+    assert cfg["P_SRG"].method == "srg" and cfg["P_SRG"].srg_connectivity == 8
+    assert "P_SRG_S" not in cfg and "P_SRG_LS" not in cfg and len(cfg) == 12
+    for k in ("P_SRG_L", "P_SRG_solo_S"):
+        assert cfg[k].srg_k("local") == b.k_local and cfg[k].srg_k("global") == b.k_global
+        assert cfg[k].srg_radius() == b.local_radius
+    assert cfg["P_SRG_solo_S"].sigma_cap is None and cfg["P_SRG_solo_S"].srg_use_stopping
+    assert cfg["P_ESRG_noL"].sigma_cap is None and not cfg["P_ESRG_noL"].use_log_local
+    assert cfg["P_SRG_solo_S"].flood_frac == b.flood_frac and E.CONFIGS["P_SRG_solo_S"][4] == (1,)
+    assert cfg["P_ESRG_C_noS"].esrg_compete and not cfg["P_ESRG_C_noS"].use_stopping
 
 
 if __name__ == "__main__":

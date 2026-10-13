@@ -1,0 +1,25 @@
+  [PASS] test/images matches split.csv  (1207 files, 1207 rows)
+  [PASS] test/masks matches split.csv  (1207 files, 1207 rows)
+  [PASS] test/masks_enhancing matches split.csv  (1207 files, 1207 rows)
+  [PASS] test: one slice per patient  (1207 rows, 1207 patients)
+  [PASS] dev/images matches split.csv  (518 files, 518 rows)
+  [PASS] dev/masks matches split.csv  (518 files, 518 rows)
+  [PASS] dev/masks_enhancing matches split.csv  (518 files, 518 rows)
+  [PASS] dev: one slice per patient  (518 rows, 518 patients)
+  [PASS] no patient in both TEST and DEV  (0 shared)
+  [PASS] glioma: TEST/DEV sizes as planned  (TEST 676, DEV 290 of N = 966)
+  [PASS] glioma: every pool patient used once
+  [PASS] meningioma: TEST/DEV sizes as planned  (TEST 531, DEV 228 of N = 759)
+  [PASS] meningioma: every pool patient used once
+  [PASS] file names carry the tumor type and patient of split.csv
+  [PASS] mask values are {0, 255}  (0 bad)
+  [PASS] masks are non-empty  (0 empty)
+  [PASS] image and mask sizes agree (512 x 512)  ({((512, 512), (512, 512))})
+  [PASS] esrg.io_utils.find_mask_for pairs images with masks
+spot-check overlays:
+  outputs/brats_spotcheck\test_glioma_BraTS-GLI-00285-000_ax_083_t1c.png
+  outputs/brats_spotcheck\test_glioma_BraTS-GLI-00736-001_ax_110_t1c.png
+  outputs/brats_spotcheck\test_glioma_BraTS-GLI-01264-000_ax_109_t1c.png
+  outputs/brats_spotcheck\test_meningioma_BraTS-MEN-01411-000_ax_052_t1c.png
+  outputs/brats_spotcheck\test_meningioma_BraTS-MEN-00307-000_ax_015_t1c.png
+  outputs/brats_spotcheck\test_meningioma_BraTS-MEN-00602-000_ax_107_t1c.png

@@ -61,6 +61,7 @@ FAIL_CLR    = "#C5221F"
 # region 1 is whichever region the user treats as the structure of interest,
 # region 2+ are the other competing regions. SRG itself does not distinguish them.
 SEED_RGB = viz.SEED_COLORS
+SEED_NAMES = {1: " (tumor)", 2: " (healthy tissue)", 3: " (background)", 4: " (scalp/skull)"}
 
 TEL_PANEL_W  = 520  # telemetry panel width (px), wide enough for the stage tables
 RAIL_W       = 34   # width of the strip left behind when telemetry is collapsed
@@ -72,11 +73,7 @@ CENTER_MIN   = 420  # the viewer never gets squeezed below this by the splitter
 ZOOM_MIN = 0.25
 ZOOM_MAX = 8.0
 
-# Header OBJ buttons jump to the stage that shows each thesis objective's output.
-# Objectives 2 and 3 both act in region growing; each scrolls the telemetry to its
-# own part of that stage (stage_report "anchor" blocks).
-OBJ_STAGE = {1: "seed", 2: "growth", 3: "growth"}
-OBJ_ANCHOR = {2: "obj2", 3: "obj3"}
+
 
 # Adjust Parameters: (attribute, Config field, label, lo, hi, step, format). With the
 # toggle off every one of them runs at its Table 3.4 default.
@@ -92,7 +89,6 @@ PARAMS = (
 # Footer metrics: (label, key in Result.scores, format)
 FOOTER_METRICS = (
     ("Dice Coefficient", "dsc", "{:.3f}"),
-    ("Jaccard Index", "iou", "{:.3f}"),
     ("Precision", "precision", "{:.3f}"),
     ("Recall", "recall", "{:.3f}"),
     ("Boundary Error (HD95)", "hd95", "{:.2f} px"),
@@ -199,7 +195,6 @@ class ESRGApp:
         # Evaluation step: which metrics the telemetry computes and explains.
         self.eval_vars = {k: tk.BooleanVar(value=True) for k, _, _ in evalx.METRICS}
         self.run_cfg = None  # configuration of the last run (supplies λ for leakage)
-        self._obj_clicked = None  # OBJ button that opened the current stage, if any
         self._tips = {}  # telemetry tag -> tooltip text, rebuilt on every redraw
 
         self.opacity = tk.DoubleVar(value=0.55)
@@ -212,7 +207,6 @@ class ESRGApp:
         # the SRG baseline keeps its own set, off by default (the 1994 algorithm).
         self.esrg_log_local = tk.BooleanVar(value=self.cfg.use_log and self.cfg.use_log_local)
         self.esrg_stop = tk.BooleanVar(value=self.cfg.use_stopping)
-        self.purify_manual_seed = tk.BooleanVar(value=self.cfg.purify_manual_seed)
         self.srg_log_local = tk.BooleanVar(value=self.cfg.srg_use_log_local)
         self.srg_stop = tk.BooleanVar(value=self.cfg.srg_use_stopping)
         self.adjust_params = tk.BooleanVar(value=False)
@@ -331,14 +325,9 @@ class ESRGApp:
         self.rail.grid_propagate(False)
         self._btn(self.rail, "|<", self._toggle_telemetry, width=RAIL_W - 8, height=28,
                   font=F_CAP).place(x=4, y=8)
-        rail_lbl = tk.Label(self.rail, text="\n".join("TELEMETRY"), bg=PANEL, fg=MUTED,
-                            font=TK_BOLD, cursor="hand2")
-        rail_lbl.place(relx=0.5, y=self._px(48), anchor="n")
-        rail_lbl.bind("<Button-1>", lambda e: self._toggle_telemetry())
 
         _rule(r).grid(row=3, column=0, sticky="ew")
         self._build_footer(r)
-        self._sync_obj_buttons()
         self._update_metrics()
 
     # ── Resizable control panel ──────────────────────────────────────────────
@@ -393,47 +382,6 @@ class ESRGApp:
         ctk.CTkLabel(bar, text="Enhanced Seeded Region Growing Algorithm in MRI Image Segmentation",
                      font=F_TITLE, text_color=TEXT).pack(side="left", padx=20)
 
-        # Packed right-to-left so they read OBJ 1, OBJ 2, OBJ 3 from the left.
-        self.obj_buttons = {}
-        self._obj_active = None
-        for n in (3, 2, 1):
-            b = ctk.CTkButton(bar, text=f"OBJ {n}", width=74, height=32, corner_radius=0,
-                              font=F_CAP, border_width=0, fg_color=OBJ_IDLE, hover_color=BLUE,
-                              text_color=TEXT, text_color_disabled=FAINT,
-                              command=lambda n=n: self._on_obj(n))
-            b.pack(side="right", padx=(0, 20 if n == 3 else 6))
-            b.bind("<Enter>", lambda e, n=n: self._obj_hover(n, True), add="+")
-            b.bind("<Leave>", lambda e, n=n: self._obj_hover(n, False), add="+")
-            self.obj_buttons[n] = b
-
-    def _obj_enabled(self, n):
-        return self.result is not None and self.result.stage(OBJ_STAGE[n]) is not None
-
-    def _obj_hover(self, n, inside):
-        # CTkButton animates only the fill on hover; swap the label colour here.
-        if not self._obj_enabled(n) or n == self._obj_active:
-            return
-        self.obj_buttons[n].configure(text_color=WHITE if inside else TEXT)
-
-    def _on_obj(self, n):
-        if self._obj_enabled(n):
-            self._select(OBJ_STAGE[n], obj=n)
-
-    def _sync_obj_buttons(self):
-        clicked = self._obj_clicked
-        if clicked and self._obj_enabled(clicked) and self.current == OBJ_STAGE[clicked]:
-            self._obj_active = clicked
-        else:
-            self._obj_active = next(
-                (n for n, k in OBJ_STAGE.items() if self._obj_enabled(n) and self.current == k), None)
-        for n, b in self.obj_buttons.items():
-            if not self._obj_enabled(n):
-                b.configure(state="disabled", fg_color=OBJ_IDLE, text_color=FAINT)
-            elif n == self._obj_active:
-                b.configure(state="normal", fg_color=BLUE, hover_color=BLUE, text_color=WHITE)
-            else:
-                b.configure(state="normal", fg_color=OBJ_IDLE, hover_color=BLUE, text_color=TEXT)
-
     # ── Left column: controls ────────────────────────────────────────────────
     def _section_header(self, parent, text):
         hdr = ctk.CTkFrame(parent, fg_color="transparent")
@@ -475,25 +423,28 @@ class ESRGApp:
         self._segmented(sc, self.seed_mode, (("auto", "Automatic"), ("manual", "Manual")),
                         self._on_seed_mode_change)
 
-        # Seed region palette + Clear button: clicks are planted as the selected region.
-        # Only meaningful for Manual seeding (and the SRG baseline, which tessellates the
-        # head between all planted regions — region 2+ is what stops the tumor region from
-        # swallowing the whole slice), so it lives in a slot that collapses to nothing in
-        # Automatic mode (see _update_seed_region_visibility).
+        # Seed region palette + Clear button: clicks are planted as the selected region
+        # (1 tumor, 2 healthy tissue, 3 background, 4 scalp/skull). Shown for Manual seeding, and for
+        # the SRG baseline under Automatic seeding, whose competing seeds (regions 2-3)
+        # are still planted -- they are what stops the tumor region from swallowing the
+        # whole slice. Otherwise the slot collapses (see _update_seed_region_visibility).
         self.region_slot = ctk.CTkFrame(sc, fg_color="transparent", height=1)
         self.region_slot.pack(fill="x")
         self.region_box = ctk.CTkFrame(self.region_slot, fg_color="transparent")
         ctk.CTkLabel(self.region_box, text="Seed region to plant", font=F_SMALL,
                      text_color=MUTED, anchor="w").pack(fill="x", pady=(4, 0))
+        self.region_rows = {}
         for t in range(1, self.cfg.manual_seed_types + 1):
             row = ctk.CTkFrame(self.region_box, fg_color="transparent")
             row.pack(fill="x", pady=1)
-            self._radio(row, f"Region {t}" + (" (tumor)" if t == 1 else ""),
+            self.region_rows[t] = row
+            self._radio(row, f"Region {t}" + SEED_NAMES.get(t, ""),
                         self.seed_type, t).pack(side="left")
             tk.Frame(row, bg="#%02x%02x%02x" % SEED_RGB[(t - 1) % len(SEED_RGB)],
                      width=14, height=14).pack(side="right", padx=8)
-        self._btn(self.region_box, "Clear Manual Seeds", self._clear_seeds, height=28,
-                  font=F_SMALL).pack(fill="x", pady=(6, 2))
+        self.clear_seeds_btn = self._btn(self.region_box, "Clear Manual Seeds", self._clear_seeds, height=28,
+                                         font=F_SMALL)
+        self.clear_seeds_btn.pack(fill="x", pady=(6, 2))
         self._update_seed_region_visibility()
 
         # Applied methods: one checkbox set per algorithm, shown for the selected one
@@ -508,8 +459,7 @@ class ESRGApp:
         # (checkbox, seeding mode it applies to or None for both)
         self.method_checks = {
             "esrg": [(check(self.esrg_log_local, "Log-Domain Local Measure (Obj 2)"), None),
-                     (check(self.esrg_stop, "Adaptive Termination (Obj 3)"), None),
-                     (check(self.purify_manual_seed, "Purify Manual Seed"), "manual")],
+                     (check(self.esrg_stop, "Adaptive Termination (Obj 3)"), None)],
             "srg": [(check(self.srg_log_local, "Log-Domain Local Measure (Obj 2)"), None),
                     (check(self.srg_stop, "Adaptive Termination (Obj 3)"), None)],
         }
@@ -597,7 +547,7 @@ class ESRGApp:
             used.add("radius")
         if auto:
             used.add("classes")
-        if auto or (esrg and self.purify_manual_seed.get()):
+        if auto:
             used.add("core_frac")
         return used
 
@@ -648,11 +598,22 @@ class ESRGApp:
         self._sync_controls()
         self._refresh_telemetry()
 
+    def _planting(self):
+        """Clicks plant seeds: every type under Manual seeding; under Automatic seeding
+        only SRG's competing seeds (types 2-3), since the tumor seed is selected."""
+        return self.seed_mode.get() == "manual" or self.method.get() == "srg"
+
     def _update_seed_region_visibility(self):
-        """The seed-region palette only matters for Manual seeding; automatic SRG
-        plants its own background seeds."""
-        if self.seed_mode.get() == "manual":
+        """The seed-region palette shows whenever clicks plant seeds (_planting)."""
+        if self._planting():
             self.region_box.pack(fill="x")
+            # The ESRG grows from the tumor seed alone; only the SRG baseline plants competing regions.
+            for t, row in self.region_rows.items():
+                row.pack_forget()
+                if t == 1 or self.method.get() == "srg":
+                    row.pack(fill="x", pady=1, before=self.clear_seeds_btn)
+            if self.method.get() == "esrg":
+                self.seed_type.set(1)
         else:
             self.region_box.pack_forget()
 
@@ -704,7 +665,7 @@ class ESRGApp:
         panes.grid_columnconfigure((0, 1), weight=1, uniform="pane")
 
         self.captions, self.legends, self.canvases = [], [], []
-        for i, title in enumerate(("ORIGINAL", "SEGMENTED OUTPUT")):
+        for i, title in enumerate(("ORIGINAL", "OUTPUT")):
             col = ctk.CTkFrame(panes, fg_color=WHITE, corner_radius=0)
             col.grid(row=0, column=i, sticky="nsew", padx=(0, 6) if i == 0 else (6, 0))
             col.grid_rowconfigure(2, weight=1)
@@ -767,7 +728,7 @@ class ESRGApp:
 
         head = ctk.CTkFrame(p, fg_color=WHITE, corner_radius=0)
         head.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
-        ctk.CTkLabel(head, text="STAGE TELEMETRY", font=F_CAP, text_color=BLUE).pack(side="left")
+        ctk.CTkLabel(head, text="DETAILS", font=F_CAP, text_color=BLUE).pack(side="left")
         self._btn(head, ">|", self._toggle_telemetry, width=36, height=26,
                   font=F_CAP).pack(side="right")
         ctk.CTkLabel(head, text="hover an underlined term to explain it", font=("Segoe UI", 11),
@@ -1021,7 +982,7 @@ class ESRGApp:
         elif not scores:
             msg, color = "No ground truth found — metrics unavailable.", WARN_CLR
         else:
-            msg, color = f"Status: {res.status} · scored against the ground-truth mask", MUTED
+            msg, color = "Scored against the ground-truth mask.", MUTED
         self.foot_msg.configure(text=msg, text_color=color)
 
     # ── Controller & Backend Invocation ──────────────────────────────────────
@@ -1055,7 +1016,6 @@ class ESRGApp:
                  f"• {'Ground truth detected' if gt else 'No ground truth found'}",
             text_color=MUTED)
         self._init_empty_stage_tabs()
-        self._sync_obj_buttons()
         self._update_metrics()
         self._render_panes()
         self._notify_title()
@@ -1067,7 +1027,11 @@ class ESRGApp:
         self._render_panes()
 
     def _on_click(self, event):
-        if self.seed_mode.get() != "manual" or not self.image_path:
+        if not self._planting() or not self.image_path:
+            return
+        if self.seed_mode.get() == "auto" and self.seed_type.get() == 1:
+            self.status_lbl.configure(text="Automatic seeding selects the tumor seed; plant only "
+                                           "Region 2 and 3 (competing) seeds.", text_color=MUTED)
             return
         rc = self._canvas_to_image(event.x, event.y, event.widget)
         if rc:
@@ -1085,14 +1049,19 @@ class ESRGApp:
         Parameters is on."""
         kw = dict(method=self.method.get(), seed_mode=self.seed_mode.get(),
                   use_log=self.esrg_log_local.get(), use_log_local=self.esrg_log_local.get(),
-                  use_stopping=self.esrg_stop.get(), purify_manual_seed=self.purify_manual_seed.get(),
-                  srg_use_log_local=self.srg_log_local.get(), srg_use_stopping=self.srg_stop.get())
+                  use_stopping=self.esrg_stop.get(), esrg_compete=False,
+                  srg_use_log_local=self.srg_log_local.get(), srg_use_stopping=self.srg_stop.get(),
+                  srg_use_healthy=False, healthy_rule="off")
         if self.adjust_params.get():
             for attr, field, _, lo, hi, step, _ in PARAMS:
                 v = float(getattr(self, attr).get())
                 kw[field] = int(round(v)) if isinstance(step, int) else round(v, 2)
             # Config requires k_G > k_L.
             kw["k_global"] = max(kw["k_global"], round(kw["k_local"] + 0.1, 2))
+            # The sliders drive whichever algorithm is selected; the SRG modules keep
+            # their own tuned fields, so set those too.
+            kw.update(srg_k_local=kw["k_local"], srg_k_global=kw["k_global"],
+                      srg_local_radius=kw["local_radius"])
         return self.cfg.replace(**kw)
 
     def _run(self):
@@ -1136,8 +1105,7 @@ class ESRGApp:
             return
 
         self.result = res
-        self.status_lbl.configure(text=f"Status: {res.status}",
-                                  text_color=OK_CLR if res.status == "OK" else WARN_CLR)
+        self.status_lbl.configure(text="Done.", text_color=MUTED)
         self._build_stage_buttons()
         self._update_metrics()
         self._select("final")
@@ -1161,26 +1129,22 @@ class ESRGApp:
     def _build_stage_buttons(self):
         self._clear_stages()
         for st in self.result.stages:
-            self._add_tab(st.key, st.name)
+            if st.key != "mask":      # brain masking belongs to the data, not to the algorithm
+                self._add_tab(st.key, st.name)
         # Always offered after a run; without a ground truth the telemetry
         # explains what is missing.
         self._add_tab("evaluation", "Evaluation")
 
-    def _select(self, key, obj=None):
-        """Show stage `key`; `obj` is the OBJ button that asked for it, if any."""
+    def _select(self, key):
+        """Show stage `key`."""
         self.current = key
-        self._obj_clicked = obj
-        status_colors = {"WARN": WARN_CLR, "FAIL": FAIL_CLR}
         for k, b in self.stage_buttons.items():
             if k == key:
                 b.configure(fg_color=BLUE, hover_color=BLUE, text_color=WHITE)
             else:
-                st = self.result.stage(k)
-                b.configure(fg_color=PANEL, hover_color=BORDER,
-                            text_color=status_colors.get(st.status, TEXT) if st else TEXT)
+                b.configure(fg_color=PANEL, hover_color=BORDER, text_color=TEXT)
 
-        self._sync_obj_buttons()
-        self._refresh_telemetry(OBJ_ANCHOR.get(obj))
+        self._refresh_telemetry()
         self._scroll_tab_into_view(self.stage_buttons.get(key))
         self._render_panes()
 
@@ -1345,7 +1309,7 @@ class ESRGApp:
         return rgb
 
     def _stamp_seeds(self, rgb):
-        if self.seed_mode.get() == "manual":
+        if self._planting():
             for r, c, t in self.manual_points:
                 rgb[max(0, r - 2):r + 3, max(0, c - 2):c + 3] = SEED_RGB[(t - 1) % len(SEED_RGB)]
         return rgb
@@ -1363,11 +1327,11 @@ class ESRGApp:
         res, op = self.result, self.opacity.get()
         legend = ""
         if self.raw_image is None and res is None:
-            out = (None, None, "ORIGINAL", "SEGMENTED OUTPUT", "")
+            out = (None, None, "ORIGINAL", "OUTPUT", "")
         elif res is None:
             # Raw scan preview, so the user can confirm the right slice was loaded.
             out = (self._stamp_seeds(_gray_rgb(self.raw_image)), None, "ORIGINAL",
-                   "SEGMENTED OUTPUT", "")
+                   "OUTPUT", "")
         else:
             left = _gray_rgb(self.raw_image if self.raw_image is not None
                              else res.stage("input").image)
@@ -1389,7 +1353,7 @@ class ESRGApp:
             if self.current != "evaluation":
                 self._stamp_seeds(left)
                 self._stamp_seeds(right)
-            out = (left, right, "ORIGINAL", f"SEGMENTED OUTPUT · {title}", legend)
+            out = (left, right, "ORIGINAL", "OUTPUT", legend)
         self._pane_cache = (key, out)
         return out
 
@@ -1402,7 +1366,7 @@ class ESRGApp:
         self.captions[1].configure(text=cap_r)
         self.legends[1].configure(text=legend)
         hints = ("Open an MRI slice to begin\nScroll to zoom · drag to pan",
-                 "The segmented output appears here\nafter RUN")
+                 "The output appears here\nafter RUN")
         for cv, rgb, hint in zip(self.canvases, (left, right), hints):
             self._paint(cv, rgb, hint)
 
