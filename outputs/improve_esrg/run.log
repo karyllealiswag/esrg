@@ -1,0 +1,378 @@
+=== start Tue Oct 13 09:02:20 CST 2026 ===
+size prior (fold-A GT / brain): {'n': 259, 'p95': 0.15, 'p99': 0.268, 'max': 0.534, 'median': 0.043}
+refs.csv: 518 tasks
+  refs.csv 10/518 tasks  0.2 min elapsed, ~12.5 min left
+  refs.csv 20/518 tasks  0.4 min elapsed, ~9.5 min left
+  refs.csv 30/518 tasks  0.6 min elapsed, ~9.0 min left
+  refs.csv 40/518 tasks  0.7 min elapsed, ~8.1 min left
+  refs.csv 50/518 tasks  0.8 min elapsed, ~7.6 min left
+  refs.csv 60/518 tasks  1.0 min elapsed, ~7.5 min left
+  refs.csv 70/518 tasks  1.1 min elapsed, ~7.1 min left
+  refs.csv 80/518 tasks  1.3 min elapsed, ~6.9 min left
+  refs.csv 90/518 tasks  1.4 min elapsed, ~6.6 min left
+  refs.csv 100/518 tasks  1.5 min elapsed, ~6.3 min left
+  refs.csv 110/518 tasks  1.6 min elapsed, ~6.1 min left
+  refs.csv 120/518 tasks  1.8 min elapsed, ~5.9 min left
+  refs.csv 130/518 tasks  1.9 min elapsed, ~5.7 min left
+  refs.csv 140/518 tasks  2.1 min elapsed, ~5.6 min left
+  refs.csv 150/518 tasks  2.2 min elapsed, ~5.4 min left
+  refs.csv 160/518 tasks  2.3 min elapsed, ~5.2 min left
+  refs.csv 170/518 tasks  2.5 min elapsed, ~5.1 min left
+  refs.csv 180/518 tasks  2.6 min elapsed, ~5.0 min left
+  refs.csv 190/518 tasks  2.8 min elapsed, ~4.8 min left
+  refs.csv 200/518 tasks  2.9 min elapsed, ~4.7 min left
+  refs.csv 210/518 tasks  3.1 min elapsed, ~4.5 min left
+  refs.csv 220/518 tasks  3.2 min elapsed, ~4.3 min left
+  refs.csv 230/518 tasks  3.3 min elapsed, ~4.2 min left
+  refs.csv 240/518 tasks  3.5 min elapsed, ~4.1 min left
+  refs.csv 250/518 tasks  3.6 min elapsed, ~3.9 min left
+  refs.csv 260/518 tasks  3.8 min elapsed, ~3.7 min left
+  refs.csv 270/518 tasks  3.9 min elapsed, ~3.5 min left
+  refs.csv 280/518 tasks  4.0 min elapsed, ~3.4 min left
+  refs.csv 290/518 tasks  4.1 min elapsed, ~3.3 min left
+  refs.csv 300/518 tasks  4.3 min elapsed, ~3.1 min left
+  refs.csv 310/518 tasks  4.4 min elapsed, ~2.9 min left
+  refs.csv 320/518 tasks  4.5 min elapsed, ~2.8 min left
+  refs.csv 330/518 tasks  4.6 min elapsed, ~2.6 min left
+  refs.csv 340/518 tasks  4.7 min elapsed, ~2.5 min left
+  refs.csv 350/518 tasks  4.9 min elapsed, ~2.3 min left
+  refs.csv 360/518 tasks  5.0 min elapsed, ~2.2 min left
+  refs.csv 370/518 tasks  5.1 min elapsed, ~2.0 min left
+  refs.csv 380/518 tasks  5.3 min elapsed, ~1.9 min left
+  refs.csv 390/518 tasks  5.4 min elapsed, ~1.8 min left
+  refs.csv 400/518 tasks  5.5 min elapsed, ~1.6 min left
+  refs.csv 410/518 tasks  5.6 min elapsed, ~1.5 min left
+  refs.csv 420/518 tasks  5.7 min elapsed, ~1.3 min left
+  refs.csv 430/518 tasks  5.8 min elapsed, ~1.2 min left
+  refs.csv 440/518 tasks  6.0 min elapsed, ~1.1 min left
+  refs.csv 450/518 tasks  6.1 min elapsed, ~0.9 min left
+  refs.csv 460/518 tasks  6.2 min elapsed, ~0.8 min left
+  refs.csv 470/518 tasks  6.3 min elapsed, ~0.6 min left
+  refs.csv 480/518 tasks  6.4 min elapsed, ~0.5 min left
+  refs.csv 490/518 tasks  6.6 min elapsed, ~0.4 min left
+  refs.csv 500/518 tasks  6.7 min elapsed, ~0.2 min left
+  refs.csv 510/518 tasks  6.8 min elapsed, ~0.1 min left
+  refs.csv 518/518 tasks  6.9 min elapsed, ~0.0 min left
+round1_foldA.csv: 1554 tasks
+  round1_foldA.csv 10/1554 tasks  0.3 min elapsed, ~53.3 min left
+  round1_foldA.csv 20/1554 tasks  0.6 min elapsed, ~44.5 min left
+  round1_foldA.csv 30/1554 tasks  0.9 min elapsed, ~43.3 min left
+  round1_foldA.csv 40/1554 tasks  1.0 min elapsed, ~39.1 min left
+  round1_foldA.csv 50/1554 tasks  1.2 min elapsed, ~36.0 min left
+  round1_foldA.csv 60/1554 tasks  1.5 min elapsed, ~36.3 min left
+  round1_foldA.csv 70/1554 tasks  1.8 min elapsed, ~37.6 min left
+  round1_foldA.csv 80/1554 tasks  2.0 min elapsed, ~36.6 min left
+  round1_foldA.csv 90/1554 tasks  2.3 min elapsed, ~37.9 min left
+  round1_foldA.csv 100/1554 tasks  2.6 min elapsed, ~37.8 min left
+  round1_foldA.csv 110/1554 tasks  2.9 min elapsed, ~38.1 min left
+  round1_foldA.csv 120/1554 tasks  3.1 min elapsed, ~37.4 min left
+  round1_foldA.csv 130/1554 tasks  3.5 min elapsed, ~38.7 min left
+  round1_foldA.csv 140/1554 tasks  3.9 min elapsed, ~39.3 min left
+  round1_foldA.csv 150/1554 tasks  4.2 min elapsed, ~39.2 min left
+  round1_foldA.csv 160/1554 tasks  4.5 min elapsed, ~38.9 min left
+  round1_foldA.csv 170/1554 tasks  4.9 min elapsed, ~39.7 min left
+  round1_foldA.csv 180/1554 tasks  5.1 min elapsed, ~39.0 min left
+  round1_foldA.csv 190/1554 tasks  5.3 min elapsed, ~38.4 min left
+  round1_foldA.csv 200/1554 tasks  5.6 min elapsed, ~37.7 min left
+  round1_foldA.csv 210/1554 tasks  5.9 min elapsed, ~38.0 min left
+  round1_foldA.csv 220/1554 tasks  6.2 min elapsed, ~37.4 min left
+  round1_foldA.csv 230/1554 tasks  6.5 min elapsed, ~37.2 min left
+  round1_foldA.csv 240/1554 tasks  6.7 min elapsed, ~36.7 min left
+  round1_foldA.csv 250/1554 tasks  7.0 min elapsed, ~36.4 min left
+  round1_foldA.csv 260/1554 tasks  7.3 min elapsed, ~36.1 min left
+  round1_foldA.csv 270/1554 tasks  7.5 min elapsed, ~35.6 min left
+  round1_foldA.csv 280/1554 tasks  7.8 min elapsed, ~35.4 min left
+  round1_foldA.csv 290/1554 tasks  8.1 min elapsed, ~35.3 min left
+  round1_foldA.csv 300/1554 tasks  8.4 min elapsed, ~35.2 min left
+  round1_foldA.csv 310/1554 tasks  8.7 min elapsed, ~34.7 min left
+  round1_foldA.csv 320/1554 tasks  8.8 min elapsed, ~33.9 min left
+  round1_foldA.csv 330/1554 tasks  9.1 min elapsed, ~33.8 min left
+  round1_foldA.csv 340/1554 tasks  9.4 min elapsed, ~33.4 min left
+  round1_foldA.csv 350/1554 tasks  9.7 min elapsed, ~33.3 min left
+  round1_foldA.csv 360/1554 tasks  10.0 min elapsed, ~33.0 min left
+  round1_foldA.csv 370/1554 tasks  10.3 min elapsed, ~32.9 min left
+  round1_foldA.csv 380/1554 tasks  10.8 min elapsed, ~33.4 min left
+  round1_foldA.csv 390/1554 tasks  11.0 min elapsed, ~33.0 min left
+  round1_foldA.csv 400/1554 tasks  11.3 min elapsed, ~32.5 min left
+  round1_foldA.csv 410/1554 tasks  11.5 min elapsed, ~32.2 min left
+  round1_foldA.csv 420/1554 tasks  11.9 min elapsed, ~32.1 min left
+  round1_foldA.csv 430/1554 tasks  12.2 min elapsed, ~32.0 min left
+  round1_foldA.csv 440/1554 tasks  12.6 min elapsed, ~31.8 min left
+  round1_foldA.csv 450/1554 tasks  12.7 min elapsed, ~31.2 min left
+  round1_foldA.csv 460/1554 tasks  13.0 min elapsed, ~30.9 min left
+  round1_foldA.csv 470/1554 tasks  13.2 min elapsed, ~30.5 min left
+  round1_foldA.csv 480/1554 tasks  13.5 min elapsed, ~30.1 min left
+  round1_foldA.csv 490/1554 tasks  13.7 min elapsed, ~29.8 min left
+  round1_foldA.csv 500/1554 tasks  14.0 min elapsed, ~29.5 min left
+  round1_foldA.csv 510/1554 tasks  14.3 min elapsed, ~29.3 min left
+  round1_foldA.csv 520/1554 tasks  14.6 min elapsed, ~29.1 min left
+  round1_foldA.csv 530/1554 tasks  14.9 min elapsed, ~28.8 min left
+  round1_foldA.csv 540/1554 tasks  15.2 min elapsed, ~28.6 min left
+  round1_foldA.csv 550/1554 tasks  15.6 min elapsed, ~28.4 min left
+  round1_foldA.csv 560/1554 tasks  15.8 min elapsed, ~28.1 min left
+  round1_foldA.csv 570/1554 tasks  16.1 min elapsed, ~27.7 min left
+  round1_foldA.csv 580/1554 tasks  16.4 min elapsed, ~27.5 min left
+  round1_foldA.csv 590/1554 tasks  16.6 min elapsed, ~27.2 min left
+  round1_foldA.csv 600/1554 tasks  16.8 min elapsed, ~26.7 min left
+  round1_foldA.csv 610/1554 tasks  17.1 min elapsed, ~26.4 min left
+  round1_foldA.csv 620/1554 tasks  17.2 min elapsed, ~26.0 min left
+  round1_foldA.csv 630/1554 tasks  17.6 min elapsed, ~25.8 min left
+  round1_foldA.csv 640/1554 tasks  17.8 min elapsed, ~25.4 min left
+  round1_foldA.csv 650/1554 tasks  18.1 min elapsed, ~25.2 min left
+  round1_foldA.csv 660/1554 tasks  18.4 min elapsed, ~24.9 min left
+  round1_foldA.csv 670/1554 tasks  18.7 min elapsed, ~24.7 min left
+  round1_foldA.csv 680/1554 tasks  18.9 min elapsed, ~24.2 min left
+  round1_foldA.csv 690/1554 tasks  19.1 min elapsed, ~23.9 min left
+  round1_foldA.csv 700/1554 tasks  19.3 min elapsed, ~23.6 min left
+  round1_foldA.csv 710/1554 tasks  19.7 min elapsed, ~23.4 min left
+  round1_foldA.csv 720/1554 tasks  19.9 min elapsed, ~23.1 min left
+  round1_foldA.csv 730/1554 tasks  20.3 min elapsed, ~22.9 min left
+  round1_foldA.csv 740/1554 tasks  20.5 min elapsed, ~22.5 min left
+  round1_foldA.csv 750/1554 tasks  20.8 min elapsed, ~22.3 min left
+  round1_foldA.csv 760/1554 tasks  21.0 min elapsed, ~22.0 min left
+  round1_foldA.csv 770/1554 tasks  21.3 min elapsed, ~21.7 min left
+  round1_foldA.csv 780/1554 tasks  21.5 min elapsed, ~21.4 min left
+  round1_foldA.csv 790/1554 tasks  21.8 min elapsed, ~21.1 min left
+  round1_foldA.csv 800/1554 tasks  22.2 min elapsed, ~20.9 min left
+  round1_foldA.csv 810/1554 tasks  22.4 min elapsed, ~20.5 min left
+  round1_foldA.csv 820/1554 tasks  22.7 min elapsed, ~20.3 min left
+  round1_foldA.csv 830/1554 tasks  22.9 min elapsed, ~20.0 min left
+  round1_foldA.csv 840/1554 tasks  23.3 min elapsed, ~19.8 min left
+  round1_foldA.csv 850/1554 tasks  23.5 min elapsed, ~19.5 min left
+  round1_foldA.csv 860/1554 tasks  23.7 min elapsed, ~19.1 min left
+  round1_foldA.csv 870/1554 tasks  24.0 min elapsed, ~18.8 min left
+  round1_foldA.csv 880/1554 tasks  24.2 min elapsed, ~18.5 min left
+  round1_foldA.csv 890/1554 tasks  24.4 min elapsed, ~18.2 min left
+  round1_foldA.csv 900/1554 tasks  24.7 min elapsed, ~17.9 min left
+  round1_foldA.csv 910/1554 tasks  24.9 min elapsed, ~17.6 min left
+  round1_foldA.csv 920/1554 tasks  25.1 min elapsed, ~17.3 min left
+  round1_foldA.csv 930/1554 tasks  25.4 min elapsed, ~17.0 min left
+  round1_foldA.csv 940/1554 tasks  25.6 min elapsed, ~16.7 min left
+  round1_foldA.csv 950/1554 tasks  25.8 min elapsed, ~16.4 min left
+  round1_foldA.csv 960/1554 tasks  26.1 min elapsed, ~16.1 min left
+  round1_foldA.csv 970/1554 tasks  26.3 min elapsed, ~15.8 min left
+  round1_foldA.csv 980/1554 tasks  26.5 min elapsed, ~15.5 min left
+  round1_foldA.csv 990/1554 tasks  26.8 min elapsed, ~15.2 min left
+  round1_foldA.csv 1000/1554 tasks  27.0 min elapsed, ~14.9 min left
+  round1_foldA.csv 1010/1554 tasks  27.2 min elapsed, ~14.6 min left
+  round1_foldA.csv 1020/1554 tasks  27.5 min elapsed, ~14.4 min left
+  round1_foldA.csv 1030/1554 tasks  27.6 min elapsed, ~14.1 min left
+  round1_foldA.csv 1040/1554 tasks  27.9 min elapsed, ~13.8 min left
+  round1_foldA.csv 1050/1554 tasks  28.1 min elapsed, ~13.5 min left
+  round1_foldA.csv 1060/1554 tasks  28.3 min elapsed, ~13.2 min left
+  round1_foldA.csv 1070/1554 tasks  28.5 min elapsed, ~12.9 min left
+  round1_foldA.csv 1080/1554 tasks  28.7 min elapsed, ~12.6 min left
+  round1_foldA.csv 1090/1554 tasks  29.0 min elapsed, ~12.3 min left
+  round1_foldA.csv 1100/1554 tasks  29.2 min elapsed, ~12.0 min left
+  round1_foldA.csv 1110/1554 tasks  29.4 min elapsed, ~11.8 min left
+  round1_foldA.csv 1120/1554 tasks  29.6 min elapsed, ~11.5 min left
+  round1_foldA.csv 1130/1554 tasks  29.8 min elapsed, ~11.2 min left
+  round1_foldA.csv 1140/1554 tasks  30.1 min elapsed, ~10.9 min left
+  round1_foldA.csv 1150/1554 tasks  30.3 min elapsed, ~10.6 min left
+  round1_foldA.csv 1160/1554 tasks  30.6 min elapsed, ~10.4 min left
+  round1_foldA.csv 1170/1554 tasks  30.8 min elapsed, ~10.1 min left
+  round1_foldA.csv 1180/1554 tasks  31.0 min elapsed, ~9.8 min left
+  round1_foldA.csv 1190/1554 tasks  31.2 min elapsed, ~9.5 min left
+  round1_foldA.csv 1200/1554 tasks  31.4 min elapsed, ~9.3 min left
+  round1_foldA.csv 1210/1554 tasks  31.7 min elapsed, ~9.0 min left
+  round1_foldA.csv 1220/1554 tasks  31.9 min elapsed, ~8.7 min left
+  round1_foldA.csv 1230/1554 tasks  32.1 min elapsed, ~8.5 min left
+  round1_foldA.csv 1240/1554 tasks  32.4 min elapsed, ~8.2 min left
+  round1_foldA.csv 1250/1554 tasks  32.6 min elapsed, ~7.9 min left
+  round1_foldA.csv 1260/1554 tasks  32.8 min elapsed, ~7.6 min left
+  round1_foldA.csv 1270/1554 tasks  33.0 min elapsed, ~7.4 min left
+  round1_foldA.csv 1280/1554 tasks  33.2 min elapsed, ~7.1 min left
+  round1_foldA.csv 1290/1554 tasks  33.4 min elapsed, ~6.8 min left
+  round1_foldA.csv 1300/1554 tasks  33.7 min elapsed, ~6.6 min left
+  round1_foldA.csv 1310/1554 tasks  33.9 min elapsed, ~6.3 min left
+  round1_foldA.csv 1320/1554 tasks  34.1 min elapsed, ~6.0 min left
+  round1_foldA.csv 1330/1554 tasks  34.4 min elapsed, ~5.8 min left
+  round1_foldA.csv 1340/1554 tasks  34.6 min elapsed, ~5.5 min left
+  round1_foldA.csv 1350/1554 tasks  34.9 min elapsed, ~5.3 min left
+  round1_foldA.csv 1360/1554 tasks  35.1 min elapsed, ~5.0 min left
+  round1_foldA.csv 1370/1554 tasks  35.3 min elapsed, ~4.7 min left
+  round1_foldA.csv 1380/1554 tasks  35.5 min elapsed, ~4.5 min left
+  round1_foldA.csv 1390/1554 tasks  35.7 min elapsed, ~4.2 min left
+  round1_foldA.csv 1400/1554 tasks  36.0 min elapsed, ~4.0 min left
+  round1_foldA.csv 1410/1554 tasks  36.2 min elapsed, ~3.7 min left
+  round1_foldA.csv 1420/1554 tasks  36.4 min elapsed, ~3.4 min left
+  round1_foldA.csv 1430/1554 tasks  36.6 min elapsed, ~3.2 min left
+  round1_foldA.csv 1440/1554 tasks  36.9 min elapsed, ~2.9 min left
+  round1_foldA.csv 1450/1554 tasks  37.1 min elapsed, ~2.7 min left
+  round1_foldA.csv 1460/1554 tasks  37.4 min elapsed, ~2.4 min left
+  round1_foldA.csv 1470/1554 tasks  37.6 min elapsed, ~2.1 min left
+  round1_foldA.csv 1480/1554 tasks  37.8 min elapsed, ~1.9 min left
+  round1_foldA.csv 1490/1554 tasks  38.0 min elapsed, ~1.6 min left
+  round1_foldA.csv 1500/1554 tasks  38.3 min elapsed, ~1.4 min left
+  round1_foldA.csv 1510/1554 tasks  38.5 min elapsed, ~1.1 min left
+  round1_foldA.csv 1520/1554 tasks  38.8 min elapsed, ~0.9 min left
+  round1_foldA.csv 1530/1554 tasks  39.0 min elapsed, ~0.6 min left
+  round1_foldA.csv 1540/1554 tasks  39.2 min elapsed, ~0.4 min left
+  round1_foldA.csv 1550/1554 tasks  39.5 min elapsed, ~0.1 min left
+  round1_foldA.csv 1554/1554 tasks  39.6 min elapsed, ~0.0 min left
+Traceback (most recent call last):
+  File "C:\Users\karyl\OneDrive\Desktop\esrg\experiments\improve_esrg.py", line 291, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\karyl\OneDrive\Desktop\esrg\experiments\improve_esrg.py", line 244, in main
+    c, p = pick(tabA.loc[[c for c, _ in grid[a]]], a, grid[a], cur[a])
+                ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karyl\AppData\Roaming\Python\Python314\site-packages\pandas\core\indexing.py", line 1207, in __getitem__
+    return self._getitem_axis(maybe_callable, axis=axis)
+           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karyl\AppData\Roaming\Python\Python314\site-packages\pandas\core\indexing.py", line 1438, in _getitem_axis
+    return self._getitem_iterable(key, axis=axis)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\karyl\AppData\Roaming\Python\Python314\site-packages\pandas\core\indexing.py", line 1378, in _getitem_iterable
+    keyarr, indexer = self._get_listlike_indexer(key, axis)
+                      ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "C:\Users\karyl\AppData\Roaming\Python\Python314\site-packages\pandas\core\indexing.py", line 1576, in _get_listlike_indexer
+    keyarr, indexer = ax._get_indexer_strict(key, axis_name)
+                      ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\karyl\AppData\Roaming\Python\Python314\site-packages\pandas\core\indexes\base.py", line 6302, in _get_indexer_strict
+    self._raise_if_missing(keyarr, indexer, axis_name)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\karyl\AppData\Roaming\Python\Python314\site-packages\pandas\core\indexes\base.py", line 6355, in _raise_if_missing
+    raise KeyError(f"{not_found} not in index")
+KeyError: "['ESRG|cap=none|kl=2|kg=3|floor=0.02|flood=none'] not in index"
+=== exit 1 Tue Oct 13 09:48:58 CST 2026 ===
+=== resume after scoring fix Tue Oct 13 09:49:20 CST 2026 ===
+size prior (fold-A GT / brain): {'n': 259, 'p95': 0.15, 'p99': 0.268, 'max': 0.534, 'median': 0.043}
+round1_foldB.csv: 259 tasks
+  round1_foldB.csv 10/259 tasks  0.1 min elapsed, ~2.2 min left
+  round1_foldB.csv 20/259 tasks  0.1 min elapsed, ~1.5 min left
+  round1_foldB.csv 30/259 tasks  0.2 min elapsed, ~1.2 min left
+  round1_foldB.csv 40/259 tasks  0.2 min elapsed, ~1.1 min left
+  round1_foldB.csv 50/259 tasks  0.2 min elapsed, ~0.9 min left
+  round1_foldB.csv 60/259 tasks  0.2 min elapsed, ~0.8 min left
+  round1_foldB.csv 70/259 tasks  0.3 min elapsed, ~0.7 min left
+  round1_foldB.csv 80/259 tasks  0.3 min elapsed, ~0.6 min left
+  round1_foldB.csv 90/259 tasks  0.3 min elapsed, ~0.5 min left
+  round1_foldB.csv 100/259 tasks  0.3 min elapsed, ~0.5 min left
+  round1_foldB.csv 110/259 tasks  0.3 min elapsed, ~0.4 min left
+  round1_foldB.csv 120/259 tasks  0.3 min elapsed, ~0.4 min left
+  round1_foldB.csv 130/259 tasks  0.4 min elapsed, ~0.4 min left
+  round1_foldB.csv 140/259 tasks  0.4 min elapsed, ~0.3 min left
+  round1_foldB.csv 150/259 tasks  0.4 min elapsed, ~0.3 min left
+  round1_foldB.csv 160/259 tasks  0.4 min elapsed, ~0.3 min left
+  round1_foldB.csv 170/259 tasks  0.4 min elapsed, ~0.2 min left
+  round1_foldB.csv 180/259 tasks  0.5 min elapsed, ~0.2 min left
+  round1_foldB.csv 190/259 tasks  0.5 min elapsed, ~0.2 min left
+  round1_foldB.csv 200/259 tasks  0.5 min elapsed, ~0.1 min left
+  round1_foldB.csv 210/259 tasks  0.5 min elapsed, ~0.1 min left
+  round1_foldB.csv 220/259 tasks  0.5 min elapsed, ~0.1 min left
+  round1_foldB.csv 230/259 tasks  0.5 min elapsed, ~0.1 min left
+  round1_foldB.csv 240/259 tasks  0.6 min elapsed, ~0.0 min left
+  round1_foldB.csv 250/259 tasks  0.6 min elapsed, ~0.0 min left
+  round1_foldB.csv 259/259 tasks  0.6 min elapsed, ~0.0 min left
+round 1 ESRG: winner ESRG|cap=0.08|kl=3|kg=4|floor=0.02|flood=none  gain on B +0.042  -> ACCEPTED
+round 1 SRG+S: winner SRG+S|cap=none|kl=5|kg=7|floor=0.02|flood=none  gain on B +0.000  -> rejected
+round2_foldA.csv: 518 tasks
+  round2_foldA.csv 10/518 tasks  0.5 min elapsed, ~24.8 min left
+  round2_foldA.csv 20/518 tasks  0.6 min elapsed, ~15.1 min left
+  round2_foldA.csv 30/518 tasks  1.1 min elapsed, ~17.3 min left
+  round2_foldA.csv 40/518 tasks  1.5 min elapsed, ~17.9 min left
+  round2_foldA.csv 50/518 tasks  1.9 min elapsed, ~18.0 min left
+  round2_foldA.csv 60/518 tasks  2.4 min elapsed, ~18.3 min left
+  round2_foldA.csv 70/518 tasks  2.7 min elapsed, ~17.1 min left
+  round2_foldA.csv 80/518 tasks  3.0 min elapsed, ~16.3 min left
+  round2_foldA.csv 90/518 tasks  3.3 min elapsed, ~15.7 min left
+  round2_foldA.csv 100/518 tasks  3.5 min elapsed, ~14.8 min left
+  round2_foldA.csv 110/518 tasks  3.9 min elapsed, ~14.4 min left
+  round2_foldA.csv 120/518 tasks  4.2 min elapsed, ~13.9 min left
+  round2_foldA.csv 130/518 tasks  4.5 min elapsed, ~13.3 min left
+  round2_foldA.csv 140/518 tasks  5.1 min elapsed, ~13.8 min left
+  round2_foldA.csv 150/518 tasks  5.3 min elapsed, ~13.1 min left
+  round2_foldA.csv 160/518 tasks  5.6 min elapsed, ~12.6 min left
+  round2_foldA.csv 170/518 tasks  6.0 min elapsed, ~12.2 min left
+  round2_foldA.csv 180/518 tasks  6.4 min elapsed, ~12.0 min left
+  round2_foldA.csv 190/518 tasks  6.8 min elapsed, ~11.7 min left
+  round2_foldA.csv 200/518 tasks  7.0 min elapsed, ~11.1 min left
+  round2_foldA.csv 210/518 tasks  7.3 min elapsed, ~10.7 min left
+  round2_foldA.csv 220/518 tasks  7.5 min elapsed, ~10.2 min left
+  round2_foldA.csv 230/518 tasks  7.9 min elapsed, ~9.8 min left
+  round2_foldA.csv 240/518 tasks  8.1 min elapsed, ~9.4 min left
+  round2_foldA.csv 250/518 tasks  8.4 min elapsed, ~9.0 min left
+  round2_foldA.csv 260/518 tasks  8.8 min elapsed, ~8.7 min left
+  round2_foldA.csv 270/518 tasks  9.2 min elapsed, ~8.4 min left
+  round2_foldA.csv 280/518 tasks  9.7 min elapsed, ~8.3 min left
+  round2_foldA.csv 290/518 tasks  10.1 min elapsed, ~7.9 min left
+  round2_foldA.csv 300/518 tasks  10.4 min elapsed, ~7.5 min left
+  round2_foldA.csv 310/518 tasks  10.7 min elapsed, ~7.2 min left
+  round2_foldA.csv 320/518 tasks  10.9 min elapsed, ~6.8 min left
+  round2_foldA.csv 330/518 tasks  11.2 min elapsed, ~6.4 min left
+  round2_foldA.csv 340/518 tasks  11.5 min elapsed, ~6.0 min left
+  round2_foldA.csv 350/518 tasks  11.7 min elapsed, ~5.6 min left
+  round2_foldA.csv 360/518 tasks  12.0 min elapsed, ~5.3 min left
+  round2_foldA.csv 370/518 tasks  12.2 min elapsed, ~4.9 min left
+  round2_foldA.csv 380/518 tasks  12.6 min elapsed, ~4.6 min left
+  round2_foldA.csv 390/518 tasks  13.0 min elapsed, ~4.3 min left
+  round2_foldA.csv 400/518 tasks  13.2 min elapsed, ~3.9 min left
+  round2_foldA.csv 410/518 tasks  13.5 min elapsed, ~3.6 min left
+  round2_foldA.csv 420/518 tasks  13.8 min elapsed, ~3.2 min left
+  round2_foldA.csv 430/518 tasks  14.0 min elapsed, ~2.9 min left
+  round2_foldA.csv 440/518 tasks  14.4 min elapsed, ~2.5 min left
+  round2_foldA.csv 450/518 tasks  14.6 min elapsed, ~2.2 min left
+  round2_foldA.csv 460/518 tasks  14.8 min elapsed, ~1.9 min left
+  round2_foldA.csv 470/518 tasks  15.1 min elapsed, ~1.5 min left
+  round2_foldA.csv 480/518 tasks  15.4 min elapsed, ~1.2 min left
+  round2_foldA.csv 490/518 tasks  15.7 min elapsed, ~0.9 min left
+  round2_foldA.csv 500/518 tasks  15.9 min elapsed, ~0.6 min left
+  round2_foldA.csv 510/518 tasks  16.2 min elapsed, ~0.3 min left
+  round2_foldA.csv 518/518 tasks  16.7 min elapsed, ~0.0 min left
+round2_foldB.csv: 259 tasks
+  round2_foldB.csv 10/259 tasks  0.2 min elapsed, ~4.9 min left
+  round2_foldB.csv 20/259 tasks  0.3 min elapsed, ~3.7 min left
+  round2_foldB.csv 30/259 tasks  0.5 min elapsed, ~3.6 min left
+  round2_foldB.csv 40/259 tasks  0.6 min elapsed, ~3.4 min left
+  round2_foldB.csv 50/259 tasks  0.8 min elapsed, ~3.2 min left
+  round2_foldB.csv 60/259 tasks  0.9 min elapsed, ~2.9 min left
+  round2_foldB.csv 70/259 tasks  1.0 min elapsed, ~2.7 min left
+  round2_foldB.csv 80/259 tasks  1.1 min elapsed, ~2.4 min left
+  round2_foldB.csv 90/259 tasks  1.2 min elapsed, ~2.3 min left
+  round2_foldB.csv 100/259 tasks  1.3 min elapsed, ~2.1 min left
+  round2_foldB.csv 110/259 tasks  1.5 min elapsed, ~2.0 min left
+  round2_foldB.csv 120/259 tasks  1.6 min elapsed, ~1.8 min left
+  round2_foldB.csv 130/259 tasks  1.7 min elapsed, ~1.7 min left
+  round2_foldB.csv 140/259 tasks  1.8 min elapsed, ~1.6 min left
+  round2_foldB.csv 150/259 tasks  2.0 min elapsed, ~1.4 min left
+  round2_foldB.csv 160/259 tasks  2.1 min elapsed, ~1.3 min left
+  round2_foldB.csv 170/259 tasks  2.2 min elapsed, ~1.1 min left
+  round2_foldB.csv 180/259 tasks  2.3 min elapsed, ~1.0 min left
+  round2_foldB.csv 190/259 tasks  2.4 min elapsed, ~0.9 min left
+  round2_foldB.csv 200/259 tasks  2.4 min elapsed, ~0.7 min left
+  round2_foldB.csv 210/259 tasks  2.5 min elapsed, ~0.6 min left
+  round2_foldB.csv 220/259 tasks  2.6 min elapsed, ~0.5 min left
+  round2_foldB.csv 230/259 tasks  2.7 min elapsed, ~0.3 min left
+  round2_foldB.csv 240/259 tasks  2.8 min elapsed, ~0.2 min left
+  round2_foldB.csv 250/259 tasks  2.9 min elapsed, ~0.1 min left
+  round2_foldB.csv 259/259 tasks  3.0 min elapsed, ~0.0 min left
+round 2 ESRG: winner ESRG|cap=0.08|kl=4|kg=5|floor=0.02|flood=0.149854  gain on B +0.046  -> ACCEPTED
+round 2 SRG+S: winner SRG+S|cap=none|kl=5|kg=7|floor=0.02|flood=0.268434  gain on B +0.008  -> rejected
+{
+  "final_params": {
+    "ESRG": {
+      "sigma_cap": 0.08,
+      "k_local": 4.0,
+      "k_global": 5.0,
+      "sigma_floor_min": 0.02,
+      "flood_frac": 0.1498541046439201
+    },
+    "SRG+S": {
+      "sigma_cap": null,
+      "k_local": 5.0,
+      "k_global": 7.0,
+      "sigma_floor_min": 0.02,
+      "flood_frac": null
+    }
+  },
+  "esrg_gap_to_plain_srg": 0.0768238739166055,
+  "stop_rule_triggered": true
+}
+tumor                                              glioma  meningioma  objective  share_dsc_ge_0.7
+config                                                                                            
+ESRG|cap=0.08|kl=4|kg=5|floor=0.02|flood=0.149854   0.523       0.804      0.663             0.548
+ESRG|cap=none|kl=2|kg=3|floor=0.02|flood=none       0.391       0.763      0.577             0.454
+SRG+S|cap=none|kl=5|kg=7|floor=0.02|flood=none      0.630       0.807      0.718             0.616
+SRG|plain                                           0.629       0.851      0.740             0.664
+=== exit 0 Tue Oct 13 10:09:41 CST 2026 ===

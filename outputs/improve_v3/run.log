@@ -1,0 +1,248 @@
+=== start Tue Oct 13 12:26:35 CST 2026 ===
+refs.csv: 389 tasks
+  refs.csv 10/389 tasks  0.4 min elapsed, ~13.6 min left
+  refs.csv 20/389 tasks  0.7 min elapsed, ~13.1 min left
+  refs.csv 30/389 tasks  1.0 min elapsed, ~11.6 min left
+  refs.csv 40/389 tasks  1.3 min elapsed, ~11.8 min left
+  refs.csv 50/389 tasks  1.6 min elapsed, ~10.9 min left
+  refs.csv 60/389 tasks  1.9 min elapsed, ~10.4 min left
+  refs.csv 70/389 tasks  2.2 min elapsed, ~9.9 min left
+  refs.csv 80/389 tasks  2.5 min elapsed, ~9.5 min left
+  refs.csv 90/389 tasks  2.7 min elapsed, ~9.1 min left
+  refs.csv 100/389 tasks  3.0 min elapsed, ~8.8 min left
+  refs.csv 110/389 tasks  3.4 min elapsed, ~8.5 min left
+  refs.csv 120/389 tasks  3.5 min elapsed, ~7.9 min left
+  refs.csv 130/389 tasks  3.9 min elapsed, ~7.7 min left
+  refs.csv 140/389 tasks  4.1 min elapsed, ~7.3 min left
+  refs.csv 150/389 tasks  4.4 min elapsed, ~7.0 min left
+  refs.csv 160/389 tasks  4.6 min elapsed, ~6.6 min left
+  refs.csv 170/389 tasks  4.9 min elapsed, ~6.3 min left
+  refs.csv 180/389 tasks  5.1 min elapsed, ~5.9 min left
+  refs.csv 190/389 tasks  5.4 min elapsed, ~5.6 min left
+  refs.csv 200/389 tasks  6.0 min elapsed, ~5.6 min left
+  refs.csv 210/389 tasks  6.8 min elapsed, ~5.8 min left
+  refs.csv 220/389 tasks  7.6 min elapsed, ~5.8 min left
+  refs.csv 230/389 tasks  8.1 min elapsed, ~5.6 min left
+  refs.csv 240/389 tasks  8.8 min elapsed, ~5.5 min left
+  refs.csv 250/389 tasks  9.6 min elapsed, ~5.3 min left
+  refs.csv 260/389 tasks  10.2 min elapsed, ~5.1 min left
+  refs.csv 270/389 tasks  10.9 min elapsed, ~4.8 min left
+  refs.csv 280/389 tasks  11.5 min elapsed, ~4.5 min left
+  refs.csv 290/389 tasks  12.1 min elapsed, ~4.1 min left
+  refs.csv 300/389 tasks  12.3 min elapsed, ~3.6 min left
+  refs.csv 310/389 tasks  12.6 min elapsed, ~3.2 min left
+  refs.csv 320/389 tasks  12.8 min elapsed, ~2.8 min left
+  refs.csv 330/389 tasks  25.3 min elapsed, ~4.5 min left
+  refs.csv 340/389 tasks  82.3 min elapsed, ~11.9 min left
+  refs.csv 350/389 tasks  82.7 min elapsed, ~9.2 min left
+  refs.csv 360/389 tasks  83.0 min elapsed, ~6.7 min left
+  refs.csv 370/389 tasks  83.2 min elapsed, ~4.3 min left
+  refs.csv 380/389 tasks  83.5 min elapsed, ~2.0 min left
+  refs.csv 389/389 tasks  83.6 min elapsed, ~0.0 min left
+round1_D1.csv: 1036 tasks
+  round1_D1.csv 10/1036 tasks  0.3 min elapsed, ~28.1 min left
+  round1_D1.csv 20/1036 tasks  0.3 min elapsed, ~16.6 min left
+  round1_D1.csv 30/1036 tasks  0.4 min elapsed, ~13.6 min left
+  round1_D1.csv 40/1036 tasks  0.6 min elapsed, ~14.0 min left
+  round1_D1.csv 50/1036 tasks  0.7 min elapsed, ~13.5 min left
+  round1_D1.csv 60/1036 tasks  0.8 min elapsed, ~13.5 min left
+  round1_D1.csv 70/1036 tasks  1.0 min elapsed, ~13.2 min left
+  round1_D1.csv 80/1036 tasks  1.0 min elapsed, ~12.3 min left
+  round1_D1.csv 90/1036 tasks  1.2 min elapsed, ~12.2 min left
+  round1_D1.csv 100/1036 tasks  1.4 min elapsed, ~13.0 min left
+  round1_D1.csv 110/1036 tasks  1.5 min elapsed, ~12.9 min left
+  round1_D1.csv 120/1036 tasks  1.6 min elapsed, ~12.5 min left
+  round1_D1.csv 130/1036 tasks  1.8 min elapsed, ~12.6 min left
+  round1_D1.csv 140/1036 tasks  2.0 min elapsed, ~12.7 min left
+  round1_D1.csv 150/1036 tasks  2.3 min elapsed, ~13.3 min left
+  round1_D1.csv 160/1036 tasks  2.3 min elapsed, ~12.8 min left
+  round1_D1.csv 170/1036 tasks  2.5 min elapsed, ~12.8 min left
+  round1_D1.csv 180/1036 tasks  2.6 min elapsed, ~12.5 min left
+  round1_D1.csv 190/1036 tasks  2.7 min elapsed, ~12.2 min left
+  round1_D1.csv 200/1036 tasks  2.9 min elapsed, ~12.1 min left
+  round1_D1.csv 210/1036 tasks  3.0 min elapsed, ~11.9 min left
+  round1_D1.csv 220/1036 tasks  3.2 min elapsed, ~11.9 min left
+  round1_D1.csv 230/1036 tasks  3.4 min elapsed, ~12.0 min left
+  round1_D1.csv 240/1036 tasks  3.5 min elapsed, ~11.7 min left
+  round1_D1.csv 250/1036 tasks  3.6 min elapsed, ~11.3 min left
+  round1_D1.csv 260/1036 tasks  3.7 min elapsed, ~11.2 min left
+  round1_D1.csv 270/1036 tasks  3.8 min elapsed, ~10.9 min left
+  round1_D1.csv 280/1036 tasks  4.0 min elapsed, ~10.7 min left
+  round1_D1.csv 290/1036 tasks  4.2 min elapsed, ~10.7 min left
+  round1_D1.csv 300/1036 tasks  4.3 min elapsed, ~10.5 min left
+  round1_D1.csv 310/1036 tasks  4.4 min elapsed, ~10.2 min left
+  round1_D1.csv 320/1036 tasks  4.5 min elapsed, ~10.0 min left
+  round1_D1.csv 330/1036 tasks  4.6 min elapsed, ~9.8 min left
+  round1_D1.csv 340/1036 tasks  4.8 min elapsed, ~9.9 min left
+  round1_D1.csv 350/1036 tasks  4.9 min elapsed, ~9.6 min left
+  round1_D1.csv 360/1036 tasks  5.0 min elapsed, ~9.5 min left
+  round1_D1.csv 370/1036 tasks  5.2 min elapsed, ~9.3 min left
+  round1_D1.csv 380/1036 tasks  5.3 min elapsed, ~9.2 min left
+  round1_D1.csv 390/1036 tasks  5.4 min elapsed, ~9.0 min left
+  round1_D1.csv 400/1036 tasks  5.5 min elapsed, ~8.8 min left
+  round1_D1.csv 410/1036 tasks  5.6 min elapsed, ~8.6 min left
+  round1_D1.csv 420/1036 tasks  5.7 min elapsed, ~8.4 min left
+  round1_D1.csv 430/1036 tasks  5.8 min elapsed, ~8.2 min left
+  round1_D1.csv 440/1036 tasks  5.9 min elapsed, ~8.0 min left
+  round1_D1.csv 450/1036 tasks  6.0 min elapsed, ~7.9 min left
+  round1_D1.csv 460/1036 tasks  6.2 min elapsed, ~7.7 min left
+  round1_D1.csv 470/1036 tasks  6.2 min elapsed, ~7.5 min left
+  round1_D1.csv 480/1036 tasks  6.4 min elapsed, ~7.4 min left
+  round1_D1.csv 490/1036 tasks  6.4 min elapsed, ~7.2 min left
+  round1_D1.csv 500/1036 tasks  6.6 min elapsed, ~7.0 min left
+  round1_D1.csv 510/1036 tasks  6.7 min elapsed, ~6.9 min left
+  round1_D1.csv 520/1036 tasks  6.8 min elapsed, ~6.7 min left
+  round1_D1.csv 530/1036 tasks  6.9 min elapsed, ~6.6 min left
+  round1_D1.csv 540/1036 tasks  7.1 min elapsed, ~6.5 min left
+  round1_D1.csv 550/1036 tasks  7.3 min elapsed, ~6.4 min left
+  round1_D1.csv 560/1036 tasks  7.4 min elapsed, ~6.3 min left
+  round1_D1.csv 570/1036 tasks  7.5 min elapsed, ~6.1 min left
+  round1_D1.csv 580/1036 tasks  7.6 min elapsed, ~5.9 min left
+  round1_D1.csv 590/1036 tasks  7.7 min elapsed, ~5.8 min left
+  round1_D1.csv 600/1036 tasks  7.8 min elapsed, ~5.7 min left
+  round1_D1.csv 610/1036 tasks  7.9 min elapsed, ~5.5 min left
+  round1_D1.csv 620/1036 tasks  8.0 min elapsed, ~5.4 min left
+  round1_D1.csv 630/1036 tasks  8.0 min elapsed, ~5.2 min left
+  round1_D1.csv 640/1036 tasks  8.1 min elapsed, ~5.0 min left
+  round1_D1.csv 650/1036 tasks  8.2 min elapsed, ~4.9 min left
+  round1_D1.csv 660/1036 tasks  8.2 min elapsed, ~4.7 min left
+  round1_D1.csv 670/1036 tasks  8.3 min elapsed, ~4.5 min left
+  round1_D1.csv 680/1036 tasks  8.4 min elapsed, ~4.4 min left
+  round1_D1.csv 690/1036 tasks  8.4 min elapsed, ~4.2 min left
+  round1_D1.csv 700/1036 tasks  8.5 min elapsed, ~4.1 min left
+  round1_D1.csv 710/1036 tasks  8.6 min elapsed, ~3.9 min left
+  round1_D1.csv 720/1036 tasks  8.6 min elapsed, ~3.8 min left
+  round1_D1.csv 730/1036 tasks  8.7 min elapsed, ~3.6 min left
+  round1_D1.csv 740/1036 tasks  8.7 min elapsed, ~3.5 min left
+  round1_D1.csv 750/1036 tasks  8.8 min elapsed, ~3.4 min left
+  round1_D1.csv 760/1036 tasks  8.9 min elapsed, ~3.2 min left
+  round1_D1.csv 770/1036 tasks  9.0 min elapsed, ~3.1 min left
+  round1_D1.csv 780/1036 tasks  9.1 min elapsed, ~3.0 min left
+  round1_D1.csv 790/1036 tasks  9.2 min elapsed, ~2.9 min left
+  round1_D1.csv 800/1036 tasks  9.2 min elapsed, ~2.7 min left
+  round1_D1.csv 810/1036 tasks  9.3 min elapsed, ~2.6 min left
+  round1_D1.csv 820/1036 tasks  9.3 min elapsed, ~2.5 min left
+  round1_D1.csv 830/1036 tasks  9.4 min elapsed, ~2.3 min left
+  round1_D1.csv 840/1036 tasks  9.5 min elapsed, ~2.2 min left
+  round1_D1.csv 850/1036 tasks  9.5 min elapsed, ~2.1 min left
+  round1_D1.csv 860/1036 tasks  9.6 min elapsed, ~2.0 min left
+  round1_D1.csv 870/1036 tasks  9.6 min elapsed, ~1.8 min left
+  round1_D1.csv 880/1036 tasks  9.7 min elapsed, ~1.7 min left
+  round1_D1.csv 890/1036 tasks  9.8 min elapsed, ~1.6 min left
+  round1_D1.csv 900/1036 tasks  9.9 min elapsed, ~1.5 min left
+  round1_D1.csv 910/1036 tasks  10.0 min elapsed, ~1.4 min left
+  round1_D1.csv 920/1036 tasks  10.0 min elapsed, ~1.3 min left
+  round1_D1.csv 930/1036 tasks  10.1 min elapsed, ~1.2 min left
+  round1_D1.csv 940/1036 tasks  10.1 min elapsed, ~1.0 min left
+  round1_D1.csv 950/1036 tasks  10.2 min elapsed, ~0.9 min left
+  round1_D1.csv 960/1036 tasks  10.3 min elapsed, ~0.8 min left
+  round1_D1.csv 970/1036 tasks  10.3 min elapsed, ~0.7 min left
+  round1_D1.csv 980/1036 tasks  10.4 min elapsed, ~0.6 min left
+  round1_D1.csv 990/1036 tasks  10.4 min elapsed, ~0.5 min left
+  round1_D1.csv 1000/1036 tasks  10.5 min elapsed, ~0.4 min left
+  round1_D1.csv 1010/1036 tasks  10.6 min elapsed, ~0.3 min left
+  round1_D1.csv 1020/1036 tasks  10.7 min elapsed, ~0.2 min left
+  round1_D1.csv 1030/1036 tasks  10.8 min elapsed, ~0.1 min left
+  round1_D1.csv 1036/1036 tasks  10.8 min elapsed, ~0.0 min left
+round1_D2.csv: 130 tasks
+  round1_D2.csv 10/130 tasks  0.1 min elapsed, ~1.5 min left
+  round1_D2.csv 20/130 tasks  0.2 min elapsed, ~1.2 min left
+  round1_D2.csv 30/130 tasks  0.3 min elapsed, ~1.1 min left
+  round1_D2.csv 40/130 tasks  0.4 min elapsed, ~0.8 min left
+  round1_D2.csv 50/130 tasks  0.5 min elapsed, ~0.7 min left
+  round1_D2.csv 60/130 tasks  0.5 min elapsed, ~0.6 min left
+  round1_D2.csv 70/130 tasks  0.6 min elapsed, ~0.5 min left
+  round1_D2.csv 80/130 tasks  0.6 min elapsed, ~0.4 min left
+  round1_D2.csv 90/130 tasks  0.6 min elapsed, ~0.3 min left
+  round1_D2.csv 100/130 tasks  0.6 min elapsed, ~0.2 min left
+  round1_D2.csv 110/130 tasks  0.7 min elapsed, ~0.1 min left
+  round1_D2.csv 120/130 tasks  0.7 min elapsed, ~0.1 min left
+  round1_D2.csv 130/130 tasks  0.8 min elapsed, ~0.0 min left
+round 1: winner ESRG|run=1|rule=off|proto=median|addons=1|kl=4|kg=5  D1 0.691 (ref 0.651)  D2 gain +0.015 -> rejected
+round2_D1.csv: 518 tasks
+  round2_D1.csv 10/518 tasks  0.3 min elapsed, ~13.8 min left
+  round2_D1.csv 20/518 tasks  0.5 min elapsed, ~12.3 min left
+  round2_D1.csv 30/518 tasks  0.7 min elapsed, ~11.9 min left
+  round2_D1.csv 40/518 tasks  0.9 min elapsed, ~10.5 min left
+  round2_D1.csv 50/518 tasks  1.2 min elapsed, ~11.4 min left
+  round2_D1.csv 60/518 tasks  1.4 min elapsed, ~10.8 min left
+  round2_D1.csv 70/518 tasks  1.6 min elapsed, ~10.5 min left
+  round2_D1.csv 80/518 tasks  1.9 min elapsed, ~10.3 min left
+  round2_D1.csv 90/518 tasks  2.0 min elapsed, ~9.7 min left
+  round2_D1.csv 100/518 tasks  2.2 min elapsed, ~9.3 min left
+  round2_D1.csv 110/518 tasks  2.5 min elapsed, ~9.3 min left
+  round2_D1.csv 120/518 tasks  2.6 min elapsed, ~8.8 min left
+  round2_D1.csv 130/518 tasks  2.8 min elapsed, ~8.3 min left
+  round2_D1.csv 140/518 tasks  3.0 min elapsed, ~8.2 min left
+  round2_D1.csv 150/518 tasks  3.2 min elapsed, ~7.7 min left
+  round2_D1.csv 160/518 tasks  3.3 min elapsed, ~7.3 min left
+  round2_D1.csv 170/518 tasks  3.5 min elapsed, ~7.1 min left
+  round2_D1.csv 180/518 tasks  3.7 min elapsed, ~7.0 min left
+  round2_D1.csv 190/518 tasks  3.8 min elapsed, ~6.6 min left
+  round2_D1.csv 200/518 tasks  4.0 min elapsed, ~6.4 min left
+  round2_D1.csv 210/518 tasks  4.3 min elapsed, ~6.3 min left
+  round2_D1.csv 220/518 tasks  4.4 min elapsed, ~6.0 min left
+  round2_D1.csv 230/518 tasks  4.6 min elapsed, ~5.8 min left
+  round2_D1.csv 240/518 tasks  4.8 min elapsed, ~5.5 min left
+  round2_D1.csv 250/518 tasks  5.1 min elapsed, ~5.4 min left
+  round2_D1.csv 260/518 tasks  5.3 min elapsed, ~5.2 min left
+  round2_D1.csv 270/518 tasks  5.5 min elapsed, ~5.0 min left
+  round2_D1.csv 280/518 tasks  5.7 min elapsed, ~4.8 min left
+  round2_D1.csv 290/518 tasks  5.9 min elapsed, ~4.6 min left
+  round2_D1.csv 300/518 tasks  6.0 min elapsed, ~4.4 min left
+  round2_D1.csv 310/518 tasks  6.1 min elapsed, ~4.1 min left
+  round2_D1.csv 320/518 tasks  6.2 min elapsed, ~3.8 min left
+  round2_D1.csv 330/518 tasks  6.3 min elapsed, ~3.6 min left
+  round2_D1.csv 340/518 tasks  6.4 min elapsed, ~3.3 min left
+  round2_D1.csv 350/518 tasks  6.5 min elapsed, ~3.1 min left
+  round2_D1.csv 360/518 tasks  6.6 min elapsed, ~2.9 min left
+  round2_D1.csv 370/518 tasks  6.7 min elapsed, ~2.7 min left
+  round2_D1.csv 380/518 tasks  6.9 min elapsed, ~2.5 min left
+  round2_D1.csv 390/518 tasks  7.0 min elapsed, ~2.3 min left
+  round2_D1.csv 400/518 tasks  7.0 min elapsed, ~2.1 min left
+  round2_D1.csv 410/518 tasks  7.1 min elapsed, ~1.9 min left
+  round2_D1.csv 420/518 tasks  7.2 min elapsed, ~1.7 min left
+  round2_D1.csv 430/518 tasks  7.3 min elapsed, ~1.5 min left
+  round2_D1.csv 440/518 tasks  7.4 min elapsed, ~1.3 min left
+  round2_D1.csv 450/518 tasks  7.4 min elapsed, ~1.1 min left
+  round2_D1.csv 460/518 tasks  7.5 min elapsed, ~0.9 min left
+  round2_D1.csv 470/518 tasks  7.6 min elapsed, ~0.8 min left
+  round2_D1.csv 480/518 tasks  7.6 min elapsed, ~0.6 min left
+  round2_D1.csv 490/518 tasks  7.7 min elapsed, ~0.4 min left
+  round2_D1.csv 500/518 tasks  7.8 min elapsed, ~0.3 min left
+  round2_D1.csv 510/518 tasks  7.9 min elapsed, ~0.1 min left
+  round2_D1.csv 518/518 tasks  8.0 min elapsed, ~0.0 min left
+round2_D2.csv: 130 tasks
+  round2_D2.csv 10/130 tasks  0.2 min elapsed, ~2.1 min left
+  round2_D2.csv 20/130 tasks  0.4 min elapsed, ~2.0 min left
+  round2_D2.csv 30/130 tasks  0.5 min elapsed, ~1.5 min left
+  round2_D2.csv 40/130 tasks  0.6 min elapsed, ~1.3 min left
+  round2_D2.csv 50/130 tasks  0.7 min elapsed, ~1.1 min left
+  round2_D2.csv 60/130 tasks  0.8 min elapsed, ~0.9 min left
+  round2_D2.csv 70/130 tasks  0.9 min elapsed, ~0.8 min left
+  round2_D2.csv 80/130 tasks  0.9 min elapsed, ~0.6 min left
+  round2_D2.csv 90/130 tasks  1.0 min elapsed, ~0.4 min left
+  round2_D2.csv 100/130 tasks  1.0 min elapsed, ~0.3 min left
+  round2_D2.csv 110/130 tasks  1.0 min elapsed, ~0.2 min left
+  round2_D2.csv 120/130 tasks  1.0 min elapsed, ~0.1 min left
+  round2_D2.csv 130/130 tasks  1.1 min elapsed, ~0.0 min left
+round 2: winner ESRG|run=0|rule=off|proto=median|addons=1|kl=6|kg=8  D1 0.687 (ref 0.651)  D2 gain +0.011 -> rejected
+
+D1 (mean DSC):
+tumor                                                glioma  meningioma  objective    n
+config                                                                                 
+SRG|8conn                                             0.641       0.855      0.748  259
+SRG|4conn                                             0.648       0.854      0.751  259
+ESRG|run=0|rule=off|proto=median|addons=1|kl=4|kg=5   0.517       0.786      0.651  259
+ESRG|run=0|rule=off|proto=median|addons=1|kl=4|kg=5   0.517       0.786      0.651  259
+
+D2 (mean DSC):
+tumor                                                glioma  meningioma  objective    n
+config                                                                                 
+SRG|8conn                                             0.598       0.824      0.711  130
+SRG|4conn                                             0.606       0.823      0.715  130
+ESRG|run=0|rule=off|proto=median|addons=1|kl=4|kg=5   0.508       0.793      0.651  130
+ESRG|run=0|rule=off|proto=median|addons=1|kl=4|kg=5   0.508       0.793      0.651  130
+
+Review point reached (protocol §4): SRG mirrors and the D3 check wait for the user.
+=== exit 0 Tue Oct 13 14:10:58 CST 2026 ===

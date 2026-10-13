@@ -1,0 +1,10 @@
+{
+  "current_after_rounds": {
+    "global_running": false,
+    "healthy_rule": "off",
+    "healthy_proto": "median",
+    "addons": true,
+    "k_local": 4.0,
+    "k_global": 5.0
+  }
+}

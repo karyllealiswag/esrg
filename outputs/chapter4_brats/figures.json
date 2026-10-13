@@ -1,0 +1,20 @@
+{
+ "examples": [
+  "glioma_BraTS-GLI-01045-000_ax_075_t1c.png",
+  "meningioma_BraTS-MEN-00129-000_ax_095_t1c.png"
+ ],
+ "mask_hash_matches": [
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true
+ ]
+}

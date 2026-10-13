@@ -1,0 +1,44 @@
+{
+  "round1": {
+    "winner": "ESRG|run=1|rule=off|proto=median|addons=1|kl=4|kg=5",
+    "params": {
+      "global_running": true,
+      "healthy_rule": "off",
+      "healthy_proto": "median",
+      "addons": true,
+      "k_local": 4.0,
+      "k_global": 5.0
+    },
+    "reference": "ESRG|run=0|rule=off|proto=median|addons=1|kl=4|kg=5",
+    "accepted": false,
+    "D1_winner": 0.6907581230945101,
+    "D1_reference": 0.6513828827011936,
+    "D2_gain": 0.01533722520763292,
+    "D2_type_changes": {
+      "glioma": 0.02320087955896588,
+      "meningioma": 0.00747357085629996
+    },
+    "n_tied_on_D1": 4
+  },
+  "round2": {
+    "winner": "ESRG|run=0|rule=off|proto=median|addons=1|kl=6|kg=8",
+    "params": {
+      "global_running": false,
+      "healthy_rule": "off",
+      "healthy_proto": "median",
+      "addons": true,
+      "k_local": 6.0,
+      "k_global": 8.0
+    },
+    "reference": "ESRG|run=0|rule=off|proto=median|addons=1|kl=4|kg=5",
+    "accepted": false,
+    "D1_winner": 0.6867120196263374,
+    "D1_reference": 0.6513828827011936,
+    "D2_gain": 0.011409467149016028,
+    "D2_type_changes": {
+      "glioma": -0.001886759854769271,
+      "meningioma": 0.024705694152801327
+    },
+    "n_tied_on_D1": 1
+  }
+}

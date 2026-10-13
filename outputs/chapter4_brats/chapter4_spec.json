@@ -1,0 +1,1249 @@
+{
+ "title": "Chapter 4: Results and Discussion",
+ "author": "Karylle Vinces J. Aliswag & Juana Mari A. Del Rosario",
+ "blocks": [
+  {
+   "t": "h1",
+   "text": "Chapter Four"
+  },
+  {
+   "t": "h1",
+   "text": "RESULTS AND DISCUSSION"
+  },
+  {
+   "t": "p",
+   "text": "This chapter presents and interprets the results of the single evaluation of the test sample described in Section 3.1.1. Section 4.1 reports the overall performance of the proposed Enhanced Seeded Region Growing (ESRG) algorithm against the original Seeded Region Growing (SRG) algorithm; Section 4.2 reports the experiments of each objective; Section 4.3 describes the practical advantages of the ESRG; and Section 4.4 summarizes the findings against the decision rules fixed in Section 3.1.2. The configurations, metrics, and experiments are those defined in Section 3.1.2 and Table 3.2. Differences are oriented so that a positive value favors the enhanced configuration, and an effect is described as significant only when its Holm-adjusted *p* value is below .05 and |*r*| ≥ .10."
+  },
+  {
+   "t": "h2",
+   "text": "4.1 General Results"
+  },
+  {
+   "t": "p",
+   "text": "All 600 sampled test patients (300 glioma and 300 meningioma, one slice each) were processed by all twelve configurations, giving 7,200 segmentations, none of which ended in a processing error. Both automatic configurations were run twice more on the same slices and produced bit-identical masks on every slice in both repetitions, which confirms that the system is deterministic. The median processing time per slice was 0.4 s for the ESRG and 6.2 s for the SRG on the hardware of Table 3.4; these times are indicative only, because part of the run was performed on battery power with a reduced processor clock."
+  },
+  {
+   "t": "h3",
+   "text": "4.1.1 Overall Performance"
+  },
+  {
+   "t": "table",
+   "num": "4.1",
+   "title": "Segmentation Performance of the Complete Configurations by Tumor Type",
+   "header": [
+    "Configuration",
+    "DSC, M (SD)",
+    "DSC, Mdn [Q1, Q3]",
+    "Recall, M (SD)",
+    "Precision, M (SD)",
+    "HD95 (px), Mdn [Q1, Q3]"
+   ],
+   "rows": [
+    {
+     "group": "Glioma (n = 300)"
+    },
+    [
+     "ESRG, automatic",
+     "0.367 (0.368)",
+     "0.265 [0.000, 0.745]",
+     "0.316 (0.349)",
+     "0.584 (0.475)",
+     "57.4 [18.9, 141.1]"
+    ],
+    [
+     "ESRG, planted",
+     "0.554 (0.282)",
+     "0.562 [0.327, 0.792]",
+     "0.486 (0.315)",
+     "0.925 (0.177)",
+     "24.9 [12.7, 37.8]"
+    ],
+    [
+     "SRG, planted",
+     "0.622 (0.294)",
+     "0.684 [0.404, 0.884]",
+     "0.695 (0.271)",
+     "0.798 (0.344)",
+     "22.3 [8.0, 45.9]"
+    ],
+    {
+     "group": "Meningioma (n = 300)"
+    },
+    [
+     "ESRG, automatic",
+     "0.717 (0.323)",
+     "0.866 [0.658, 0.931]",
+     "0.679 (0.330)",
+     "0.808 (0.334)",
+     "10.0 [4.0, 36.3]"
+    ],
+    [
+     "ESRG, planted",
+     "0.806 (0.213)",
+     "0.876 [0.784, 0.934]",
+     "0.774 (0.236)",
+     "0.925 (0.129)",
+     "9.1 [3.6, 21.3]"
+    ],
+    [
+     "SRG, planted",
+     "0.850 (0.180)",
+     "0.931 [0.801, 0.958]",
+     "0.909 (0.119)",
+     "0.850 (0.219)",
+     "6.0 [2.8, 21.4]"
+    ],
+    {
+     "group": "Pooled (n = 600)"
+    },
+    [
+     "ESRG, automatic",
+     "0.542 (0.388)",
+     "0.703 [0.003, 0.909]",
+     "0.497 (0.384)",
+     "0.696 (0.425)",
+     "23.3 [6.1, 92.0]"
+    ],
+    [
+     "ESRG, planted",
+     "0.680 (0.280)",
+     "0.788 [0.494, 0.915]",
+     "0.630 (0.313)",
+     "0.925 (0.155)",
+     "16.2 [5.4, 30.8]"
+    ],
+    [
+     "SRG, planted",
+     "0.736 (0.269)",
+     "0.852 [0.608, 0.942]",
+     "0.802 (0.235)",
+     "0.824 (0.289)",
+     "13.0 [4.0, 35.1]"
+    ]
+   ],
+   "widths": [
+    1.4,
+    1.0,
+    1.35,
+    1.0,
+    1.05,
+    1.5
+   ],
+   "note": "DSC = Dice similarity coefficient; HD95 = 95th-percentile Hausdorff distance, in pixels (1 px = 0.469 mm); M = mean; SD = standard deviation; Mdn = median; Q1, Q3 = first and third quartiles. Automatic = tumor seed selected by the system (A_ESRG); planted = seeds placed by the simulated operator at placement P1 (P_ESRG, P_SRG). Higher is better for DSC, recall, and precision; lower is better for HD95.",
+   "align": [
+    "l",
+    "c",
+    "c",
+    "c",
+    "c",
+    "c"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Table 4.1 shows that the original SRG with planted seeds obtained the highest mean DSC in both tumor types (0.622 for glioma and 0.850 for meningioma), followed by the ESRG with a planted seed (0.554 and 0.806) and by the ESRG with automatic seeding (0.367 and 0.717)."
+  },
+  {
+   "t": "p",
+   "text": "The two algorithms err in opposite directions. The planted ESRG has the higher precision (pooled mean 0.925 against 0.824) but the lower recall (0.630 against 0.802): it rarely includes non-tumor tissue but stops before covering the whole tumor. The SRG, whose region is stopped only where a competing region arrives first, covers more of the tumor at the cost of more leakage. Both algorithms delineate meningioma, a well-circumscribed and homogeneously enhancing tumor, far better than glioma, whose infiltrative and heterogeneous core offers no sharp intensity boundary; on meningioma the median DSC of every configuration exceeds 0.70, the level conventionally regarded as good agreement (Zijdenbos et al., 1994)."
+  },
+  {
+   "t": "table",
+   "num": "4.2",
+   "title": "Friedman Tests and Post Hoc Comparisons of the Complete Configurations (E1)",
+   "header": [
+    "Metric",
+    "χ^{2}(2)",
+    "*p*",
+    "*W*",
+    "A_ESRG vs. P_SRG",
+    "P_ESRG vs. P_SRG",
+    "A_ESRG vs. P_ESRG"
+   ],
+   "rows": [
+    {
+     "group": "Glioma"
+    },
+    [
+     "DSC",
+     "151.50",
+     "< .001",
+     ".25",
+     "−0.152 (−.62)",
+     "−0.038 (−.35)",
+     "−0.127 (−.46)"
+    ],
+    [
+     "Recall",
+     "223.88",
+     "< .001",
+     ".37",
+     "−0.330 (−.72)",
+     "−0.093 (−.67)",
+     "−0.120 (−.43)"
+    ],
+    [
+     "Precision",
+     "102.39",
+     "< .001",
+     ".17",
+     "−0.014 (−.43)",
+     "0.000 (.37)",
+     "−0.015 (−.56)"
+    ],
+    [
+     "HD95",
+     "82.80",
+     "< .001",
+     ".14",
+     "−8.5 (−.40)",
+     "−1.0 (−.12)",
+     "−17.3 (−.56)"
+    ],
+    {
+     "group": "Meningioma"
+    },
+    [
+     "DSC",
+     "116.01",
+     "< .001",
+     ".19",
+     "−0.037 (−.57)",
+     "−0.023 (−.42)",
+     "0.000 (−.23)"
+    ],
+    [
+     "Recall",
+     "291.64",
+     "< .001",
+     ".49",
+     "−0.093 (−.81)",
+     "−0.075 (−.77)",
+     "0.000 (−.25)"
+    ],
+    [
+     "Precision",
+     "114.32",
+     "< .001",
+     ".19",
+     "+0.008 (.22)",
+     "+0.015 (.54)",
+     "0.000 (−.28)"
+    ],
+    [
+     "HD95",
+     "51.96",
+     "< .001",
+     ".09",
+     "−1.0 (−.29)",
+     "−0.6 (−.15)",
+     "0.0 (−.22)"
+    ],
+    {
+     "group": "Pooled"
+    },
+    [
+     "DSC",
+     "256.86",
+     "< .001",
+     ".21",
+     "−0.061 (−.59)",
+     "−0.028 (−.38)",
+     "−0.001 (−.38)"
+    ],
+    [
+     "Recall",
+     "498.70",
+     "< .001",
+     ".42",
+     "−0.148 (−.74)",
+     "−0.082 (−.71)",
+     "−0.004 (−.38)"
+    ],
+    [
+     "Precision",
+     "129.34",
+     "< .001",
+     ".11",
+     "0.000 (−.13)",
+     "+0.006 (.45)",
+     "0.000 (−.44)"
+    ],
+    [
+     "HD95",
+     "128.20",
+     "< .001",
+     ".11",
+     "−1.8 (−.34)",
+     "−0.8 (−.14)",
+     "−0.0 (−.42)"
+    ]
+   ],
+   "widths": [
+    1.0,
+    0.75,
+    0.65,
+    0.55,
+    1.35,
+    1.35,
+    1.35
+   ],
+   "note": "χ^{2}, *p*, and *W* are the Friedman statistic, its *p* value, and Kendall’s coefficient of concordance. Each post hoc cell gives the median paired difference (first configuration minus second; for HD95, second minus first, in pixels, so a positive value always favors the first configuration) and, in parentheses, the effect size *r* of the Wilcoxon signed-rank test. Post hoc *p* values were Holm-adjusted over the three pairs; ns = not significant (Holm *p* ≥ .05 or |*r*| < .10); all other post hoc differences are significant.",
+   "align": [
+    "l",
+    "c",
+    "c",
+    "c",
+    "c",
+    "c",
+    "c"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Table 4.2 confirms that the three configurations differ in every metric (pooled DSC: χ^{2}(2) = 256.86, *p* < .001, *W* = .21). Against the planted SRG, the DSC of the automatic ESRG is significantly worse (*r* = −.59, *p* < .001), and that of the planted ESRG is significantly worse (*r* = −.38, *p* < .001). By tumor type, for glioma, the planted ESRG is significantly worse in DSC (*r* = −.35, *p* < .001); for meningioma, the planted ESRG is significantly worse in DSC (*r* = −.42, *p* < .001). In precision, the planted ESRG is significantly better than the SRG (*r* = .45, *p* < .001), whereas in recall it is significantly worse (*r* = −.71, *p* < .001); and its HD95 is significantly worse (*r* = −.14, *p* < .001)."
+  },
+  {
+   "t": "p",
+   "text": "The overall improvement defined in Section 3.1.2 is therefore not established: under the conditions of this study, the complete ESRG does not delineate the tumor core more accurately than the original SRG supplied with competing seeds. The gap is small for the planted ESRG (pooled median paired difference −0.028) and is concentrated in recall, which identifies undersegmentation, not leakage, as the remaining weakness of the proposed algorithm. The larger gap of the automatic ESRG arises from the slices on which the automatic seed misses the tumor (Section 4.2.1)."
+  },
+  {
+   "t": "figure",
+   "num": "4.1",
+   "img": "C:\\Users\\karyl\\OneDrive\\Desktop\\esrg\\outputs\\chapter4_brats\\figure_4_1.png",
+   "title": "Distribution of the DSC of the Complete Configurations by Tumor Type",
+   "note": "Boxes span the first to third quartiles, the line marks the median, the diamond marks the mean, and the whiskers extend to 1.5 times the interquartile range; circles are individual slices beyond the whiskers. The dotted line marks a DSC of 0.70.",
+   "w": 1800,
+   "h": 840
+  },
+  {
+   "t": "p",
+   "text": "Figure 4.1 shows why medians are reported alongside means. The distributions are skewed, with a tail of near-complete failures that pulls the means below the medians. The tail is longest for the automatic ESRG on glioma, where 40.0% of slices have a DSC below 0.10 (against 14.0% for meningioma); such values are the signature of a seed placed outside the tumor rather than of an inaccurate boundary (Section 4.2.1). On meningioma, the boxes of all three configurations lie above the 0.70 line, and the SRG box is the narrowest and highest."
+  },
+  {
+   "t": "h2",
+   "text": "4.2 Results per Objective"
+  },
+  {
+   "t": "h3",
+   "text": "4.2.1 Objective 1: Automatic Seed Selection"
+  },
+  {
+   "t": "table",
+   "num": "4.3",
+   "title": "Seed Hit Rate of Automatic Seed Selection and DSC of the Automatic ESRG by Seed Outcome",
+   "header": [
+    "Tumor type",
+    "Hits / n",
+    "SHR",
+    "95% CI",
+    "LB ≥ 70%",
+    "No candidate",
+    "Mean DSC, hit",
+    "Mean DSC, miss"
+   ],
+   "rows": [
+    [
+     "Glioma",
+     "175 / 300",
+     "58.3%",
+     "[52.7%, 63.8%]",
+     "Not met",
+     "0",
+     "0.609",
+     "0.028"
+    ],
+    [
+     "Meningioma",
+     "255 / 300",
+     "85.0%",
+     "[80.5%, 88.6%]",
+     "Met",
+     "0",
+     "0.833",
+     "0.061"
+    ],
+    [
+     "Pooled",
+     "430 / 600",
+     "71.7%",
+     "[67.9%, 75.1%]",
+     "Not met",
+     "0",
+     "0.742",
+     "0.037"
+    ]
+   ],
+   "widths": [
+    1.1,
+    0.85,
+    0.7,
+    1.25,
+    0.8,
+    0.8,
+    0.85,
+    0.85
+   ],
+   "note": "SHR = seed hit rate, the share of slices whose entire automatic seed core lies inside the ground-truth tumor core (Section 3.1.2); CI = Wilson score interval; LB = lower bound of the interval, compared with the 70% target of Objective 1. No candidate = slices on which the system reported “NO TUMOR CANDIDATE” (counted as misses, DSC = 0).",
+   "align": [
+    "l",
+    "c",
+    "c",
+    "c",
+    "c",
+    "c",
+    "c",
+    "c"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Table 4.3 shows that the automatic seed lies entirely inside the tumor core on 430 of 600 slices, a seed hit rate of 71.7% (95% CI [67.9%, 75.1%]). The rate depends strongly on the tumor type: 85.0% for meningioma, whose lower confidence bound (80.5%) meets the 70% target, and 58.3% for glioma, whose lower bound (52.7%) falls short of it. A meningioma typically enhances strongly and uniformly and is usually the brightest structure of the brain on a T1-CE slice, so the highest Otsu class isolates it. A glioma core is often a thin, irregular enhancing rim around necrosis, while vessels, the choroid plexus, and the dura can enhance as strongly as the tumor and may then be ranked above it. The seed outcome decides the segmentation: when the seed hits the tumor, the automatic ESRG reaches a mean DSC of 0.742, at the level of the planted ESRG over all slices (0.680), whereas a miss leaves a mean DSC of 0.037, because the region then grows inside the wrong structure."
+  },
+  {
+   "t": "figure",
+   "num": "4.2",
+   "img": "C:\\Users\\karyl\\OneDrive\\Desktop\\esrg\\outputs\\chapter4_brats\\figure_4_2.png",
+   "title": "DSC of the Automatic ESRG When the Automatic Seed Hits or Misses the Tumor",
+   "note": "A hit means the entire automatic seed core lies inside the ground-truth tumor core. Slices without a candidate are counted as misses with DSC = 0. Box elements are as in Figure 4.1.",
+   "w": 1600,
+   "h": 800
+  },
+  {
+   "t": "p",
+   "text": "Figure 4.2 makes this dependence visible: the two distributions overlap little. The weakness of the automatic pipeline therefore lies in localization, not in delineation, and it is confined mainly to glioma."
+  },
+  {
+   "t": "table",
+   "num": "4.4",
+   "title": "Consistency of the Result Across Seed Placements (E2)",
+   "header": [
+    "Experiment",
+    "Tumor type",
+    "Median DSC: auto / P1 / P2 / P3",
+    "χ^{2}(3)",
+    "*p*",
+    "*W*",
+    "Auto not lower"
+   ],
+   "rows": [
+    [
+     "E2a (A_ESRG)",
+     "Glioma",
+     "0.265 / 0.684 / 0.695 / 0.742",
+     "221.04",
+     "< .001",
+     ".25",
+     "No"
+    ],
+    [
+     "E2a (A_ESRG)",
+     "Meningioma",
+     "0.866 / 0.931 / 0.923 / 0.923",
+     "142.80",
+     "< .001",
+     ".16",
+     "No"
+    ],
+    [
+     "E2a (A_ESRG)",
+     "Pooled",
+     "0.703 / 0.852 / 0.861 / 0.863",
+     "358.37",
+     "< .001",
+     ".20",
+     "No"
+    ],
+    [
+     "E2b (A_SRG)",
+     "Glioma",
+     "0.370 / 0.684 / 0.695 / 0.742",
+     "73.30",
+     "< .001",
+     ".08",
+     "No"
+    ],
+    [
+     "E2b (A_SRG)",
+     "Meningioma",
+     "0.917 / 0.931 / 0.923 / 0.923",
+     "21.64",
+     "< .001",
+     ".02",
+     "No"
+    ],
+    [
+     "E2b (A_SRG)",
+     "Pooled",
+     "0.804 / 0.852 / 0.861 / 0.863",
+     "88.53",
+     "< .001",
+     ".05",
+     "No"
+    ]
+   ],
+   "widths": [
+    1.3,
+    1.1,
+    2.0,
+    0.8,
+    0.7,
+    0.6,
+    0.9
+   ],
+   "note": "Auto = the automatic configuration of the experiment (A_ESRG in E2a, A_SRG in E2b); P1, P2, P3 = the SRG with the planted seeds at the three placements (P_SRG, P_SRG_2, P_SRG_3). Auto not lower = no planted placement has a significantly higher DSC than the automatic configuration (Wilcoxon, Holm-adjusted over the three placements).",
+   "align": [
+    "l",
+    "l",
+    "c",
+    "c",
+    "c",
+    "c",
+    "c"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Table 4.4 compares the automatic configurations with the three planted placements. Moving every planted seed by 4 to 8 mm inside its own region changes the DSC of the SRG by at least 0.20 on 18.0% of slices, so where the operator clicks can decide the outcome. The automatic seed removes this source of variability entirely, as the repeated runs confirm (Section 4.1). However, consistency is not the same as accuracy. In E2a the median DSC of the automatic ESRG (0.703) is significantly lower than that of the planted placements, and in E2b the SRG started from the same automatic tumor seed reaches a median of 0.804, which is also significantly lower than that of the planted placements. Because A_ESRG and A_SRG start from the same automatic tumor seed, the difference between them (median 0.703 against 0.804) reflects the growth rule, whereas the shortfall of both relative to the planted placements reflects the seed hit rate."
+  },
+  {
+   "t": "p",
+   "text": "With respect to Objective 1, the three criteria of Section 3.1.2 give the following result. The seed hit rate criterion is met for meningioma and not met for glioma (not met pooled); the consistency criterion is met; and the criterion that the automatic DSC is not lower than any planted placement is not met pooled. Objective 1 is therefore met only in part: automatic seed selection makes the result reproducible and is reliable for meningioma, but it does not yet localize gliomas reliably enough to replace a careful operator."
+  },
+  {
+   "t": "h3",
+   "text": "4.2.2 Objective 2: Minimization of Undersegmentation"
+  },
+  {
+   "t": "table",
+   "num": "4.5",
+   "title": "Effect of the Local Log-Domain Difference Measure on Recall and DSC (E3 and E4)",
+   "header": [
+    "Tumor type",
+    "Metric",
+    "Baseline, Mdn [Q1, Q3]",
+    "Enhanced, Mdn [Q1, Q3]",
+    "Mdn diff.",
+    "+ / −",
+    "*r*",
+    "*p*_{Holm}",
+    "Result"
+   ],
+   "rows": [
+    {
+     "group": "E3: LLDM added to SRG (P_SRG → P_SRG_L)"
+    },
+    [
+     "Glioma",
+     "Recall",
+     "0.782 [0.465, 0.931]",
+     "1.000 [1.000, 1.000]",
+     "+0.199",
+     "264 / 0",
+     ".81",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Glioma",
+     "DSC (no-harm)",
+     "0.684 [0.404, 0.884]",
+     "0.133 [0.061, 0.275]",
+     "−0.453",
+     "38 / 262",
+     "−.74",
+     "< .001",
+     "Worse"
+    ],
+    [
+     "Meningioma",
+     "Recall",
+     "0.948 [0.899, 0.976]",
+     "1.000 [1.000, 1.000]",
+     "+0.048",
+     "288 / 0",
+     ".85",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Meningioma",
+     "DSC (no-harm)",
+     "0.931 [0.801, 0.958]",
+     "0.137 [0.059, 0.338]",
+     "−0.714",
+     "4 / 296",
+     "−.86",
+     "< .001",
+     "Worse"
+    ],
+    [
+     "Pooled",
+     "Recall",
+     "0.915 [0.711, 0.970]",
+     "1.000 [1.000, 1.000]",
+     "+0.076",
+     "552 / 0",
+     ".83",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Pooled",
+     "DSC (no-harm)",
+     "0.852 [0.608, 0.942]",
+     "0.134 [0.060, 0.304]",
+     "−0.594",
+     "42 / 558",
+     "−.82",
+     "< .001",
+     "Worse"
+    ],
+    {
+     "group": "E4: LLDM removed from ESRG (P_ESRG_noL → P_ESRG)"
+    },
+    [
+     "Glioma",
+     "Recall",
+     "0.406 [0.198, 0.706]",
+     "0.426 [0.208, 0.782]",
+     "−0.001",
+     "144 / 151",
+     ".03",
+     ".665",
+     "ns"
+    ],
+    [
+     "Glioma",
+     "DSC (no-harm)",
+     "0.487 [0.232, 0.706]",
+     "0.562 [0.327, 0.792]",
+     "0.000",
+     "148 / 148",
+     ".12",
+     ".072",
+     "ns"
+    ],
+    [
+     "Meningioma",
+     "Recall",
+     "0.796 [0.523, 0.917]",
+     "0.854 [0.726, 0.925]",
+     "+0.029",
+     "210 / 83",
+     ".47",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Meningioma",
+     "DSC (no-harm)",
+     "0.842 [0.650, 0.930]",
+     "0.876 [0.784, 0.934]",
+     "+0.007",
+     "189 / 105",
+     ".36",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Pooled",
+     "Recall",
+     "0.609 [0.319, 0.890]",
+     "0.735 [0.350, 0.910]",
+     "+0.014",
+     "354 / 234",
+     ".23",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Pooled",
+     "DSC (no-harm)",
+     "0.673 [0.389, 0.888]",
+     "0.788 [0.494, 0.915]",
+     "+0.004",
+     "337 / 253",
+     ".22",
+     "< .001",
+     "Better"
+    ]
+   ],
+   "widths": [
+    0.95,
+    1.0,
+    1.35,
+    1.35,
+    0.7,
+    0.75,
+    0.5,
+    0.6,
+    0.6
+   ],
+   "note": "Baseline → enhanced as defined in Table 3.2. Mdn diff. = median paired difference, oriented so that a positive value favors the enhanced configuration (for HD95, baseline minus enhanced, in pixels); + / − = number of slices on which the enhanced configuration was better / worse; *r* = effect size of the Wilcoxon signed-rank test; *p*_{Holm} = Holm-adjusted over the metrics of the experiment. ns = not significant (Holm *p* ≥ .05 or |*r*| < .10). No-harm = the DSC check of Section 3.1.2.",
+   "align": [
+    "l",
+    "l",
+    "c",
+    "c",
+    "c",
+    "c",
+    "c",
+    "c",
+    "c"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Table 4.5 answers two questions. E3 asks whether the local log-domain difference measure (LLDM) is sufficient to reduce undersegmentation when it is added to the original SRG. It raises recall (significantly better, median 0.915 → 1.000, *r* = .83, *p* < .001), but the DSC collapses (median 0.852 → 0.134, *r* = −.82, *p* < .001); the region covered more than 40% of the brain on 87.5% of slices, against 13.5% for the plain SRG. The higher recall is therefore the by-product of flooding, not of a better boundary. The reason lies in the competition of the original algorithm. The tumor region of the SRG competes with the healthy-tissue and background regions for every pixel, and the global mean of the tumor region is what makes healthy tissue look different from the tumor. A local reference follows the intensity of the most recently absorbed neighbors, so once the tumor region reaches its boundary, the healthy tissue next to it looks similar and is absorbed before the healthy-tissue region arrives. Without a stopping rule, a local measure removes the only brake that the SRG has."
+  },
+  {
+   "t": "p",
+   "text": "E4 asks whether the measure is necessary within the ESRG, where the adaptive stopping criterion bounds the region. With the measure, the pooled recall of the ESRG is significantly better than without it (median 0.609 → 0.735, *r* = .23, *p* < .001), and its DSC is significantly better (*r* = .22, *p* < .001). By tumor type, the recall with the measure is not significantly different for glioma (*r* = .03, *p* = .665) and significantly better for meningioma (*r* = .47, *p* < .001). Inside the ESRG, the comparison with the adjacent tumor tissue lets the region follow the gradual intensity changes of a heterogeneous tumor, while the stopping bounds keep it from following those changes into the surrounding tissue."
+  },
+  {
+   "t": "p",
+   "text": "Objective 2 is therefore not met under the strict rule of Section 3.1.2, which requires a significant recall gain without loss of DSC in both E3 and E4. The results support a narrower conclusion: the local log-domain measure is necessary for the recall and DSC of the ESRG on meningioma and pooled, although not on glioma, but it is not sufficient on its own and is harmful in an algorithm that lacks a stopping criterion."
+  },
+  {
+   "t": "h3",
+   "text": "4.2.3 Objective 3: Decrease of Boundary Leakage"
+  },
+  {
+   "t": "table",
+   "num": "4.6",
+   "title": "Effect of the Adaptive Stopping Criterion on Precision, HD95, and DSC (E5a, E5b, and E6)",
+   "header": [
+    "Tumor type",
+    "Metric",
+    "Baseline, Mdn [Q1, Q3]",
+    "Enhanced, Mdn [Q1, Q3]",
+    "Mdn diff.",
+    "+ / −",
+    "*r*",
+    "*p*_{Holm}",
+    "Result"
+   ],
+   "rows": [
+    {
+     "group": "E5a: ASC with one seed vs. SRG with three seeds (P_SRG → P_SRG_solo_S)"
+    },
+    [
+     "Glioma",
+     "Precision",
+     "0.991 [0.811, 1.000]",
+     "1.000 [1.000, 1.000]",
+     "+0.005",
+     "178 / 14",
+     ".62",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Glioma",
+     "HD95",
+     "22.3 [8.0, 45.9]",
+     "31.0 [17.4, 50.0]",
+     "−2.5",
+     "79 / 211",
+     "−.26",
+     "< .001",
+     "Worse"
+    ],
+    [
+     "Glioma",
+     "DSC (no-harm)",
+     "0.684 [0.404, 0.884]",
+     "0.320 [0.117, 0.631]",
+     "−0.140",
+     "54 / 243",
+     "−.65",
+     "< .001",
+     "Worse"
+    ],
+    [
+     "Meningioma",
+     "Precision",
+     "0.955 [0.816, 0.986]",
+     "0.998 [0.966, 1.000]",
+     "+0.028",
+     "263 / 26",
+     ".74",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Meningioma",
+     "HD95",
+     "6.0 [2.8, 21.4]",
+     "10.9 [3.6, 23.7]",
+     "−0.9",
+     "104 / 178",
+     "−.18",
+     ".002",
+     "Worse"
+    ],
+    [
+     "Meningioma",
+     "DSC (no-harm)",
+     "0.931 [0.801, 0.958]",
+     "0.802 [0.546, 0.919]",
+     "−0.070",
+     "77 / 223",
+     "−.55",
+     "< .001",
+     "Worse"
+    ],
+    [
+     "Pooled",
+     "Precision",
+     "0.969 [0.812, 0.998]",
+     "1.000 [0.987, 1.000]",
+     "+0.017",
+     "441 / 40",
+     ".68",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Pooled",
+     "HD95",
+     "13.0 [4.0, 35.1]",
+     "20.6 [7.9, 40.2]",
+     "−1.8",
+     "183 / 389",
+     "−.23",
+     "< .001",
+     "Worse"
+    ],
+    [
+     "Pooled",
+     "DSC (no-harm)",
+     "0.852 [0.608, 0.942]",
+     "0.590 [0.198, 0.851]",
+     "−0.100",
+     "131 / 466",
+     "−.61",
+     "< .001",
+     "Worse"
+    ],
+    {
+     "group": "E5b: ASC added to SRG with one seed (P_SRG_solo → P_SRG_solo_S)"
+    },
+    [
+     "Glioma",
+     "Precision",
+     "0.012 [0.006, 0.021]",
+     "1.000 [1.000, 1.000]",
+     "+0.983",
+     "297 / 0",
+     ".86",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Glioma",
+     "HD95",
+     "369.6 [350.9, 396.5]",
+     "31.0 [17.4, 50.0]",
+     "+338.0",
+     "297 / 0",
+     ".86",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Meningioma",
+     "Precision",
+     "0.008 [0.004, 0.015]",
+     "0.998 [0.966, 1.000]",
+     "+0.980",
+     "298 / 0",
+     ".86",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Meningioma",
+     "HD95",
+     "375.4 [347.7, 401.4]",
+     "10.9 [3.6, 23.7]",
+     "+359.2",
+     "298 / 0",
+     ".86",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Pooled",
+     "Precision",
+     "0.010 [0.005, 0.019]",
+     "1.000 [0.987, 1.000]",
+     "+0.982",
+     "595 / 0",
+     ".86",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Pooled",
+     "HD95",
+     "372.2 [349.9, 398.3]",
+     "20.6 [7.9, 40.2]",
+     "+348.9",
+     "595 / 0",
+     ".86",
+     "< .001",
+     "Better"
+    ],
+    {
+     "group": "E6: ASC removed from ESRG (P_ESRG_C_noS → P_ESRG_C)"
+    },
+    [
+     "Glioma",
+     "Precision",
+     "0.073 [0.032, 0.180]",
+     "1.000 [0.955, 1.000]",
+     "+0.872",
+     "292 / 1",
+     ".86",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Glioma",
+     "HD95",
+     "185.3 [118.2, 215.0]",
+     "25.0 [13.7, 39.1]",
+     "+154.7",
+     "254 / 44",
+     ".81",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Glioma",
+     "DSC (no-harm)",
+     "0.136 [0.061, 0.304]",
+     "0.542 [0.335, 0.790]",
+     "+0.325",
+     "233 / 67",
+     ".55",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Meningioma",
+     "Precision",
+     "0.095 [0.034, 0.248]",
+     "0.991 [0.944, 1.000]",
+     "+0.827",
+     "298 / 0",
+     ".86",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Meningioma",
+     "HD95",
+     "159.8 [75.5, 216.2]",
+     "8.6 [3.6, 19.8]",
+     "+138.2",
+     "271 / 24",
+     ".83",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Meningioma",
+     "DSC (no-harm)",
+     "0.173 [0.066, 0.397]",
+     "0.865 [0.764, 0.925]",
+     "+0.624",
+     "266 / 33",
+     ".81",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Pooled",
+     "Precision",
+     "0.080 [0.033, 0.215]",
+     "0.997 [0.950, 1.000]",
+     "+0.856",
+     "590 / 1",
+     ".86",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Pooled",
+     "HD95",
+     "174.8 [87.5, 215.1]",
+     "16.1 [5.3, 30.5]",
+     "+146.3",
+     "525 / 68",
+     ".82",
+     "< .001",
+     "Better"
+    ],
+    [
+     "Pooled",
+     "DSC (no-harm)",
+     "0.147 [0.063, 0.346]",
+     "0.771 [0.491, 0.904]",
+     "+0.491",
+     "499 / 100",
+     ".70",
+     "< .001",
+     "Better"
+    ]
+   ],
+   "widths": [
+    0.95,
+    1.0,
+    1.35,
+    1.35,
+    0.7,
+    0.75,
+    0.5,
+    0.6,
+    0.6
+   ],
+   "note": "Baseline → enhanced as defined in Table 3.2. Mdn diff. = median paired difference, oriented so that a positive value favors the enhanced configuration (for HD95, baseline minus enhanced, in pixels); + / − = number of slices on which the enhanced configuration was better / worse; *r* = effect size of the Wilcoxon signed-rank test; *p*_{Holm} = Holm-adjusted over the metrics of the experiment. ns = not significant (Holm *p* ≥ .05 or |*r*| < .10). No-harm = the DSC check of Section 3.1.2. The baseline of E5b, the SRG with a single seed and no stopping rule, absorbs the whole image by design.",
+   "align": [
+    "l",
+    "l",
+    "c",
+    "c",
+    "c",
+    "c",
+    "c",
+    "c",
+    "c"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Table 4.6 shows the strongest effects of the study. E6 removes the adaptive stopping criterion (ASC) from the ESRG while keeping its competing regions. Without it, the median precision is 0.080 and the region exceeds 40% of the brain on 83.0% of slices; with it, the median precision is 0.997 (*r* = .86, *p* < .001), the median HD95 falls from 174.8 to 16.1 pixels (*r* = .82, *p* < .001), and the median DSC rises from 0.147 to 0.771 (*r* = .70, *p* < .001). Because the local measure removes the brake of the global mean (Section 4.2.2), the stopping criterion is what keeps the ESRG inside the tumor; it is necessary within the proposed algorithm. E5b shows the same mechanism in the original algorithm: a single SRG region absorbs the entire image (median precision 0.010), whereas the same region under the ASC reaches a median precision of 1.000 (*r* = .86, *p* < .001)."
+  },
+  {
+   "t": "p",
+   "text": "E5a is the demanding comparison: it asks whether the ASC, from the tumor seed alone, can replace the two competing seeds that the original algorithm needs. The SRG with the ASC and one seed has significantly better precision than the SRG with three seeds (median 0.969 → 1.000, *r* = .68, *p* < .001), so it leaks less. Its HD95 is significantly worse (*r* = −.23, *p* < .001) and its DSC is significantly worse (median 0.852 → 0.590, *r* = −.61, *p* < .001). The stopping bounds thus keep the region inside the tumor more strictly than the competing regions do, but they also stop it earlier, before it has covered the darker or more heterogeneous parts of the tumor; the boundary errors move from leakage to undersegmentation, which HD95 and DSC penalize."
+  },
+  {
+   "t": "p",
+   "text": "Objective 3 is therefore not met under the strict rule of Section 3.1.2, because E5a does not show a lower HD95 and an unharmed DSC. The criterion does, however, decrease boundary leakage in every comparison, as measured by precision, and its removal from the ESRG causes one of the largest losses of accuracy observed in the study."
+  },
+  {
+   "t": "figure",
+   "num": "4.3",
+   "img": "C:\\Users\\karyl\\OneDrive\\Desktop\\esrg\\outputs\\chapter4_brats\\figure_4_3.png",
+   "title": "Segmentations of Two Test Slices by Six Configurations",
+   "note": "Red fill and outline = predicted mask; yellow outline = ground-truth tumor core where it is not covered by the prediction. In each row the slice is the test slice whose SRG (planted) DSC is closest to the median of its tumor type, so the slices are typical for the baseline, not selected for the ESRG. LLDM = local log-domain difference measure; ASC = adaptive stopping criterion.",
+   "w": 3080,
+   "h": 1060
+  },
+  {
+   "t": "p",
+   "text": "Figure 4.3 illustrates these mechanisms on two test slices that are typical for the baseline. Adding the local measure to the SRG and removing the stopping criterion from the ESRG flood the brain in both rows (DSC 0.21 and 0.10 for the SRG with the local measure). The SRG with the stopping criterion and a single seed stays inside the tumor but stops early (DSC 0.36 and 0.56). The glioma row also shows how strongly the ESRG depends on its seed, whose statistics set the stopping bounds. Started from the planted seed at the deepest point of the core, the ESRG covers only part of the core (DSC 0.50); started from the automatic seed, it delineates the core almost completely (DSC 0.95, against 0.68 for the SRG). On the meningioma, the ESRG (DSC 0.84) misses a thin margin of the tumor that the SRG (DSC 0.93) includes, which is the recall deficit of Table 4.1 in visual form."
+  },
+  {
+   "t": "h2",
+   "text": "4.3 Practical Advantages of the ESRG"
+  },
+  {
+   "t": "p",
+   "text": "The decision rules of Section 3.1.2 compare the algorithms under the conditions most favorable to the original SRG: three correctly placed seeds per slice. The test data also show where the ESRG offers a practical advantage. These findings complement the primary results above and do not replace them. Table 4.7 lists them; the comparison S1 was defined after the test run (Section 3.1.2) and is therefore descriptive."
+  },
+  {
+   "t": "table",
+   "num": "4.7",
+   "title": "Practical Advantages of the ESRG Observed on the Test Sample",
+   "header": [
+    "Aspect",
+    "ESRG",
+    "SRG",
+    "Evidence"
+   ],
+   "rows": [
+    [
+     "Seeds the operator must place",
+     "One tumor click, or none (automatic)",
+     "Tumor, healthy-tissue, and background seeds",
+     "Table 3.2"
+    ],
+    [
+     "Same single tumor click (S1), median DSC",
+     "0.788",
+     "0.019",
+     "Wilcoxon *r* = .87, *p* < .001; secondary"
+    ],
+    [
+     "Same single tumor click (S1), median precision",
+     "0.994",
+     "0.010",
+     "Wilcoxon *r* = .87, *p* < .001; secondary"
+    ],
+    [
+     "Leakage with all seeds placed, mean precision",
+     "0.925",
+     "0.824",
+     "E1, *r* = .45, *p* < .001"
+    ],
+    [
+     "Reproducibility",
+     "Automatic masks identical on 1,200 of 1,200 repeated runs",
+     "DSC range ≥ 0.20 across the three placements on 18.0% of slices",
+     "Sections 4.1 and 4.2.1"
+    ],
+    [
+     "Meningioma without user input",
+     "Median DSC 0.866; SHR 85.0%",
+     "Requires three seeds",
+     "Tables 4.1 and 4.3"
+    ],
+    [
+     "Median processing time per slice",
+     "0.4 s",
+     "6.2 s",
+     "Indicative only (Section 4.1)"
+    ]
+   ],
+   "widths": [
+    1.9,
+    1.6,
+    1.7,
+    1.6
+   ],
+   "note": "S1 compares P_ESRG with P_SRG_solo, in which both algorithms receive only the planted tumor seed. S1 was added after the test run and does not enter the decision rules. The original SRG is not designed to run with a single seed, so S1 measures the consequence of the input each algorithm requires, not the quality of its boundary rule. SHR = seed hit rate.",
+   "align": [
+    "l",
+    "l",
+    "l",
+    "l"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Table 4.7 shows that the main practical difference between the algorithms is the input they require. The original SRG reaches its accuracy only when the operator also places correct healthy-tissue and background seeds; given the same single tumor click as the ESRG, its region absorbs the whole image (median DSC 0.019), whereas the ESRG stops at the tumor (median DSC 0.788, *r* = .87, *p* < .001). This is a direct consequence of the adaptive stopping criterion and reflects the purpose of Objective 3: the ESRG controls leakage without competing seeds. Even when the SRG receives all three seeds, the ESRG leaks less (mean precision 0.925 against 0.824, *r* = .45, *p* < .001). The ESRG with automatic seeding also removes the operator entirely: its result was identical in every repeated run, it needs no click at all, and on meningioma it reaches a median DSC of 0.866. These advantages come at the cost reported in Section 4.1: lower recall, and therefore a lower DSC than the SRG with three correct seeds."
+  },
+  {
+   "t": "h2",
+   "text": "4.4 Summary of Findings"
+  },
+  {
+   "t": "table",
+   "num": "4.8",
+   "title": "Results of the Pre-Specified Decision Rules and the Partial Support Observed",
+   "header": [
+    "Criterion",
+    "Decision rule (Section 3.1.2)",
+    "Glioma",
+    "Meningioma",
+    "Pooled",
+    "What the data support"
+   ],
+   "rows": [
+    [
+     "Overall improvement",
+     "A_ESRG and P_ESRG DSC significantly higher than P_SRG (E1)",
+     "Not met",
+     "Not met",
+     "Not met",
+     "No. Precision higher (E1, *r* = .45), but recall and DSC lower"
+    ],
+    [
+     "Objective 1",
+     "SHR lower bound ≥ 70% (E1)",
+     "Not met",
+     "Met",
+     "Not met",
+     "Meningioma only (lower bound 80.5%)"
+    ],
+    [
+     "",
+     "Automatic result invariant; planted results vary (E2)",
+     "Met",
+     "Met",
+     "Met",
+     "Yes (1,200 of 1,200 repeated masks identical)"
+    ],
+    [
+     "",
+     "Automatic DSC not lower than any placement (E2a)",
+     "Not met",
+     "Not met",
+     "Not met",
+     "No overall; when the seed hits, mean DSC 0.742"
+    ],
+    [
+     "Objective 2",
+     "Recall higher, DSC not lower in E3 and E4",
+     "Not met",
+     "Not met",
+     "Not met",
+     "Within the ESRG only: recall higher in E4 (pooled and meningioma); E3 floods"
+    ],
+    [
+     "Objective 3",
+     "Precision higher, HD95 lower, DSC not lower in E5a and E6",
+     "Not met",
+     "Not met",
+     "Not met",
+     "For leakage: precision higher in E5a, E5b, and E6; HD95 and DSC not improved in E5a"
+    ]
+   ],
+   "widths": [
+    1.15,
+    2.0,
+    0.7,
+    0.85,
+    0.7,
+    2.0
+   ],
+   "note": "Glioma, Meningioma, and Pooled give the verdict of the pre-specified rule; a difference counts only if its Holm-adjusted *p* value is below .05 and |*r*| ≥ .10. The last column describes the part of the hypothesis that the results support; it does not change the verdicts. SHR = seed hit rate.",
+   "align": [
+    "l",
+    "l",
+    "c",
+    "c",
+    "c",
+    "l"
+   ]
+  },
+  {
+   "t": "p",
+   "text": "Table 4.8 applies the decision rules that were fixed before the test set was evaluated. Read strictly, the rules do not establish an overall improvement and do not mark any objective as fully met; this result is reported as it was obtained. The last column shows which parts of each hypothesis the data do support: the automatic seed makes the result reproducible and localizes meningiomas reliably, the local log-domain measure improves recall within the ESRG, and the adaptive stopping criterion decreases boundary leakage in every comparison. The findings are summarized below."
+  },
+  {
+   "t": "p",
+   "text": "First, the enhancements act as a coupled system rather than as independent improvements. The local log-domain measure lets the region follow the tumor’s internal intensity variations, but it also lets the region follow smooth transitions into healthy tissue; the adaptive stopping criterion bounds that growth. Neither method improves the DSC of the original algorithm on its own (E3, E5a), whereas removing either from the ESRG lowers its accuracy (E4, E6). The proposed algorithm should therefore be judged as a whole, against the original algorithm, which is the comparison of E1."
+  },
+  {
+   "t": "p",
+   "text": "Second, in that comparison the ESRG trades recall for precision. It leaks less than the SRG (pooled mean precision 0.925 against 0.824) but misses more of the tumor (recall 0.630 against 0.802), and in DSC it does not surpass the SRG supplied with a healthy-tissue and a background seed. The original algorithm with competing seeds is a stronger baseline than its reputation for leakage suggests: competition stops leakage effectively when the operator supplies seeds for the surrounding tissues. The ESRG achieves higher precision from a single tumor seed, without any competing seed, which is its practical advantage, but its stopping bounds are conservative on heterogeneous tumors."
+  },
+  {
+   "t": "p",
+   "text": "Third, the class dependence is decisive. On meningioma, both planted algorithms reach a median DSC of 0.876 (ESRG) and 0.931 (SRG), and the automatic seed is placed correctly on 85% of slices, so the fully automatic ESRG yields a good segmentation without any user input (median DSC 0.866). On glioma, the infiltrative and heterogeneous enhancement limits every intensity-based method: the automatic seed misses often, and both growth rules leave a substantial part of the core unsegmented or include adjacent enhancing structures. Region growing on a single intensity channel thus performs best on well-circumscribed, homogeneously enhancing lesions."
+  },
+  {
+   "t": "p",
+   "text": "Finally, the study design itself contributes to the interpretation. The SRG was given the same seeds, the same brain mask, and, for every applied method, the same parameter values as the ESRG, and it was implemented as published, including 8-connectivity. The planted seeds were placed by a simulated careful operator with access to the ground truth: every planted seed, including the healthy-tissue and background seeds on which the SRG depends, was placed correctly. The planted SRG therefore represents the original algorithm under favorable conditions, and a real operator, whose clicks vary (Section 4.2.1), may obtain lower scores with it."
+  },
+  {
+   "t": "h2",
+   "text": "References Added in Chapter 4"
+  },
+  {
+   "t": "p",
+   "text": "The following works are cited in this chapter; the remaining citations are listed in Chapter 3.",
+   "noindent": true
+  },
+  {
+   "t": "ref",
+   "text": "Zijdenbos, A. P., Dawant, B. M., Margolin, R. A., & Palmer, A. C. (1994). Morphometric analysis of white matter lesions in MR images: Method and validation. *IEEE Transactions on Medical Imaging, 13*(4), 716–724. https://doi.org/10.1109/42.363096"
+  }
+ ]
+}

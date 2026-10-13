@@ -1,0 +1,111 @@
+{
+  "t2": {
+    "n_points": 972,
+    "n_slices": 518,
+    "best_objective": 0.7064730792498488,
+    "tied_within_tol": 3,
+    "winner": {
+      "otsu_classes": 4,
+      "seed_core_frac": 0.85,
+      "min_cand_area": 40,
+      "interior_frac": 0.06,
+      "min_clearance": 0.0,
+      "rank_w_contrast": 0.5,
+      "rank_w_shape": 0.2
+    },
+    "winner_scores": {
+      "objective": 0.7038112522686025,
+      "glioma_mean": 0.5655172413793104,
+      "meningioma_mean": 0.8421052631578947,
+      "no_candidate_rate": 0.0
+    },
+    "brisc_values": {
+      "otsu_classes": 3,
+      "seed_core_frac": 0.7,
+      "min_cand_area": 40,
+      "interior_frac": 0.12,
+      "min_clearance": 8.0,
+      "rank_w_contrast": 0.5,
+      "rank_w_shape": 0.2
+    },
+    "brisc_scores": [
+      {
+        "objective": 0.5347398669086509,
+        "glioma_mean": 0.3896551724137931,
+        "meningioma_mean": 0.6798245614035088
+      }
+    ]
+  },
+  "t1_errors": 0,
+  "t1": {
+    "ESRG": {
+      "n_configs": 145,
+      "n_slices": 518,
+      "best_objective": 0.5799936260470716,
+      "tied_within_tol": 3,
+      "winner": {
+        "k_local": 2.0,
+        "k_global": 3.0,
+        "local_radius": 1.0
+      },
+      "winner_scores": {
+        "objective": 0.5769224419864496,
+        "glioma_mean": 0.390532307445964,
+        "meningioma_mean": 0.7633125765269352,
+        "glioma_median": 0.30929394185848574,
+        "meningioma_median": 0.845568542113866
+      }
+    },
+    "SRG+L": {
+      "n_configs": 9,
+      "n_slices": 518,
+      "best_objective": 0.6217167559435062,
+      "tied_within_tol": 1,
+      "winner": {
+        "local_radius": 10.0
+      },
+      "winner_scores": {
+        "objective": 0.6217167559435062,
+        "glioma_mean": 0.5218173509091891,
+        "meningioma_mean": 0.7216161609778232,
+        "glioma_median": 0.5598381655445255,
+        "meningioma_median": 0.8884636635297696
+      }
+    },
+    "SRG+S": {
+      "n_configs": 46,
+      "n_slices": 518,
+      "best_objective": 0.7217379108764451,
+      "tied_within_tol": 4,
+      "winner": {
+        "k_local": 5.0,
+        "k_global": 7.0
+      },
+      "winner_scores": {
+        "objective": 0.7181273536882963,
+        "glioma_mean": 0.6295414820911075,
+        "meningioma_mean": 0.8067132252854851,
+        "glioma_median": 0.6884448884448885,
+        "meningioma_median": 0.9010513427683517
+      }
+    },
+    "SRG": {
+      "objective": 0.7400718351613462,
+      "glioma_mean": 0.6288934835416701,
+      "meningioma_mean": 0.8512501867810223,
+      "n_slices": 518
+    }
+  },
+  "frozen_file": "configs/esrg_brats_frozen.json",
+  "frozen_changes_from_brisc": {
+    "otsu_classes": 4,
+    "seed_core_frac": 0.85,
+    "interior_frac": 0.06,
+    "min_clearance": 0.0,
+    "local_radius": 1,
+    "k_local": 2.0,
+    "srg_local_radius": 10,
+    "srg_k_local": 5.0,
+    "srg_k_global": 7.0
+  }
+}

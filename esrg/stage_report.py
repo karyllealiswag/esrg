@@ -388,7 +388,7 @@ def _candidates(result, cfg, b):
                  ("C*", f"component {ch['id']}" if ch else "none", "4 · Seed core")])
     tips = {
         "c, η, K": "c = minimum clearance, η = interior fraction, K = number of Otsu classes. Tuned on the "
-                   "BRISC 2025 training split and frozen (Table 3.4); K can be changed under Adjust Parameters.",
+                   "development set and frozen (Table 3.3); K can be changed under Adjust Parameters.",
         "depth_max": "The largest depth(x) in H (distance map of the brain mask): how far the most central head pixel "
                      "lies from the head outline.",
         "depth cut": "Pixels shallower than this are scalp, skull or rim and are left out of the histogram; "
@@ -700,7 +700,7 @@ def _evaluation(result, cfg, b, chosen):
     c = evalx.counts(result)
     b("sub", "INPUT")
     b("input", [("M", f"{_n(result.mask.sum())} px", "6 · Final"),
-                ("G", f"{_n(c['G'])} px  ({_name(gt)})" if c else "none found", "ground-truth mask (BRISC 2025)"),
+                ("G", f"{_n(c['G'])} px  ({_name(gt)})" if c else "none found", "ground-truth mask (BraTS 2023)"),
                 ("S", f"{_n(result.stage('seed').image.sum())} px", "4 · Seed core (seed hit)")])
     b("note", f"{str(meta.get('method', '')).upper()} · {meta.get('seed_mode')} seeding. "
               "Every value is recomputed from the masks of this run (Eq. 3.32–3.39).")

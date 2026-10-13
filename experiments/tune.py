@@ -53,7 +53,7 @@ from experiments.sampling import BRATS_OUT, SEED, read_split
 
 OUT = "outputs/tuning_brats"
 FROZEN = "configs/esrg_brats_frozen.json"
-BASE = Config(pre_stripped=True)          # BRISC-frozen values = the tie-break reference
+BASE = Config(pre_stripped=True)          # default values = the tie-break reference
 CAP_HOURS = 12.0                          # per-stage wall-time cap (protocol §5.3)
 
 # ─── Grids (protocol §5.3) ───────────────────────────────────────────────────
@@ -334,7 +334,7 @@ def _score_table(df, keys, value):
 def _pick(tab, params, base, grid, tol, last):
     """
     Best objective, then within tol of it (protocol §5.3): fewer parameters changed from
-    the BRISC values, smaller normalised distance from them, then `last` (column, ascending).
+    the default values, smaller normalised distance from them, then `last` (column, ascending).
     """
     best = tab["objective"].max()
     near = tab[tab["objective"] >= best - tol].copy()
@@ -383,8 +383,8 @@ def summarize():
                  "tied_within_tol": n_tied2, "winner": {p: frozen[p] for p in params2},
                  "winner_scores": {k: float(win2[k]) for k in ("objective", "glioma_mean", "meningioma_mean",
                                                                "no_candidate_rate")},
-                 "brisc_values": base2,
-                 "brisc_scores": tab2[(tab2[params2] == pd.Series(base2)).all(axis=1)][
+                 "default_values": base2,
+                 "default_scores": tab2[(tab2[params2] == pd.Series(base2)).all(axis=1)][
                      ["objective", "glioma_mean", "meningioma_mean"]].to_dict("records")}
 
     # T1: DSC per arm
@@ -422,7 +422,7 @@ def summarize():
     os.makedirs(os.path.dirname(FROZEN), exist_ok=True)
     cfg.save(FROZEN)
     res["frozen_file"] = FROZEN
-    res["frozen_changes_from_brisc"] = {k: v for k, v in cfg.to_dict().items() if v != BASE.to_dict().get(k)}
+    res["frozen_changes_from_default"] = {k: v for k, v in cfg.to_dict().items() if v != BASE.to_dict().get(k)}
     with open(os.path.join(OUT, "summary.json"), "w") as f:
         json.dump(res, f, indent=2, default=float)
     print(json.dumps(res, indent=2, default=float))

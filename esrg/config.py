@@ -5,8 +5,8 @@ Purpose : Hold every tunable parameter in one dataclass so runs are reproducible
           and the ablation switches (Chapter 3, Table 3.3) live in one place.
 Function : `Config` is a frozen-by-convention dataclass; `.replace(**kw)` returns a
           validated copy for experiments, and `.save`/`.load` persist it as JSON.
-Notes   : Defaults are the values frozen on the BRISC TRAIN split. BraTS runs load
-          configs/esrg_brats_frozen.json (pre_stripped=True, tuned on the BraTS
+Notes   : Defaults are the pre-tuning values. BraTS runs load
+          configs/esrg_brats_frozen_v3.json (pre_stripped=True, tuned on the BraTS
           development set, experiments/PROTOCOL_BRATS.md) instead. Phase-1/2/3
           research switches (contrast ranking, orbit exclusion, adaptive k) default
           to their evaluated settings; changing them re-opens the ablation.
@@ -124,7 +124,7 @@ class Config:
     srg_use_stopping: bool = False  # Objective 3: region 1 absorbs only within
                                     # T_L = k_local*sigma_A and T_G = k_global*sigma_A
     # The modules' own tuned values (BraTS: tuned on the same grid as ESRG, PROTOCOL_BRATS
-    # Section 5.3). None = share ESRG's local_radius / k_local / k_global (BRISC behaviour).
+    # Section 5.3). None = share ESRG's local_radius / k_local / k_global (the default).
     srg_use_healthy: bool = False   # the healthy-tissue rule on region 1, with ESRG's healthy_rule
     srg_connectivity: int = 8       # 8 as in Adams & Bischof (1994), Sec. II; 4 reproduces results
                                     # computed before 2026-10-13

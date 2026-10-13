@@ -1,0 +1,62 @@
+{
+ "title": "Chapter 5: Conclusions and Recommendations",
+ "author": "Karylle Vinces J. Aliswag & Juana Mari A. Del Rosario",
+ "blocks": [
+  {
+   "t": "h1",
+   "text": "Chapter Five"
+  },
+  {
+   "t": "h1",
+   "text": "CONCLUSIONS AND RECOMMENDATIONS"
+  },
+  {
+   "t": "h2",
+   "text": "5.1 Conclusions"
+  },
+  {
+   "t": "p",
+   "text": "This study enhanced the Seeded Region Growing (SRG) algorithm of Adams and Bischof (1994) for the localization and delineation of brain tumors on two-dimensional contrast-enhanced T1-weighted MRI slices, with one enhancement for each specific objective, and evaluated the resulting Enhanced Seeded Region Growing (ESRG) algorithm against the original algorithm on a random sample of 600 test patients (300 glioma and 300 meningioma) from the BraTS 2023 dataset, after all parameters had been fixed on a separate development set. Both algorithms received the same slices, seeds, brain mask, and parameter values, and the test set was evaluated once. Based on the results in Chapter Four, the following conclusions are drawn."
+  },
+  {
+   "t": "p",
+   "text": "First, automatic seed selection through Multi-Level Otsu Thresholding with connected-component filtering makes the segmentation fully reproducible and removes its dependence on where the operator clicks; repeated runs produced identical masks, whereas moving the planted seeds by a few millimeters changed the result substantially on a minority of slices. The automatic seed was placed inside the tumor on 71.7% of slices: on 85.0% of meningioma slices, which meets the 70% target, but only on 58.3% of glioma slices. When the seed was placed inside the tumor, the automatic ESRG performed close to the ESRG with a planted seed; when it missed, the segmentation failed. Objective 1 is therefore achieved for meningioma but not for glioma, for which the manual seeding option remains necessary."
+  },
+  {
+   "t": "p",
+   "text": "Second, the local difference measure computed in the log domain did not, by itself, minimize undersegmentation in a way that improves the segmentation. Added to the original algorithm, it raised recall (median 0.915 to 1.000) only because the region flooded the brain on 88% of slices, and the DSC fell sharply. Within the ESRG, where the stopping criterion bounds the region, the measure significantly increased recall and DSC when pooled and for meningioma, but not for glioma. Objective 2 is therefore met only in part: the measure reduces undersegmentation within the ESRG, but it is not sufficient on its own and is useful only in combination with a stopping criterion."
+  },
+  {
+   "t": "p",
+   "text": "Third, the stopping criterion that adapts to the intensity variability of the growing region, supported with a global drift guard, decreased boundary leakage in every comparison. Removed from the ESRG, its absence let the region flood the brain on 83% of slices and lowered the median DSC from 0.771 to 0.147. From the tumor seed alone, it kept the original algorithm inside the tumor more strictly than two competing seeds did (median precision 1.000 against 0.969), but it also stopped the region before the whole tumor was covered, so the DSC was lower (median 0.590 against 0.852). Objective 3 is therefore met with respect to leakage, measured by precision, but not under the full decision rule, which also required a lower boundary distance and an unharmed DSC."
+  },
+  {
+   "t": "p",
+   "text": "Taken together, the enhancements are complementary rather than independent: the local log-domain measure lets the region reach the tumor boundary, and the stopping criterion keeps it from crossing it. The complete ESRG with a planted seed reached a mean DSC of 0.680, against 0.736 for the original algorithm supplied with tumor, healthy-tissue, and background seeds, and 0.542 with automatic seeding. The study therefore does not demonstrate an overall improvement in segmentation accuracy over the original algorithm. The ESRG leaks less (mean precision 0.925 against 0.824) and needs only a single seed, or none, but it undersegments more (mean recall 0.630 against 0.802). Its practical advantage lies in the input it requires: given the same single tumor click, the original algorithm absorbed the whole image (median DSC 0.019), whereas the ESRG stopped at the tumor (median DSC 0.788), a secondary comparison defined after the test run. Performance depended strongly on the tumor type: meningioma was delineated well without any user input (median DSC 0.866), whereas glioma, whose heterogeneous and infiltrative enhancement offers no sharp intensity boundary, remains the practical limit of the method."
+  },
+  {
+   "t": "p",
+   "text": "These conclusions are subject to the following limitations. The system operates on single two-dimensional slices of one MRI sequence and uses the tumor core as the reference standard, excluding edema. Only slices with a tumor core of at least 150 mm² were eligible, so small tumors and the thin upper and lower sections of a tumor were not evaluated. The planted seeds were placed by a simulated careful operator with knowledge of the ground truth, so seeds placed by real users may give lower scores, particularly for the SRG, which needs three correctly placed seeds. The images were skull-stripped by the dataset providers, which the brain mask of the system relies on. Finally, the decision to adopt the running global mean was made by the researchers although it did not meet the pre-set development-set acceptance margin; it was documented before the test set was opened."
+  },
+  {
+   "t": "h2",
+   "text": "5.2 Recommendations"
+  },
+  {
+   "t": "p",
+   "text": "Based on these findings, the following recommendations are offered. The system may be used as an assistive tool that gives clinicians and annotators a reproducible starting contour: with automatic seeding for well-circumscribed, enhancing tumors such as meningioma, and with the manual seeding option for gliomas. Because every stage of the method is interpretable, its contours can be reviewed and corrected by the user."
+  },
+  {
+   "t": "p",
+   "text": "Future work should first improve the localization of gliomas by automatic seed selection, the stage that limited the fully automatic pipeline. Additional ranking cues, such as anatomical position, symmetry between the hemispheres, and texture, may separate the tumor from vessels and other enhancing structures, and the system may present the top-ranked candidates for one-click confirmation."
+  },
+  {
+   "t": "p",
+   "text": "Second, because the ESRG errs toward undersegmentation while the original algorithm errs toward leakage, future work should combine their strengths: for example, by letting the stopping bounds relax gradually while the region remains compact, or by using competing regions, when the user supplies them, together with the adaptive stopping criterion. Any such change should be tuned on development data and confirmed on an independent test set, as in this study."
+  },
+  {
+   "t": "p",
+   "text": "Finally, the method may be extended to multiple sequences, such as T2-weighted and FLAIR images, which delineate infiltrative tumors better than T1-CE alone; to three dimensions, by carrying the seed and region statistics across neighboring slices; and to clinical scans that have not been skull-stripped or bias-corrected. Its masks may also serve as initial contours for learning-based segmentation methods."
+  }
+ ]
+}

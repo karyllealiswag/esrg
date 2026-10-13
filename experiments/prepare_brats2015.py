@@ -4,7 +4,7 @@ prepare_brats2015.py — Export a 2D slice subset of BraTS (2015, 2021, 2023 GLI
 Purpose : BraTS ships 3D volumes (.mha in 2015, .nii.gz later; 240 x 240 x 155 per
           case), while ESRG and its GUI read 2D images only. This script turns a
           random subset of cases into axial T1c PNG slices plus ground-truth masks,
-          in the same images/ + masks/ layout as BRISC so find_mask_for() pairs them.
+          in an images/ + masks/ layout so find_mask_for() pairs them.
           --scheme picks the label convention (see SCHEMES); 2015 is the default.
 Function : scan() lists an archive (.tar.gz, .zip) or folder and pairs each patient's
           T1c volume with its ground-truth (OT) volume; choose() draws patients with

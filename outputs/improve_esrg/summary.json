@@ -1,0 +1,137 @@
+{
+  "final_params": {
+    "ESRG": {
+      "sigma_cap": 0.08,
+      "k_local": 4.0,
+      "k_global": 5.0,
+      "sigma_floor_min": 0.02,
+      "flood_frac": 0.1498541046439201
+    },
+    "SRG+S": {
+      "sigma_cap": null,
+      "k_local": 5.0,
+      "k_global": 7.0,
+      "sigma_floor_min": 0.02,
+      "flood_frac": null
+    }
+  },
+  "size_prior": {
+    "n": 259,
+    "p95": 0.1498541046439201,
+    "p99": 0.268433873965141,
+    "max": 0.5341321351306374,
+    "median": 0.04288395716020758
+  },
+  "decisions": {
+    "round1": {
+      "ESRG": {
+        "winner": "ESRG|cap=0.08|kl=3|kg=4|floor=0.02|flood=none",
+        "params": {
+          "sigma_cap": 0.08,
+          "k_local": 3.0,
+          "k_global": 4.0,
+          "sigma_floor_min": 0.02,
+          "flood_frac": null
+        },
+        "accepted": true,
+        "gain_on_B": 0.042462962317126984,
+        "type_changes_on_B": {
+          "glioma": 0.04923168184968818,
+          "meningioma": 0.0356942427845659
+        },
+        "foldA_objective": 0.6122936029488303,
+        "foldA_reference": 0.5767094526025807,
+        "reference": "ESRG|cap=none|kl=2|kg=3|floor=0.02|flood=none",
+        "winner_is_current": false
+      },
+      "SRG+S": {
+        "winner": "SRG+S|cap=none|kl=5|kg=7|floor=0.02|flood=none",
+        "params": {
+          "sigma_cap": null,
+          "k_local": 5.0,
+          "k_global": 7.0,
+          "sigma_floor_min": 0.02,
+          "flood_frac": null
+        },
+        "accepted": false,
+        "gain_on_B": 0.0,
+        "type_changes_on_B": {},
+        "foldA_objective": 0.7198573579463641,
+        "foldA_reference": 0.7198573579463641,
+        "reference": "SRG+S|cap=none|kl=5|kg=7|floor=0.02|flood=none",
+        "winner_is_current": true
+      }
+    },
+    "round2": {
+      "ESRG": {
+        "winner": "ESRG|cap=0.08|kl=4|kg=5|floor=0.02|flood=0.149854",
+        "params": {
+          "sigma_cap": 0.08,
+          "k_local": 4.0,
+          "k_global": 5.0,
+          "sigma_floor_min": 0.02,
+          "flood_frac": 0.1498541046439201
+        },
+        "accepted": true,
+        "gain_on_B": 0.045993161540964,
+        "type_changes_on_B": {
+          "glioma": 0.09762506059930609,
+          "meningioma": -0.00563873751737809
+        },
+        "foldA_objective": 0.6609043672610719,
+        "foldA_reference": 0.6122936029488303,
+        "reference": "ESRG|cap=0.08|kl=3|kg=4|floor=0.02|flood=none",
+        "winner_is_current": false
+      },
+      "SRG+S": {
+        "winner": "SRG+S|cap=none|kl=5|kg=7|floor=0.02|flood=0.268434",
+        "params": {
+          "sigma_cap": null,
+          "k_local": 5.0,
+          "k_global": 7.0,
+          "sigma_floor_min": 0.02,
+          "flood_frac": 0.268433873965141
+        },
+        "accepted": false,
+        "gain_on_B": 0.00777527434859393,
+        "type_changes_on_B": {
+          "glioma": 0.01949630851452322,
+          "meningioma": -0.003945759817335248
+        },
+        "foldA_objective": 0.7330733776523333,
+        "foldA_reference": 0.7198573579463641,
+        "reference": "SRG+S|cap=none|kl=5|kg=7|floor=0.02|flood=none",
+        "winner_is_current": false
+      }
+    }
+  },
+  "all_dev": {
+    "ESRG|cap=0.08|kl=4|kg=5|floor=0.02|flood=0.149854": {
+      "glioma": 0.5226,
+      "meningioma": 0.8039,
+      "objective": 0.6632,
+      "share_dsc_ge_0.7": 0.5483
+    },
+    "ESRG|cap=none|kl=2|kg=3|floor=0.02|flood=none": {
+      "glioma": 0.3905,
+      "meningioma": 0.7633,
+      "objective": 0.5769,
+      "share_dsc_ge_0.7": 0.4537
+    },
+    "SRG+S|cap=none|kl=5|kg=7|floor=0.02|flood=none": {
+      "glioma": 0.6295,
+      "meningioma": 0.8067,
+      "objective": 0.7181,
+      "share_dsc_ge_0.7": 0.6158
+    },
+    "SRG|plain": {
+      "glioma": 0.6289,
+      "meningioma": 0.8513,
+      "objective": 0.7401,
+      "share_dsc_ge_0.7": 0.6641
+    }
+  },
+  "esrg_gap_to_plain_srg": 0.0768238739166055,
+  "stop_rule_gap_threshold": 0.05,
+  "stop_rule_triggered": true
+}

@@ -10,8 +10,8 @@ Function : e1() A_ESRG vs P_ESRG vs P_SRG (Friedman + Kendall's W, post-hoc Wilc
           method experiments E3-E6; verdicts() applies the decision rules; writes results.json,
           tests_paired.csv, descriptives.csv and summary.md.
 Notes   : Paired differences are oriented so that positive = better (HD95: baseline minus enhanced).
-          An effect counts only if Holm p < .05 and |r| >= 0.1. Reuses the generic helpers of
-          analyze_fair.py (wide, pair, _test, _call, placement_sd, load) and experiments/stats.py.
+          An effect counts only if Holm p < .05 and |r| >= 0.1. Statistics come from
+          experiments/stats.py; the small table helpers (load, wide, pair, _test, _call) are below.
           CLI: python -P experiments/analyze_brats.py <results folder>   (default: dev rehearsal)
 """
 import json
@@ -25,8 +25,10 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from experiments.analyze_fair import _call, _f, _p, _test, load, pair, placement_sd, wide
-from experiments.stats import desc, friedman, holm, wilcoxon, wilson
+from experiments.stats import desc, friedman, holm, shapiro, wilcoxon, wilson
+
+ALPHA, R_MIN = 0.05, 0.1
+LOWER_BETTER = {"hd95_wc"}
 
 TYPES = ["glioma", "meningioma"]
 SCOPES = TYPES + ["pooled"]
@@ -51,6 +53,59 @@ SECONDARY = {
     "S1": ("P_SRG_solo", "P_ESRG", ["dsc", "precision", "recall"], None, "secondary",
            "Equal operator effort: one tumor click for both algorithms"),
 }
+
+
+# ─── table helpers ───────────────────────────────────────────────────────────
+def load(d):
+    df = pd.read_csv(os.path.join(d, "raw_results.csv"), low_memory=False)
+    for c in ("dsc", "recall", "precision", "hd95_wc"):
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    df["seed_hit"] = df["seed_hit"].astype(str).eq("True")
+    return df
+
+
+def wide(df, cfg, col, scope="pooled"):
+    s = df[df.config == cfg]
+    if scope != "pooled":
+        s = s[s.tumor == scope]
+    return s.set_index("file")[col]
+
+
+def pair(df, base, enh, col, scope):
+    x, y = wide(df, base, col, scope), wide(df, enh, col, scope)
+    idx = x.index.intersection(y.index)
+    return x.loc[idx], y.loc[idx]
+
+
+def _test(df, base, enh, metric, scope):
+    x, y = pair(df, base, enh, metric, scope)
+    # Orient so positive = better: wilcoxon(a, b) uses d = b - a.
+    t = wilcoxon(y, x) if metric in LOWER_BETTER else wilcoxon(x, y)
+    d = (x - y) if metric in LOWER_BETTER else (y - x)
+    return {"metric": metric, "base": desc(x), "enh": desc(y),
+            "median_paired_diff": float(np.nanmedian(d)) if len(d) else None,
+            "shapiro_diff": shapiro(x, y), **t}
+
+
+def _call(t):
+    """better / worse / no effect by the decision rule (Holm p < .05 and |r| >= 0.1)."""
+    if t.get("p_holm") is None or t["p_holm"] >= ALPHA or abs(t.get("r", 0.0)) < R_MIN:
+        return "no effect"
+    return "better" if t["r"] > 0 else "worse"
+
+
+def placement_sd(df, scope):
+    """Per slice: SD (n - 1) of DSC over the three planted placements."""
+    m = pd.concat([wide(df, c, "dsc", scope).rename(c) for c in PLACEMENTS], axis=1).dropna()
+    return m.std(axis=1, ddof=1)
+
+
+def _f(v, n=3):
+    return "—" if v is None or (isinstance(v, float) and math.isnan(v)) else f"{v:.{n}f}"
+
+
+def _p(p):
+    return "—" if p is None else ("< .001" if p < 0.001 else f"{p:.3f}".lstrip("0"))
 
 
 def family(df, exp, scope):

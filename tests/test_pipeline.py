@@ -6,7 +6,7 @@ Function : Small synthetic cases with known answers — perfect/disjoint DSC, ou
           range, a bright square the grower must fill without leaking, seed-hit
           logic, rejection of an invalid k_global <= k_local, the seed-pixel
           report (per-region grouping, averages, click de-duplication), the
-          evaluation pipeline (Cochran sample size, equal allocation, the
+          evaluation pipeline (Cochran sample size, the
           statistics, worst-case distances), the GUI's metric explanations, and
           the stage telemetry (growth recording changes nothing and every logged
           decision obeys Eq. 3.8–3.11; every stage has a report), and the SRG
@@ -104,20 +104,11 @@ def test_pixel_report_auto_core_is_row_major_and_empty_is_none():
 
 def test_cochran_sample_size_matches_hand_computation():
     from experiments.sampling import cochran, margin
-    r = cochran(1757)                         # pituitary population of the pooled splits
-    assert abs(r["n0"] - 384.1459) < 1e-3     # 1.959964^2 * 0.25 / 0.05^2
-    assert r["n_min"] == 316                  # 384.146 / (1 + 383.146 / 1757) = 315.37
-    assert abs(margin(318, 1757) - 0.04975) < 1e-4
-
-
-def test_equal_allocation_gives_every_stratum_the_same_size():
-    from experiments.sampling import plan
-    cells = {(t, p): [(f"{t}{p}{i}.jpg", f"{t}{p}{i}.png") for i in range(400 + 7 * k)]
-             for k, (t, p) in enumerate([(t, p) for t in ("glioma", "meningioma", "pituitary")
-                                         for p in ("axial", "coronal", "sagittal")])}
-    pl = plan(cells)
-    assert pl["n"] == 9 * pl["n_h"]
-    assert pl["n_h"] * 3 >= pl["n_class_required"]
+    g, m = cochran(966), cochran(759)         # glioma and meningioma pool of the BraTS 2023 study
+    assert abs(g["n0"] - 384.1459) < 1e-3     # 1.959964^2 * 0.25 / 0.05^2
+    assert g["n_min"] == 276                  # 384.146 / (1 + 383.146 / 966) = 275.1
+    assert m["n_min"] == 256                  # 384.146 / (1 + 383.146 / 759) = 255.2
+    assert abs(margin(300, 966) - 0.0470) < 5e-4 and abs(margin(300, 759) - 0.0439) < 5e-4
 
 
 def test_wilcoxon_matches_scipy_and_holm_is_monotone():
@@ -336,7 +327,7 @@ def _stripped_case(edge_tumor=False, radius=9):
 
 
 def test_pre_stripped_brain_mask_and_default_path():
-    """pre_stripped: H is the non-zero brain with holes filled; the BRISC default path is untouched."""
+    """pre_stripped: H is the non-zero brain with holes filled; the default path is untouched."""
     from esrg.preprocessing import head_mask
     img, brain, _ = _stripped_case()
     H, depth, info = head_mask(img, Config(pre_stripped=True))
@@ -347,7 +338,7 @@ def test_pre_stripped_brain_mask_and_default_path():
 
 
 def test_min_clearance_decides_cortical_tumors():
-    """A tumor touching the brain edge is rejected by the clearance filter at its BRISC
+    """A tumor touching the brain edge is rejected by the clearance filter at a positive
     value and kept at 0, which is why 0 is in the BraTS seeding grid."""
     from esrg.preprocessing import head_mask
     from esrg.seeds import select_seed
@@ -402,59 +393,10 @@ def test_srg_lists_only_the_stages_it_uses():
     assert "log" in keys(Config(method="srg", seed_mode="manual", srg_use_stopping=True), pts)
 
 
-def test_brisc_fair_subsample_is_nested_and_stratified():
-    """25% subsample: 27 per tumor x plane stratum, all inside the original sample, deterministic."""
-    import csv
-    from experiments.evaluate_fair import draw_sample, SRC, PER_STRATUM
-    if not os.path.isfile(os.path.join(SRC, "frame.csv")):
-        return
-    rows = draw_sample()
-    with open(os.path.join(SRC, "sample.csv"), newline="") as f:
-        original = {r["file"] for r in csv.DictReader(f)}
-    strata = {}
-    for r in rows:
-        strata[r["stratum"]] = strata.get(r["stratum"], 0) + 1
-    assert len(rows) == 9 * PER_STRATUM and set(strata.values()) == {PER_STRATUM}
-    assert {r["file"] for r in rows} <= original
-    assert [r["file"] for r in draw_sample()] == [r["file"] for r in rows]
-
-
-def test_brisc_fair_seed_protocol_obeys_its_rules():
-    """One seed of each type per placement, in its pool: tumor P1 deepest, P2/P3 8-16 px away
-    inside the tumor; healthy deep in the head and >= 12 px from it; air >= 8 px outside the
-    head; scalp at depth 2-8 px and >= 12 px from the tumor; deterministic."""
-    from experiments.evaluate_fair import seed_protocol, GT_CLEAR, AIR_CLEAR, NEAR
-    from esrg.preprocessing import head_mask, normalize
-    from scipy import ndimage as ndi
-    yy, xx = np.mgrid[:512, :512]
-    r2 = (yy - 256) ** 2 + (xx - 256) ** 2
-    img = np.where(r2 <= 200 ** 2, 220.0, 0.0)            # scalp fat (bright rim)
-    img[r2 <= 190 ** 2] = 100.0                           # brain
-    tumor = (yy - 256) ** 2 + (xx - 330) ** 2 <= 30 ** 2
-    img[tumor] = 180.0
-    cfg = Config()
-    seeds, log = seed_protocol(img, tumor, cfg, "synthetic.png")
-    H, depth, _ = head_mask(normalize(img), cfg)
-    away = ndi.distance_transform_edt(~tumor)
-    out = ndi.distance_transform_edt(~H)
-    p1 = seeds[1][0]
-    assert p1[:2] == np.unravel_index(int(np.argmax(ndi.distance_transform_edt(tumor))), tumor.shape)
-    for k in (1, 2, 3):
-        by = {t: (r, c) for r, c, t in seeds[k]}
-        assert sorted(by) == [1, 2, 3, 4]
-        assert tumor[by[1]]
-        if k > 1:
-            assert NEAR[0] <= np.hypot(by[1][0] - p1[0], by[1][1] - p1[1]) <= NEAR[1]
-        assert H[by[2]] and depth[by[2]] > 0.4 * depth[H].max() and away[by[2]] >= GT_CLEAR
-        assert not H[by[3]] and out[by[3]] >= AIR_CLEAR
-        assert H[by[4]] and 2 <= depth[by[4]] <= 8 and away[by[4]] >= GT_CLEAR
-    assert seed_protocol(img, tumor, cfg, "synthetic.png")[0] == seeds
-
-
-def test_fair_analysis_decision_rule_and_placement_sd():
+def test_analysis_decision_rule_and_placement_sd():
     """An effect counts only with Holm p < .05 and |r| >= 0.1; placement SD is the n-1 SD over P1-P3."""
     import pandas as pd
-    from experiments.analyze_fair import _call, placement_sd
+    from experiments.analyze_brats import _call, placement_sd
     assert _call({"p_holm": 0.01, "r": 0.25}) == "better"
     assert _call({"p_holm": 0.01, "r": -0.25}) == "worse"
     assert _call({"p_holm": 0.01, "r": 0.05}) == "no effect"
