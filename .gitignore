@@ -7,3 +7,5 @@ brats2023/
 # BraTS 2023 meningioma slice subset (same export script)
 bratsmen/
 node_modules/
+# BraTS 2023 evaluation set (experiments/sampling.py --brats --draw)
+brats_eval/
