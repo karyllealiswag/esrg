@@ -30,7 +30,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from experiments.attribution import BUCKET_LABEL
-from experiments.evaluate import CONFIGS, INU, N_CLICKS, SUCCESS_DSC
+from experiments.evaluate_brisc import CONFIGS, INU, N_CLICKS, SUCCESS_DSC
 from experiments.stats import (chi2, desc, friedman, holm, kruskal, mannwhitney, mcnemar,
                                shapiro, stratified_mean, wilcoxon, wilson)
 

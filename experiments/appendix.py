@@ -34,7 +34,7 @@ from openpyxl.styles import Alignment, Border, Font, Side
 from openpyxl.utils import get_column_letter
 
 from experiments.chapter4 import tables as T
-from experiments.evaluate import CONFIGS
+from experiments.evaluate_brisc import CONFIGS
 
 FONT = "Times New Roman"
 THIN = Side(style="thin", color="000000")

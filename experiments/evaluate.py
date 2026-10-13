@@ -1,38 +1,38 @@
 """
-evaluate.py — Automated batch evaluation for Chapter 4 (Experiments E1–E6).
+evaluate.py — Batch evaluation on BraTS 2023 GLI + MEN (experiments/PROTOCOL_BRATS.md).
 
-Purpose : Run every configuration of the study on the fixed stratified sample
-          (experiments/sampling.py) and record one raw row per (slice, configuration).
-Function : process() runs all configurations of CONFIGS on one slice and returns
-          the per-slice measurements (confusion counts, overlap and boundary
-          metrics, seed measurements, stage times); run_all() distributes the slices
-          over worker processes and appends rows to raw_results.csv, skipping rows
-          already present so an interrupted run resumes; timing_pass() re-measures
-          processing time sequentially (one process, warm-up run discarded, the
-          order of SRG and ESRG alternated per slice) for Experiment E6, on a
-          stratified random subsample: the first TIMING_PER_STRATUM slices of every
-          stratum in the random draw order of sampling.py.
-Notes   : Seeding conditions —
-            auto     automated seed selection (Objective 1);
-            planted  one click at the deepest ground-truth pixel, dilated like a
-                     manual click, isolating region growing from seeding;
-            operator five simulated operator clicks per slice, each at a random
-                     ground-truth pixel deep enough for the click disk to lie inside
-                     the tumor (Objective 1, operator variability).
-            manual   the GUI's Manual Seeding protocol for SRG: operator click k as
-                     tumor seed (type 1) plus competing seeds in brain (type 2),
-                     scalp/skull (type 3) and air (type 4), grown by the original
-                     whole-image tessellation (growing.grow_srg). Seed positions are
-                     written to manual_seeds.csv so each run can be repeated in the GUI.
-          "biased" multiplies a synthetic linear bias field (40% INU) into the slice
-          before normalization (Experiment E2). Parameters are the frozen defaults.
-          CLI: python experiments/evaluate.py            (parallel accuracy run)
-               python experiments/evaluate.py --timing   (sequential timing pass)
+Purpose : Run every arm of Experiments E1–E8 on one set of brats_eval/ (DEVELOPMENT
+          for smoke tests and tuning checks, TEST exactly once with frozen
+          parameters) and record one raw row per (slice, configuration).
+Function : seed_protocol() places the planted seeds of a slice (tumor, healthy tissue,
+          background; placements P1, P2, P3) deterministically and logs them;
+          process() runs all configurations of CONFIGS on one slice; run_all()
+          spreads slices over worker processes and appends rows to the raw CSV,
+          skipping rows already present so an interrupted run resumes. --repeat
+          re-runs the automatic arms into a separate file for the determinism check.
+Notes   : Seeds (Section 6.2 of the protocol), at 512 px = 240 mm (1 mm = 2.133 px):
+            tumor      core pixels >= 3 px from the core edge (the r = 3 disk fits);
+                       P1 = deepest core pixel, P2/P3 = random pixels 4-8 mm from P1,
+                       P3 also >= 4 mm from P2;
+            healthy    brain pixels with depth > 0.4 max, >= 25 mm from the core, in
+                       the hemisphere opposite the core centroid (edema masks are not
+                       available; edema is mostly ipsilateral);
+            background zero pixels >= 8 px outside the brain.
+          Every arm of a comparison receives the same seeds. The ground truth places
+          the planted seeds only (a careful operator); the automatic tumor seed
+          never sees it. Parameters: configs/esrg_brats_frozen.json when present,
+          otherwise the defaults with pre_stripped=True (smoke tests before tuning).
+          CLI: python -P experiments/evaluate.py --set dev --limit 5      (smoke test)
+               python -P experiments/evaluate.py --set test --sample-per-type 300 --approved --analyze
+                                                                         (the one TEST run)
+               ... --repeat 1 / --repeat 2 with the same --sample-per-type (determinism)
+          TEST sample (PROTOCOL_BRATS §10): 300 patients per tumor type drawn from the TEST list by
+          simple random sampling (files sorted, random.Random(2026).shuffle, first 300); the drawn
+          list is written to <out>/test/test_sample.csv before any slice is run and reused after.
 """
 import argparse
 import csv
 import json
-import math
 import os
 import platform
 import random
@@ -46,7 +46,6 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")   # one BLAS thread per worker pro
 warnings.filterwarnings("ignore", category=FutureWarning)
 import numpy as np
 from scipy import ndimage as ndi
-from skimage import morphology
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -54,150 +53,162 @@ from esrg import Config, run
 from esrg import preprocessing as pre
 from esrg.io_utils import load_image, load_mask
 from experiments.attribution import attribute
-from experiments.sampling import read_manifest
+from experiments.sampling import BRATS_OUT, read_split
 
-OUT = "outputs/evaluation"
-INU = 0.40                     # bias field spans 1 - INU/2 .. 1 + INU/2 (BrainWeb "40% INU")
-N_CLICKS = 5                   # simulated operators per slice
+OUT = "outputs/evaluation_brats"
+FROZEN = "configs/esrg_brats_frozen_v3.json"   # v2 + running global mean (IMPROVEMENT_PROTOCOL_ESRG_V3 §11)
 SUCCESS_DSC = 0.70             # success threshold (Zijdenbos et al., 1994)
-TIMING_PER_STRATUM = 20        # slices per stratum in the sequential timing pass (E6)
-MANUAL_GT_CLEARANCE = 12       # px: brain/scalp seeds of the manual protocol stay this far from the tumor
-MANUAL_MIN_SEP = 25            # px: minimum distance between any two manual-protocol seeds
+MM = 512 / 240                 # px per mm: BraTS 240 px at 1 mm, exported at 512 px
+NEAR = (4 * MM, 8 * MM)        # P2/P3 lie 4-8 mm from P1
+SEP = 4 * MM                   # P3 lies >= 4 mm from P2
+HEALTHY_CLEAR = 25 * MM        # healthy seed >= 25 mm from the tumor core
+BG_CLEAR = 8                   # background seed >= 8 px outside the brain
 
-# id: (description, config overrides, seeding condition, biased, click number)
+# id: (description, config overrides, seeding, placement, seed types used)
+#   seeding "auto": automatic tumor seed + planted competitors (types 2-3);
+#   seeding "manual": every planted type of the placement.
+# SRG mirrors read ESRG's settings (v3 file has no separate SRG tuning): LLDM r, k_L, k_G, flood guard,
+# and the sigma cap. The cap was calibrated in log units, so the ASC-only arms (no LLDM, intensity
+# domain) omit it (IMPROVEMENT_PROTOCOL_ESRG_V3 §11); SRG is 8-connected as published.
+NOCAP = dict(sigma_cap=None)
 CONFIGS = {
-    "A_SRG":           ("SRG, automatic seeding",                     dict(method="srg"), "auto", False, None),
-    "A_ESRG":          ("ESRG, automatic seeding",                    dict(),             "auto", False, None),
-    "P_SRG":           ("SRG, planted seed",                          dict(method="srg"), "planted", False, None),
-    "P_ESRG":          ("ESRG (full), planted seed",                  dict(),             "planted", False, None),
-    "P_ESRG_global":   ("ESRG, global measure, planted seed",         dict(use_log_local=False), "planted", False, None),
-    "P_ESRG_nolog":    ("ESRG, log transform off, planted seed",      dict(use_log=False), "planted", False, None),
-    "P_ESRG_nostop":   ("ESRG, no stopping criterion, planted seed",  dict(use_stopping=False), "planted", False, None),
-    "P_ESRG_nopurify": ("ESRG, unpurified click disk, planted seed",  dict(purify_manual_seed=False), "planted", False, None),
-    "B_SRG":           ("SRG, planted seed, bias field",              dict(method="srg"), "planted", True, None),
-    "B_SRG_N4":        ("SRG + N4, planted seed, bias field",         dict(method="srg", use_n4=True), "planted", True, None),
-    "B_ESRG":          ("ESRG (full), planted seed, bias field",      dict(), "planted", True, None),
-    "B_ESRG_global":   ("ESRG, global measure, planted seed, bias field", dict(use_log_local=False), "planted", True, None),
-    "B_ESRG_nolog":    ("ESRG, log transform off, planted seed, bias field", dict(use_log=False), "planted", True, None),
+    "A_ESRG":       ("ESRG, automatic seeding",                       dict(),                                        "auto", 1, (2, 3)),
+    "A_SRG":        ("SRG, automatic tumor seed + planted competitors", dict(method="srg"),                        "auto", 1, (2, 3)),
+    "P_SRG":        ("SRG (1994), planted P1",                        dict(method="srg"),                            "manual", 1, (1, 2, 3)),
+    "P_SRG_2":      ("SRG (1994), planted P2",                        dict(method="srg"),                            "manual", 2, (1, 2, 3)),
+    "P_SRG_3":      ("SRG (1994), planted P3",                        dict(method="srg"),                            "manual", 3, (1, 2, 3)),
+    "P_ESRG":       ("ESRG, planted P1 tumor seed",                   dict(),                                        "manual", 1, (1, 2, 3)),
+    "P_SRG_L":      ("SRG + LLDM, planted P1",                        dict(method="srg", srg_use_log_local=True),    "manual", 1, (1, 2, 3)),
+    "P_ESRG_noL":   ("ESRG without LLDM (ASC on), planted P1",        dict(use_log=False, use_log_local=False, **NOCAP), "manual", 1, (1, 2, 3)),
+    "P_SRG_solo":   ("SRG (1994), P1 tumor seed only",                dict(method="srg"),                            "manual", 1, (1,)),
+    "P_SRG_solo_S": ("SRG + ASC, P1 tumor seed only",                 dict(method="srg", srg_use_stopping=True, **NOCAP), "manual", 1, (1,)),
+    "P_ESRG_C":     ("ESRG compete mode (LLDM + ASC), planted P1",    dict(esrg_compete=True),                       "manual", 1, (1, 2, 3)),
+    "P_ESRG_C_noS": ("ESRG compete mode without ASC, planted P1",     dict(esrg_compete=True, use_stopping=False),   "manual", 1, (1, 2, 3)),
 }
-for _k in range(1, N_CLICKS + 1):
-    CONFIGS[f"O_SRG_{_k}"] = (f"SRG, simulated operator click {_k}", dict(method="srg"), "operator", False, _k)
-for _k in range(1, N_CLICKS + 1):
-    CONFIGS[f"O_ESRG_{_k}"] = (f"ESRG, simulated operator click {_k}", dict(), "operator", False, _k)
-N_MANUAL = 3                   # simulated operators for the manual SRG protocol
-for _k in range(1, N_MANUAL + 1):
-    CONFIGS[f"M_SRG_{_k}"] = (f"SRG, manual protocol (click {_k} + competing seeds)",
-                              dict(method="srg", seed_mode="manual"), "manual", False, _k)
-# Manual SRG and ESRG from operator click 1 under the synthetic bias field (Objective 2)
-CONFIGS["BM_SRG"] = ("SRG, manual protocol click 1, bias field",
-                     dict(method="srg", seed_mode="manual"), "manual", True, 1)
-CONFIGS["BM_ESRG"] = ("ESRG, simulated operator click 1, bias field", dict(), "operator", True, 1)
+AUTO_CONFIGS = [c for c, v in CONFIGS.items() if v[2] == "auto"]
 
 STAGE_KEYS = ["input", "mask", "log", "candidates", "growth", "final"]
-FIELDS = ["file", "split", "tumor", "plane", "stratum", "index", "config", "method", "seeding",
-          "biased", "click", "status",
+FIELDS = ["file", "tumor", "patient", "set", "config", "method", "seeding", "placement", "status",
           "tp", "fp", "fn", "pred_area", "gt_area",
-          "dsc", "iou", "precision", "recall", "hd95", "assd", "hd95_wc", "assd_wc", "diag",
-          "n_boundary_pred", "n_boundary_gt", "area_ratio", "leaked", "success",
-          "seed_area", "seed_in_gt_px", "seed_in_gt_frac", "seed_hit", "seed_distance",
-          "click_row", "click_col", "click_depth",
-          "sigma_floor", "sigma_A_initial", "k_local", "stop_reason", "n_passes",
-          "bias_theta_deg", "bucket", "bucket_reason", "seconds"] \
-         + [f"t_{k}" for k in STAGE_KEYS] + ["error"]
-SCORE_KEYS = ("tp", "fp", "fn", "pred_area", "gt_area", "dsc", "iou", "precision", "recall",
-              "hd95", "assd", "hd95_wc", "assd_wc", "diag", "n_boundary_pred", "n_boundary_gt",
-              "area_ratio", "leaked", "seed_hit", "seed_distance", "seconds")
+          "dsc", "precision", "recall", "hd95", "hd95_mm", "hd95_wc", "hd95_wc_mm", "assd",
+          "area_ratio", "leaked", "success", "dsc_enhancing",
+          "seed_area", "seed_in_gt_frac", "seed_hit", "seed_distance", "mask_sha1",
+          "tumor_seed_mm_from_p1", "sigma_floor", "sigma_A_initial", "stop_reason", "n_passes",
+          "bucket", "bucket_reason", "seconds"] + [f"t_{k}" for k in STAGE_KEYS] + ["error"]
+SCORE_KEYS = ("tp", "fp", "fn", "pred_area", "gt_area", "dsc", "precision", "recall",
+              "hd95", "hd95_wc", "assd", "area_ratio", "leaked", "seed_hit", "seed_distance",
+              "mask_sha1", "seconds")
 
 
-# ─── Seeds and bias field ────────────────────────────────────────────────────
-def _disk(shape, r, c, radius):
-    core = np.zeros(shape, bool)
-    core[r, c] = True
-    return morphology.dilation(core, morphology.disk(radius))
+def base_config():
+    """Frozen BraTS parameters when tuning has been approved, else defaults (pre_stripped)."""
+    if os.path.isfile(FROZEN):
+        return Config.load(FROZEN).replace(pre_stripped=True)
+    return Config(pre_stripped=True)
 
 
-def planted_core(gt, cfg):
-    """One click at the deepest ground-truth pixel, dilated exactly like a manual click."""
-    dt = ndi.distance_transform_edt(gt)
-    r, c = np.unravel_index(int(np.argmax(dt)), dt.shape)
-    return _disk(gt.shape, r, c, cfg.manual_seed_radius), (int(r), int(c), float(dt[r, c]))
+# ─── Seed protocol ───────────────────────────────────────────────────────────
+def _rng(file, *parts):
+    return random.Random(zlib.crc32("|".join([file, *map(str, parts)]).encode()))
 
 
-def operator_clicks(gt, cfg, name, k=N_CLICKS):
+def _near(pool, anchor, rng, avoid=None):
     """
-    k simulated operator clicks: distinct ground-truth pixels drawn uniformly (fixed
-    per-slice seed) among those whose distance to the tumor boundary exceeds the
-    click radius, so each dilated click lies inside the tumor as a careful operator
-    would place it. Tumors too thin for that fall back to any tumor pixel.
+    A pixel of pool ((N, 2) array) 4-8 mm from anchor (and >= 4 mm from avoid); if
+    the ring is empty (small region), the pool pixel whose distance to anchor is
+    closest to 6 mm. Returns (row, col).
     """
-    dt = ndi.distance_transform_edt(gt)
-    pool = np.argwhere(dt > cfg.manual_seed_radius)
-    if len(pool) < k:
-        pool = np.argwhere(gt)
-    rng = random.Random(zlib.crc32(name.encode()))
-    picks = rng.sample(range(len(pool)), min(k, len(pool)))
-    return [(int(pool[i][0]), int(pool[i][1]), float(dt[pool[i][0], pool[i][1]])) for i in picks]
+    d = np.hypot(pool[:, 0] - anchor[0], pool[:, 1] - anchor[1])
+    ok = (d >= NEAR[0]) & (d <= NEAR[1])
+    if avoid is not None:
+        ok &= np.hypot(pool[:, 0] - avoid[0], pool[:, 1] - avoid[1]) >= SEP
+    idx = np.flatnonzero(ok)
+    if idx.size:
+        i = idx[rng.randrange(idx.size)]
+    else:
+        far = d > 0
+        if avoid is not None:
+            far &= (pool[:, 0] != avoid[0]) | (pool[:, 1] != avoid[1])
+        cand = np.flatnonzero(far)
+        if not cand.size:
+            return tuple(int(v) for v in anchor)
+        i = cand[np.argmin(np.abs(d[cand] - 6 * MM))]
+    return int(pool[i][0]), int(pool[i][1])
 
 
-def _pick(pool, n, rng, taken, min_sep):
-    """Up to n pixels from pool ((N, 2) array), each at least min_sep from the others and from taken."""
-    out = []
-    order = list(range(len(pool)))
-    rng.shuffle(order)
-    for i in order:
-        r, c = int(pool[i][0]), int(pool[i][1])
-        if all((r - tr) ** 2 + (c - tc) ** 2 >= min_sep ** 2 for tr, tc in taken + out):
-            out.append((r, c))
-            if len(out) == n:
-                break
-    return out
-
-
-def manual_protocol_points(raw, gt, cfg, name, k, click):
+def seed_protocol(raw, gt, cfg, file):
     """
-    Seeds of a simulated operator using the GUI's Manual Seeding for SRG: the tumor click
-    (type 1) plus competing seeds in brain tissue (type 2, two), scalp/skull (type 3,
-    three) and air (type 4, three), as a careful operator would place them. Positions are
-    deterministic per (slice, operator); brain and scalp seeds stay clear of the tumor.
-    Returns [(row, col, type), ...] for run(manual_points=...).
+    {placement: [(row, col, type), ...]} for P1-P3 plus a log of where each seed came
+    from. Deterministic per file (crc32 of file, placement and type).
     """
     img = pre.normalize(raw)
-    mask, depth, _ = pre.head_mask(img, cfg)
-    rng = random.Random(zlib.crc32(f"{name}M{k}".encode()))
-    far = ndi.distance_transform_edt(~gt) > MANUAL_GT_CLEARANCE
-    brain = np.argwhere(mask & far & (depth > 0.4 * depth[mask].max()))
-    scalp = np.argwhere(mask & far & (depth >= 2) & (depth <= 8))
-    air = np.argwhere(~mask & (ndi.distance_transform_edt(~mask) >= 8))
-    pts, taken = [(click[0], click[1], 1)], [tuple(click)]
-    for t, pool, n in ((2, brain, 2), (3, scalp, 3), (4, air, 3)):
-        got = _pick(pool, n, rng, taken, MANUAL_MIN_SEP)
-        pts += [(r, c, t) for r, c in got]
-        taken += got
-    return pts
+    brain, depth, _ = pre.brain_mask(img)
+    log = {}
 
+    # Tumor (type 1)
+    dt = ndi.distance_transform_edt(gt)
+    tum = np.argwhere(dt >= cfg.manual_seed_radius)
+    if not len(tum):
+        tum = np.argwhere(gt)
+    p1 = np.unravel_index(int(np.argmax(dt)), dt.shape)
+    t2 = _near(tum, p1, _rng(file, "P2", 1))
+    t3 = _near(tum, p1, _rng(file, "P3", 1), avoid=t2)
 
-def bias_hook(index, split):
-    """Linear multiplicative field from 1 - INU/2 to 1 + INU/2 in a per-slice random direction."""
-    theta = random.Random(zlib.crc32(f"{split}{index}".encode())).uniform(0, 2 * math.pi)
+    # Healthy tissue (type 2): contralateral, deep, far from the core
+    cols = np.flatnonzero(brain.any(axis=0))
+    mid = (cols[0] + cols[-1]) / 2 if cols.size else gt.shape[1] / 2
+    tumor_col = float(np.argwhere(gt)[:, 1].mean())
+    side = np.zeros_like(brain)
+    if tumor_col >= mid:
+        side[:, :int(np.floor(mid))] = True
+    else:
+        side[:, int(np.ceil(mid)) + 1:] = True
+    away = ndi.distance_transform_edt(~gt)
+    deep = brain & (depth > 0.4 * depth.max()) & ~gt
+    healthy = np.argwhere(deep & (away >= HEALTHY_CLEAR) & side)
+    log["healthy_rule"] = "contralateral"
+    if not len(healthy):
+        healthy = np.argwhere(deep & (away >= HEALTHY_CLEAR))
+        log["healthy_rule"] = "far (no contralateral pixel)"
+    if not len(healthy):
+        far = np.where(deep, away, -1)
+        healthy = np.argwhere(far == far.max())
+        log["healthy_rule"] = "farthest deep brain pixel"
+    rng = _rng(file, "P1", 2)
+    h1 = tuple(int(v) for v in healthy[rng.randrange(len(healthy))])
+    h2 = _near(healthy, h1, _rng(file, "P2", 2))
+    h3 = _near(healthy, h1, _rng(file, "P3", 2), avoid=h2)
 
-    def hook(raw):
-        H, W = raw.shape
-        y, x = np.mgrid[0:H, 0:W]
-        u = (x - (W - 1) / 2) * math.cos(theta) + (y - (H - 1) / 2) * math.sin(theta)
-        span = np.abs(u).max() or 1.0
-        return raw * (1.0 + (INU / 2) * u / span)
-    return hook, math.degrees(theta)
+    # Background (type 3)
+    bg = np.argwhere((img == 0) & (ndi.distance_transform_edt(~brain) >= BG_CLEAR))
+    rng = _rng(file, "P1", 3)
+    b1 = tuple(int(v) for v in bg[rng.randrange(len(bg))])
+    b2 = _near(bg, b1, _rng(file, "P2", 3))
+    b3 = _near(bg, b1, _rng(file, "P3", 3), avoid=b2)
+
+    p1 = (int(p1[0]), int(p1[1]))
+    seeds = {1: [(*p1, 1), (*h1, 2), (*b1, 3)],
+             2: [(*t2, 1), (*h2, 2), (*b2, 3)],
+             3: [(*t3, 1), (*h3, 2), (*b3, 3)]}
+    log["tumor_mm_from_p1"] = {k: round(float(np.hypot(s[0][0] - p1[0], s[0][1] - p1[1])) / MM, 2)
+                               for k, s in seeds.items()}
+    return seeds, log
 
 
 # ─── One slice, all configurations ───────────────────────────────────────────
-def _row_from_result(row, res, gt, cfg):
+def _row_from_result(row, res, gt, enh, cfg):
     sc = res.scores
     row.update({k: sc.get(k) for k in SCORE_KEYS})
+    for k in ("hd95", "hd95_wc"):
+        row[f"{k}_mm"] = None if sc.get(k) is None or np.isnan(sc[k]) else round(sc[k] / MM, 4)
     row["status"] = res.status
     row["success"] = bool(sc.get("dsc") is not None and sc["dsc"] >= SUCCESS_DSC)
+    if row["tumor"] == "glioma" and enh is not None:          # secondary target (protocol §1)
+        p = res.mask.astype(bool)
+        den = p.sum() + enh.sum()
+        row["dsc_enhancing"] = float(2 * (p & enh).sum() / den) if den else None
     seed = res.stage("seed").image.astype(bool)
     row["seed_area"] = int(seed.sum())
-    row["seed_in_gt_px"] = int((seed & gt).sum())
     row["seed_in_gt_frac"] = float((seed & gt).sum() / seed.sum()) if seed.any() else None
     row["sigma_floor"] = res.stage("log").info.get("noise floor σ") if res.stage("log") else None
     g = res.stage("growth")
@@ -207,7 +218,6 @@ def _row_from_result(row, res, gt, cfg):
         if isinstance(passes, list) and passes and passes[0].get("sigma") is not None:
             row["sigma_A_initial"] = passes[0]["sigma"]
             row["n_passes"] = len(passes)
-            row["k_local"] = cfg.k_local
     for k in STAGE_KEYS:
         st = res.stage(k)
         row[f"t_{k}"] = round(st.seconds, 5) if st is not None else None
@@ -215,45 +225,31 @@ def _row_from_result(row, res, gt, cfg):
 
 
 def process(task):
-    ip, mp, info, cfg_ids = task
-    base = Config()
-    img, _ = load_image(ip, base.max_side)
-    gt = load_mask(mp, img.shape)
-    pcore, (pr, pc, pd) = planted_core(gt, base)
-    clicks = operator_clicks(gt, base, info["file"])
+    ip, mp, info, cfg_ids, base_kw = task
+    base = Config(**base_kw)
+    raw, _ = load_image(ip, base.max_side)
+    gt = load_mask(mp, raw.shape)
+    ep = mp.replace("/masks/", "/masks_enhancing/")
+    enh = load_mask(ep, raw.shape) if os.path.isfile(ep) else None
+    seeds, slog = seed_protocol(raw, gt, base, info["file"])
     rows = []
     for cid in cfg_ids:
-        desc, over, seeding, biased, click = CONFIGS[cid]
-        cfg = base.replace(**over)
-        row = {"file": info["file"], "split": info["split"], "tumor": info["tumor"],
-               "plane": info["plane"], "stratum": info["stratum"], "index": info["index"],
-               "config": cid, "method": cfg.method, "seeding": seeding, "biased": biased,
-               "click": click}
+        desc, over, seeding, placement, types = CONFIGS[cid]
+        cfg = base.replace(seed_mode=seeding, **over)
+        row = {"file": info["file"], "tumor": info["tumor"], "patient": info["patient"], "set": info["set"],
+               "config": cid, "method": cfg.method, "seeding": seeding, "placement": placement,
+               "tumor_seed_mm_from_p1": slog["tumor_mm_from_p1"][placement] if 1 in types else None}
         try:
-            hook, theta = bias_hook(info["index"], info["split"]) if biased else (None, None)
-            core, points = None, None
-            if seeding == "planted":
-                core = pcore
-                row["click_row"], row["click_col"], row["click_depth"] = pr, pc, round(pd, 3)
-            elif seeding == "operator":
-                cr, cc, cd = clicks[(click - 1) % len(clicks)]
-                core = _disk(gt.shape, cr, cc, base.manual_seed_radius)
-                row["click_row"], row["click_col"], row["click_depth"] = cr, cc, round(cd, 3)
-            elif seeding == "manual":
-                cr, cc, cd = clicks[(click - 1) % len(clicks)]
-                points = manual_protocol_points(img, gt, base, info["file"], click, (cr, cc))
-                row["click_row"], row["click_col"], row["click_depth"] = cr, cc, round(cd, 3)
-                row["manual_points"] = json.dumps(points)     # -> manual_seeds.csv, not raw_results.csv
-            res = run(ip, cfg, mask_path=mp, planted_core=core, manual_points=points, raw_hook=hook)
-            _row_from_result(row, res, gt, cfg)
-            if biased:
-                row["bias_theta_deg"] = round(theta, 2)
+            points = [p for p in seeds[placement] if p[2] in types]
+            res = run(ip, cfg, mask_path=mp, manual_points=points)
+            _row_from_result(row, res, gt, enh, cfg)
             if cid == "A_ESRG":
                 row["bucket"], row["bucket_reason"] = attribute(res)
         except Exception as e:                       # recorded, never silently dropped
             row["status"], row["error"] = "ERROR", repr(e)
         rows.append(row)
-    return rows
+    seed_rows = [[info["file"], k, json.dumps(v), slog["healthy_rule"]] for k, v in seeds.items()]
+    return rows, seed_rows
 
 
 def _done_keys(path):
@@ -263,23 +259,19 @@ def _done_keys(path):
         return {(r["file"], r["config"]) for r in csv.DictReader(f)}
 
 
-def _tasks(sample, cfg_ids, done):
+def run_all(sample, out_csv, cfg_ids, workers, base_kw):
+    done = _done_keys(out_csv)
     tasks = []
     for ip, mp, info in sample:
         todo = [c for c in cfg_ids if (info["file"], c) not in done]
         if todo:
-            tasks.append((ip, mp, info, todo))
-    return tasks
-
-
-def run_all(sample, out_csv, cfg_ids, workers):
-    tasks = _tasks(sample, cfg_ids, _done_keys(out_csv))
+            tasks.append((ip, mp, info, todo, base_kw))
     print(f"{len(sample)} slices, {len(cfg_ids)} configurations; {len(tasks)} slices still to run", flush=True)
-    new = not os.path.isfile(out_csv)
     os.makedirs(os.path.dirname(out_csv) or ".", exist_ok=True)
-    t0 = time.time()
-    seeds_csv = os.path.join(os.path.dirname(out_csv) or ".", "manual_seeds.csv")
+    new = not os.path.isfile(out_csv)
+    seeds_csv = os.path.join(os.path.dirname(out_csv), "manual_seeds.csv")
     new_seeds = not os.path.isfile(seeds_csv)
+    t0 = time.time()
     with open(out_csv, "a", newline="", encoding="utf-8") as f, \
             open(seeds_csv, "a", newline="", encoding="utf-8") as fs:
         w = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
@@ -287,123 +279,95 @@ def run_all(sample, out_csv, cfg_ids, workers):
         if new:
             w.writeheader()
         if new_seeds:
-            sw.writerow(["file", "config", "points"])      # points: JSON [[row, col, type], ...]
+            sw.writerow(["file", "placement", "points", "healthy_rule"])   # points: [[row, col, type], ...]
         with Pool(workers) as pool:
-            for n, rows in enumerate(pool.imap_unordered(process, tasks), 1):
+            for n, (rows, seed_rows) in enumerate(pool.imap_unordered(process, tasks), 1):
                 w.writerows(rows)
-                sw.writerows([r["file"], r["config"], r["manual_points"]] for r in rows if r.get("manual_points"))
+                sw.writerows(seed_rows)
                 f.flush()
                 fs.flush()
-                if n % 10 == 0 or n == len(tasks):
+                if n % 25 == 0 or n == len(tasks):
                     el = time.time() - t0
                     print(f"  {n}/{len(tasks)}  {el/60:.1f} min elapsed, "
                           f"~{el/n*(len(tasks)-n)/60:.1f} min left", flush=True)
 
 
-# ─── Sequential timing pass (E6) ─────────────────────────────────────────────
-TIMING_FIELDS = ["file", "split", "tumor", "plane", "stratum", "config", "order", "seconds"] \
-                + [f"t_{k}" for k in STAGE_KEYS] + ["status", "dsc", "pred_area"]
+def draw_sample(sample, n, manifest, seed=2026):
+    """Simple random sample of n patients per tumor type (files sorted, then shuffled with a fixed
+    seed). The list is written once; later calls (resume, repeats) must reproduce it exactly."""
+    out = []
+    for k in ("glioma", "meningioma"):
+        pool = sorted((t for t in sample if t[2]["tumor"] == k), key=lambda t: t[2]["file"])
+        random.Random(seed).shuffle(pool)
+        out += pool[:n]
+    files = [t[2]["file"] for t in out]
+    if os.path.isfile(manifest):
+        old = [r["file"] for r in csv.DictReader(open(manifest))]
+        if old != files:
+            raise SystemExit(f"{manifest} differs from the draw: refusing to run on a different sample.")
+    else:
+        with open(manifest, "w", newline="") as f:
+            w = csv.writer(f); w.writerow(["order", "tumor", "patient", "file"])
+            for i, t in enumerate(out):
+                w.writerow([i, t[2]["tumor"], t[2]["patient"], t[2]["file"]])
+    return out
 
 
 def environment():
-    """Hardware/software of the timing pass (reported with Table 3.1)."""
-    import subprocess
+    """Hardware/software of the run (reported with the results)."""
     import numpy, scipy, skimage
-    cpu = platform.processor()
-    try:
-        out = subprocess.run(["powershell", "-NoProfile", "-Command",
-                              "(Get-CimInstance Win32_Processor).Name; "
-                              "[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB,1)"],
-                             capture_output=True, text=True, timeout=30).stdout.split("\n")
-        cpu, ram = out[0].strip() or cpu, out[1].strip()
-    except Exception:
-        ram = None
-    try:
-        out = subprocess.run(["powershell", "-NoProfile", "-Command",
-                              "(Get-CimInstance Win32_Battery).BatteryStatus; "
-                              "(powercfg /getactivescheme)"], capture_output=True, text=True,
-                             timeout=30).stdout.splitlines()
-        power = {"battery_status": out[0].strip(), "power_scheme": out[1].strip()}
-        power["source"] = ("battery" if power["battery_status"] == "1" else
-                           "AC adapter" if power["battery_status"] else "AC (no battery)")
-    except Exception:
-        power = {}
-    return {"cpu": cpu, "logical_cpus": os.cpu_count(), "ram_gb": ram, **power,
-            "os": f"{platform.system()} {platform.release()} ({platform.version()})",
-            "python": platform.python_version(), "numpy": numpy.__version__,
-            "scipy": scipy.__version__, "scikit_image": skimage.__version__,
-            "timer": "time.perf_counter", "processes": 1}
-
-
-def timing_subsample(sample, k=TIMING_PER_STRATUM):
-    """First k slices of every stratum in the random draw order: a stratified random subsample."""
-    rows = sorted(sample, key=lambda t: (t[2]["stratum"], int(t[2]["draw_order"])))
-    out, seen = [], {}
-    for t in rows:
-        h = t[2]["stratum"]
-        if seen.get(h, 0) < k:
-            out.append(t)
-            seen[h] = seen.get(h, 0) + 1
-    return sorted(out, key=lambda t: t[2]["file"])
-
-
-def timing_pass(sample, out_csv, cfg_ids=("A_SRG", "A_ESRG")):
-    """
-    One process, nothing else running. A warm-up run (discarded) loads libraries
-    and caches; the order of the two configurations alternates between slices so
-    neither systematically benefits from a warm cache.
-    """
-    done = _done_keys(out_csv)
-    new = not os.path.isfile(out_csv)
-    with open(os.path.join(os.path.dirname(out_csv), "timing_environment.json"), "w") as f:
-        json.dump(environment(), f, indent=2)
-    ip0, mp0, _ = sample[0]
-    for cid in cfg_ids:                              # warm-up, not recorded
-        run(ip0, Config().replace(**CONFIGS[cid][1]), mask_path=mp0)
-    t0 = time.time()
-    with open(out_csv, "a", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=TIMING_FIELDS, extrasaction="ignore")
-        if new:
-            w.writeheader()
-        for n, (ip, mp, info) in enumerate(sample, 1):
-            order = list(cfg_ids) if n % 2 else list(reversed(cfg_ids))
-            for pos, cid in enumerate(order, 1):
-                if (info["file"], cid) in done:
-                    continue
-                res = run(ip, Config().replace(**CONFIGS[cid][1]), mask_path=mp)
-                row = {k: info[k] for k in ("file", "split", "tumor", "plane", "stratum")}
-                row.update({"config": cid, "order": pos, "seconds": res.meta.get("seconds"),
-                            "status": res.status, "dsc": res.scores.get("dsc"),
-                            "pred_area": res.scores.get("pred_area")})
-                for k in STAGE_KEYS:
-                    st = res.stage(k)
-                    row[f"t_{k}"] = round(st.seconds, 5) if st is not None else None
-                w.writerow(row)
-            f.flush()
-            if n % 25 == 0 or n == len(sample):
-                el = time.time() - t0
-                print(f"  timing {n}/{len(sample)}  {el/60:.1f} min elapsed, "
-                      f"~{el/n*(len(sample)-n)/60:.1f} min left", flush=True)
+    return {"cpu": platform.processor(), "logical_cpus": os.cpu_count(),
+            "os": f"{platform.system()} {platform.release()}", "python": platform.python_version(),
+            "numpy": numpy.__version__, "scipy": scipy.__version__, "scikit_image": skimage.__version__}
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
+    ap.add_argument("--set", choices=("dev", "test"), required=True)
     ap.add_argument("--out", default=OUT)
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 2))
     ap.add_argument("--configs", nargs="*", default=list(CONFIGS))
-    ap.add_argument("--timing", action="store_true", help="sequential timing pass for A_SRG and A_ESRG")
-    ap.add_argument("--limit", type=int, default=None, help="first N sampled slices only (smoke test)")
-    ap.add_argument("--raw", default="raw_results.csv", help="raw-results file name inside --out")
-    ap.add_argument("--per-stratum", type=int, default=TIMING_PER_STRATUM,
-                    help="slices per stratum timed in the sequential pass")
+    ap.add_argument("--limit", type=int, default=None, help="first N slices of the set (smoke test)")
+    ap.add_argument("--per-type", type=int, default=None, help="first N slices of each tumor type (smoke test)")
+    ap.add_argument("--repeat", type=int, default=None, help="re-run the automatic arms as repeat k")
+    ap.add_argument("--part", choices=("D1", "D2", "D3"), default=None,
+                    help="dev only: restrict to one part of the v3 DEV split (outputs/improve_v3/split.csv)")
+    ap.add_argument("--sample-per-type", type=int, default=None,
+                    help="TEST: random sample of N patients per tumor type (seed 2026), recorded in test_sample.csv")
+    ap.add_argument("--analyze", action="store_true", help="run analyze_brats.py on the folder afterwards")
+    ap.add_argument("--approved", action="store_true",
+                    help="TEST only: the user has approved the frozen parameters and the single TEST run")
     args = ap.parse_args()
 
-    sample = read_manifest(args.out)
+    if args.set == "test":
+        if not os.path.isfile(FROZEN):
+            raise SystemExit(f"{FROZEN} not found: TEST runs only with the frozen, approved parameters.")
+        if not args.approved:
+            raise SystemExit("TEST is a single run and needs the user's explicit approval: pass --approved.")
+    sample = read_split(BRATS_OUT, args.set)
+    if args.part:
+        if args.set != "dev":
+            raise SystemExit("--part applies to the DEV set only")
+        part = dict(csv.reader(open("outputs/improve_v3/split.csv")))
+        sample = [t for t in sample if part[t[2]["file"]] == args.part]
+    if args.per_type:
+        sample = [t for k in ("glioma", "meningioma")
+                  for t in [x for x in sample if x[2]["tumor"] == k][:args.per_type]]
     if args.limit:
         sample = sample[:args.limit]
-    if args.timing:
-        sub = timing_subsample(sample, args.per_stratum)
-        print(f"timing pass on {len(sub)} slices ({args.per_stratum} per stratum)", flush=True)
-        timing_pass(sub, os.path.join(args.out, "timing_sequential.csv"))
+    base = base_config()
+    out_dir = os.path.join(args.out, args.set)
+    os.makedirs(out_dir, exist_ok=True)
+    if args.sample_per_type:
+        sample = draw_sample(sample, args.sample_per_type, os.path.join(out_dir, f"{args.set}_sample.csv"))
+    with open(os.path.join(out_dir, "run_config.json"), "w") as f:
+        json.dump({"config": base.to_dict(), "frozen_file": FROZEN if os.path.isfile(FROZEN) else None,
+                   "environment": environment()}, f, indent=2, default=str)
+    if args.repeat:
+        run_all(sample, os.path.join(out_dir, f"raw_results_repeat{args.repeat}.csv"), AUTO_CONFIGS,
+                args.workers, base.to_dict())
     else:
-        run_all(sample, os.path.join(args.out, args.raw), args.configs, args.workers)
+        run_all(sample, os.path.join(out_dir, "raw_results.csv"), args.configs, args.workers, base.to_dict())
+    if args.analyze:
+        from experiments.analyze_brats import analyze
+        analyze(out_dir)

@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from esrg import Config, run
 from esrg.io_utils import load_image, load_mask
 from esrg.visualize import overlay_result
-from experiments.evaluate import CONFIGS, N_CLICKS, _disk, operator_clicks, planted_core
+from experiments.evaluate_brisc import CONFIGS, N_CLICKS, _disk, operator_clicks, planted_core
 from experiments.sampling import read_manifest
 
 EVAL = "outputs/evaluation"
