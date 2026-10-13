@@ -5,7 +5,9 @@
  *           Times New Roman 12 pt, 1.5 line spacing, APA 7 tables and figures,
  *           numbered OMML equations followed by a "where:" list).
  * Function : node render_docx.js <spec.json> <out.docx>. Each block of the spec is
- *           one of: h1 | h2 | h3 | p | eq | where | table | figure | pagebreak.
+ *           one of: h1 | h2 | h3 | h4 | p | eq | where | table | figure | pagebreak |
+ *           step (algorithm line; level = indent depth) | box (steps framed with an
+ *           OBJECTIVE label) | li (numbered list item) | ref. Used for Chapters 3 and 4.
  *           Inline markup in text: *italic*, **bold**, _{subscript}, ^{superscript}.
  *           Math nodes: "text" | [nodes] | {f:[num,den]} | {sub:[b,s]} | {sup:[b,s]} |
  *           {subsup:[b,s,p]} | {sqrt:x} | {sum:{lo,hi,body}} | {rb:x} | {sb:x}.
@@ -73,6 +75,58 @@ function heading(level, text) {
   });
 }
 
+function heading4(text, before = 120) {
+  // Sub-heading / topic label: bold, upright, no trailing period, on its own line
+  return new d.Paragraph({
+    keepNext: true, spacing: { before, after: 0, line: 360 },
+    children: runs(text.replace(/\.$/, ""), { bold: true }),
+  });
+}
+
+function stepLines(lines, level) {
+  const HANG = 460;
+  return (Array.isArray(lines) ? lines : [lines]).map((t) => {
+    const m = /^((?:\d+|[a-z]|[ivx]+)\.)\s+(.*)$/.exec(t);
+    const lv = level || 0;
+    if (m) {
+      return new d.Paragraph({
+        keepNext: true, spacing: { before: 0, after: 0, line: 300 },
+        indent: { left: HANG * (lv + 1), hanging: HANG },
+        tabStops: [{ type: d.TabStopType.LEFT, position: HANG * (lv + 1) }],
+        children: runs(m[1] + "\t" + m[2], { size: 22 }),
+      });
+    }
+    const bold = t === "START" || t === "END";
+    return new d.Paragraph({
+      keepNext: true, spacing: { before: bold ? 60 : 0, after: bold ? 60 : 0, line: 300 },
+      indent: { left: HANG * lv },
+      children: runs(t, { size: 22, bold }),
+    });
+  });
+}
+
+function box(b) {
+  // Algorithm steps that implement an objective, framed, with the objective label on the right.
+  const left = (b.items || []).flatMap((it) => stepLines(it.text, it.level));
+  const frame = { style: d.BorderStyle.SINGLE, size: 6, color: "000000" };
+  return new d.Table({
+    width: { size: TEXT_W, type: d.WidthType.DXA }, columnWidths: [7560, 1800],
+    borders: { top: frame, bottom: frame, left: frame, right: frame, insideHorizontal: NONE, insideVertical: frame },
+    rows: [new d.TableRow({ cantSplit: true, children: [
+      new d.TableCell({ width: { size: 7560, type: d.WidthType.DXA }, margins: { top: 60, bottom: 60, left: 100, right: 100 }, children: left }),
+      new d.TableCell({ width: { size: 1800, type: d.WidthType.DXA }, verticalAlign: d.VerticalAlign.CENTER,
+        children: [new d.Paragraph({ alignment: d.AlignmentType.CENTER, children: runs(b.label, { bold: true, size: 20 }) })] }),
+    ] })],
+  });
+}
+
+function listItem(b) {
+  return new d.Paragraph({
+    alignment: d.AlignmentType.JUSTIFIED, spacing: { before: 0, after: 0, line: 360 },
+    indent: { left: 1080, hanging: 360 }, children: runs(`${b.n}. ${b.text}`),
+  });
+}
+
 function para(b) {
   return new d.Paragraph({
     alignment: d.AlignmentType.JUSTIFIED,
@@ -84,20 +138,32 @@ function para(b) {
 }
 
 function equation(b) {
-  const cell = (children, w, align) => new d.TableCell({
-    width: { size: w, type: d.WidthType.DXA }, borders: cellBorders(false, false),
-    verticalAlign: d.VerticalAlign.CENTER, margins: { top: 60, bottom: 60, left: 0, right: 0 },
-    children: [new d.Paragraph({ alignment: align, keepNext: true, children })],
+  const W = 6800;
+  const dash = { style: d.BorderStyle.DASHED, size: 6, color: "000000" };
+  const box = new d.Table({
+    width: { size: W, type: d.WidthType.DXA }, columnWidths: [W], alignment: d.AlignmentType.CENTER,
+    borders: { top: dash, bottom: dash, left: dash, right: dash, insideHorizontal: NONE, insideVertical: NONE },
+    rows: [new d.TableRow({ cantSplit: true, children: [new d.TableCell({
+      width: { size: W, type: d.WidthType.DXA }, verticalAlign: d.VerticalAlign.CENTER,
+      margins: { top: 100, bottom: 100, left: 120, right: 120 },
+      children: [new d.Paragraph({ alignment: d.AlignmentType.CENTER, keepNext: true, children: [new d.Math({ children: math(b.math) })] })],
+    })] })],
   });
-  return new d.Table({
-    width: { size: TEXT_W, type: d.WidthType.DXA }, columnWidths: [1080, 7200, 1080],
-    borders: { top: NONE, bottom: NONE, left: NONE, right: NONE, insideHorizontal: NONE, insideVertical: NONE },
-    rows: [new d.TableRow({ cantSplit: true, children: [
-      cell([], 1080, d.AlignmentType.LEFT),
-      cell([new d.Math({ children: math(b.math) })], 7200, d.AlignmentType.CENTER),
-      cell(runs(`(${b.num})`), 1080, d.AlignmentType.RIGHT),
-    ] })],
+  const cap = new d.Paragraph({
+    alignment: d.AlignmentType.CENTER, keepNext: true, spacing: { before: 80, after: 80, line: 300 },
+    children: runs(`Equation ${b.num}${b.title ? " " + b.title : ""}`, { bold: true, italics: true, size: 22 }),
   });
+  return [box, cap];
+}
+
+function legend(b) {
+  // Quick legend: bold term, then its meaning, hanging-indented
+  return b.items.map(([term, desc], i) => new d.Paragraph({
+    keepNext: i < b.items.length - 1, spacing: { before: 0, after: i === b.items.length - 1 ? 160 : 0, line: 300 },
+    indent: { left: 1900, hanging: 1180 },
+    tabStops: [{ type: d.TabStopType.LEFT, position: 1900 }],
+    children: [...runs(term, { bold: true, size: 22 }), ...runs("\t" + desc, { size: 22 })],
+  }));
 }
 
 function where(b) {
@@ -189,8 +255,14 @@ const baseDir = path.dirname(path.resolve(specPath));
 const children = [];
 for (const b of spec.blocks) {
   if (["h1", "h2", "h3"].includes(b.t)) children.push(heading(b.t, b.text));
+  else if (b.t === "h4") children.push(heading4(b.text));
+  else if (b.t === "label") children.push(heading4(b.text, 60));
+  else if (b.t === "legend") children.push(...legend(b));
+  else if (b.t === "step") children.push(...stepLines(b.text, b.level));
+  else if (b.t === "box") { children.push(box(b)); children.push(new d.Paragraph({ spacing: { after: 0 }, children: [] })); }
+  else if (b.t === "li") children.push(listItem(b));
   else if (b.t === "p") children.push(para(b));
-  else if (b.t === "eq") children.push(equation(b));
+  else if (b.t === "eq") children.push(...equation(b));
   else if (b.t === "where") children.push(...where(b));
   else if (b.t === "table") children.push(...tableBlock(b));
   else if (b.t === "figure") children.push(...figure(b, baseDir));
@@ -200,7 +272,7 @@ for (const b of spec.blocks) {
 }
 const doc = new d.Document({
   creator: spec.author || "",
-  title: spec.title || "Chapter 4",
+  title: spec.title || "Chapter",
   styles: {
     default: { document: { run: { font: FONT, size: 24 } } },
     paragraphStyles: [
