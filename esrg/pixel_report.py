@@ -6,7 +6,7 @@ Purpose : Report exactly which pixels seed the region growth and what grayscale
 Function : manual_groups() groups user clicks by seed region, auto_groups() lists
           the system-selected seed core, and describe() attaches the raw and
           normalized (0-255) value of every pixel plus the mean of each group;
-          log_domain() gives the Stage 3 value L(x) of the same pixels.
+          log_domain() gives the Stage 2 value L(x) of the same pixels.
 Notes   : Pure NumPy, no GUI. Coordinates are (row, col), 0-based, in the working
           image (after any downscale to max_side). "raw" is the file value; "norm"
           is preprocessing.normalize(raw), the value the pipeline actually grows on.
@@ -55,7 +55,7 @@ def describe(groups, raw, norm):
 def log_domain(groups, I, L, mask, eps, use_log):
     """
     Log-domain value of every seed pixel, read from the arrays the pipeline used.
-    I is the head-masked normalized slice (0-255) and L the Stage 3 output, so
+    I is the head-masked normalized slice (0-255) and L the Stage 2 output, so
     L(x) = ln(I(x) + eps) when use_log, else L(x) = I(x). Returns one dict per
     group: label, n, pixels [{row, col, I, L, in_head}], mean_L.
     """

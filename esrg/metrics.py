@@ -2,7 +2,7 @@
 metrics.py — Segmentation scores (Chapter 3, Section 3.4.4).
 
 Purpose : Quantify a predicted mask against ground truth.
-Function : evaluate() returns DSC, IoU, precision, recall (overlap) plus HD95 and
+Function : evaluate() returns DSC, precision, recall (overlap) plus HD95 and
           ASSD (boundary) and a leakage flag; seed_hit() checks the seed core lies
           inside the tumor; seed_distance() measures how far the seed core lies from
           the tumor; summarize() aggregates per-metric mean/SD/median/IQR.
@@ -46,7 +46,6 @@ def evaluate(pred, gt, cfg=None):
     m = {"tp": tp, "fp": fp, "fn": fn,
          "pred_area": int(pred.sum()), "gt_area": int(gt.sum())}
     m["dsc"] = 2 * tp / (2 * tp + fp + fn) if (2 * tp + fp + fn) else np.nan
-    m["iou"] = tp / (tp + fp + fn) if (tp + fp + fn) else np.nan
     m["precision"] = tp / (tp + fp) if (tp + fp) else np.nan
     m["recall"] = tp / (tp + fn) if (tp + fn) else np.nan
 
@@ -82,7 +81,7 @@ def seed_distance(core, gt):
     return float(ndi.distance_transform_edt(~gt)[r, c])
 
 
-def summarize(rows, keys=("dsc", "iou", "precision", "recall", "hd95", "seconds")):
+def summarize(rows, keys=("dsc", "precision", "recall", "hd95", "seconds")):
     """Mean/SD/median/IQR per metric, ignoring NaN."""
     out = {}
     for k in keys:

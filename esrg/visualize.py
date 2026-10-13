@@ -120,5 +120,5 @@ def score_line(scores):
     def f(k):
         v = scores.get(k)
         return "n/a" if v is None or (isinstance(v, float) and np.isnan(v)) else f"{v:.3f}"
-    return (f"DSC {f('dsc')}   IoU {f('iou')}   Precision {f('precision')}   "
+    return (f"DSC {f('dsc')}   Precision {f('precision')}   "
             f"Recall {f('recall')}   HD95 {f('hd95')}   {scores.get('seconds', 0):.2f}s")

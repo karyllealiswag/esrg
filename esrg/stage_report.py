@@ -94,10 +94,12 @@ def _working_image(result):
 
 
 def _growth_image(result):
-    """(array, symbol, stage) growth reads: L from Stage 3 when listed, else the working image."""
+    """(array, symbol, stage) growth reads: L from Stage 2 when listed, else the working image."""
     log = result.stage("log")
     if log is not None:
         return log.image, ("L" if log.info.get("_use_log") else "I"), log.name
+    if result.meta.get("method") == "srg":            # SRG tessellates the whole image
+        return result.stage("input").image, "I", _stage_name(result, "input")
     return _working_image(result), "I", _stage_name(result, "input")
 
 
@@ -105,7 +107,7 @@ def _growth_image(result):
 TIP_MU_A = ("μ_A: mean of the region's values. At the start the region A is the seed core S, "
             "so μ_A is the mean over S; ESRG then freezes it for each pass.")
 TIP_S_A = ("s_A: sample standard deviation of the region's values (the seed core at the start). "
-           "Stage 6 uses σ_A = max(s_A, σ_floor), which sets the bounds T_L = k_L·σ_A and T_G = k_G·σ_A.")
+           "Stage 5 uses σ_A = max(s_A, σ_floor), which sets the bounds T_L = k_L·σ_A and T_G = k_G·σ_A.")
 TIP_SIGMA_FLOOR = ("σ_floor: the smallest σ_A allowed. A uniform seed core can have s_A ≈ 0, which would "
                    "make T_L ≈ 0 and stop growth at once; the image's own noise level is used instead.")
 
@@ -130,7 +132,7 @@ def _input(result, cfg, b):
                   f"(of {_n(raw.size)}).")
         px = _seed_pixels(result)
         if px:
-            b("sub", "COMPUTATION · seed-core pixels S (from Stage 5)")
+            b("sub", "COMPUTATION · seed-core pixels S (from Stage 4)")
             rows = []
             for r, c in px[:SEED_CAP]:
                 v = float(raw[r, c])
@@ -139,11 +141,12 @@ def _input(result, cfg, b):
             b.table(["row", "col", "I₀(x)", "computed I(x)", "pipeline I(x)"], rows,
                     _seed_note(min(len(px), SEED_CAP), len(px)))
     b("sub", "OUTPUT")
-    nxt = result.stages[1].name if len(result.stages) > 1 else "Evaluation"
+    shown = [st for st in result.stages[1:] if st.key != "mask"]   # the brain-mask stage is not displayed
+    nxt = shown[0].name if shown else "Evaluation"
     b("output", [("I", _arr(I), nxt)])
     b("tips", {
-        "seed-core pixels S": "The pixels of the seed core chosen in Stage 5. They are listed here because "
-                              "their values become the region's starting statistics μ_A and s_A in Stage 6.",
+        "seed-core pixels S": "The pixels of the seed core chosen in Stage 4. They are listed here because "
+                              "their values become the region's starting statistics μ_A and s_A in Stage 5.",
         "computed I(x)": "I(x) worked out from the equation above with this pixel's I₀(x).",
         "pipeline I(x)": "The value the pipeline itself produced; it must equal 'computed I(x)'.",
         "p₀.₅": "Percentiles instead of min/max, so a few hot or dead pixels cannot set the contrast range.",
@@ -160,6 +163,9 @@ def _mask(result, cfg, b):
     s = st.info.get("_steps", {})
     b("sub", "INPUT")
     b("input", [("I", _arr(I), "1 · Input")])
+    if st.info.get("pre_stripped"):
+        _brain(result, H, s, b)
+        return
     b("sub", "PROCESS · head isolation (Section 3.2.1, step 1c)")
     b("eq", ["g = Gaussian_σ=1(I)",
              "tissue = g > t_Otsu(g)",
@@ -180,19 +186,44 @@ def _mask(result, cfg, b):
             b("bad", w)
     b("sub", "OUTPUT")
     method = result.meta.get("method")
-    used_by = ("3 · Log (I·H), 4 · Candidates, 6 · Growth (never leaves H), 7 · Final" if method == "esrg"
-               else "4 · Candidates, 6 · Growth (background seeds and growth inside H), 7 · Final")
+    used_by = ("2 · Log (I·H), 3 · Candidates, 5 · Growth (never leaves H), 6 · Final" if method == "esrg"
+               else "3 · Candidates, 5 · Growth (background seeds and growth inside H), 6 · Final")
     b("output", [("H", _arr(H, "mask"), used_by),
-                 ("depth", f"max {_f(s.get('depth_max'), 1)} px", "4 · Candidates (interior rule, Eq. 3.2)"),
-                 ("I·H", "I with every x ∉ H set to 0", "3 · Log domain" if result.stage("log") else "4 · Candidates")])
+                 ("depth", f"max {_f(s.get('depth_max'), 1)} px", "3 · Candidates (interior rule, Eq. 3.2)"),
+                 ("I·H", "I with every x ∉ H set to 0", "2 · Log domain" if result.stage("log") else "3 · Candidates")])
     b("tips", {
         "t_Otsu": "Otsu's threshold: the gray level that best splits the histogram into two classes "
                   "(dark air/bone vs. tissue).",
         "open(": "Opening = erosion then dilation; removes thin frames, text and arrows before the "
                  "largest blob is taken as the head.",
-        "depth(x)": "Euclidean distance from x to the nearest pixel outside H. Stage 4 uses it to tell "
+        "depth(x)": "Euclidean distance from x to the nearest pixel outside H. Stage 3 uses it to tell "
                     "deep tissue from scalp.",
         "max depth in H": "depth_max: the depth of the most central head pixel.",
+    })
+
+
+def _brain(result, H, s, b):
+    """Stage 2 of an already skull-stripped slice (cfg.pre_stripped)."""
+    b("sub", "PROCESS · brain mask of a skull-stripped slice")
+    b("eq", ["H = fill_holes( largest_cc( I > 0 ) )",
+             "depth(x) = distance from x to the outline of H"])
+    b("sub", "COMPUTATION · whole image")
+    if s:
+        b.table(["step", "result"], [
+            ["non-zero pixels I > 0", f"{_n(s['nonzero_px'])} px"],
+            ["largest connected component", f"{_n(s['largest_px'])} px"],
+            ["holes filled → H", f"{_n(s['head_px'])} px ({s['head_px'] / s['image_px']:.1%} of image)"],
+            ["max depth in H", f"{_f(s.get('depth_max'), 1)} px"]])
+    for w in result.stage("mask").info.get("warnings", []):
+        b("bad", w)
+    b("sub", "OUTPUT")
+    b("output", [("H", _arr(H, "mask"), "2 · Log, 3 · Candidates, 5 · Growth, 6 · Final"),
+                 ("depth", f"max {_f(s.get('depth_max'), 1)} px", "3 · Candidates (interior rule, Eq. 3.2)")])
+    b("tips", {
+        "I > 0": "Skull stripping already set every non-brain pixel to 0, so the brain is the non-zero region; "
+                 "no Otsu threshold, opening or skull-ring search is needed.",
+        "depth(x)": "Euclidean distance from x to the nearest pixel outside H, i.e. from the brain edge. "
+                    "Stage 3 uses it in the interior and clearance rules.",
     })
 
 
@@ -203,10 +234,10 @@ def _n4(result, cfg, b):
     b("eq", ["I_N4(x) = (I(x) + 1) / b̂(x) − 1,  then renormalized to [0, 255]"])
     b("kv", [(k, str(v)) for k, v in st.info.items() if not k.startswith("_")])
     b("sub", "OUTPUT")
-    b("output", [("I_N4", _arr(st.image), "3 · Log domain, replaces I·H")])
+    b("output", [("I_N4", _arr(st.image), "2 · Log domain, replaces I·H")])
 
 
-# ─── Stage 3 · Log domain + noise floor ───────────────────────────────────────
+# ─── Stage 2 · Log domain + noise floor ───────────────────────────────────────
 def _log(result, cfg, b):
     st = result.stage("log")
     srg = result.meta.get("method") == "srg"
@@ -224,14 +255,14 @@ def _log(result, cfg, b):
     if whole:
         b("input", [("I", _arr(src), "1 · Input (SRG grows on the whole image)")])
     else:
-        b("input", [("I·H", _arr(src), "1 · Input × 2 · Head mask"), ("H", _arr(region, "mask"), "2 · Head mask")])
+        b("input", [("I·H", _arr(src), "1 · Input (brain-masked)")])
     if use_log or not srg:
         b("sub", "PROCESS · log transform (Eq. 3.6)" if use_log else "PROCESS · log transform OFF (ablation)")
         b("eq", [f"L(x) = ln( I(x) + ε ),  ε = {eps:g}" if use_log else "L(x) = I(x)   (pixels pass through)"])
         px = _seed_pixels(result)
         if px:
             g = pixel_report.log_domain([("seed", px[:SEED_CAP])], src, L, region, eps, use_log)[0]
-            b("sub", "COMPUTATION · seed-core pixels S (from Stage 5)")
+            b("sub", "COMPUTATION · seed-core pixels S (from Stage 4)")
             b.table(["row", "col", "I(x)", "I(x)+ε", "L(x)"],
                     [[p["row"], p["col"], _f(p["I"], 4), _f(p["I"] + (eps if use_log else 0), 4), _f(p["L"], 6)]
                      for p in g["pixels"]], _seed_note(len(g["pixels"]), len(px)))
@@ -245,7 +276,7 @@ def _log(result, cfg, b):
         ["MAD", _f(nf["mad"], 6)], ["1.4826 · MAD", _f(nf["raw_sigma"], 6)],
         ["σ_floor", _f(nf["sigma_floor"], 6)]])
     b("sub", "OUTPUT")
-    growth = "6 · Region growing"
+    growth = "5 · Region growing"
     if srg:
         out = []
         if use_log:
@@ -275,7 +306,7 @@ def _log(result, cfg, b):
     b("tips", tips)
 
 
-# ─── Stage 4 · Candidates ─────────────────────────────────────────────────────
+# ─── Stage 3 · Candidates ─────────────────────────────────────────────────────
 def _candidates(result, cfg, b):
     st = result.stage("candidates")
     si = st.info.get("_s_info", {})
@@ -289,14 +320,14 @@ def _candidates(result, cfg, b):
                  ("seed types", str(si.get("types", "—")))])
         b("note", "Automatic candidate selection (Eq. 3.1–3.3) is skipped in manual seeding.")
         b("sub", "OUTPUT")
-        b("output", [("click disk", _arr(st.image, "mask"), "5 · Seed core")])
+        b("output", [("click disk", _arr(st.image, "mask"), "4 · Seed core")])
         return
     I = result.stage("input").image
     it = si.get("_interior", {})
     th = si.get("thresholds") or []
     b("sub", "INPUT")
-    b("input", [("I·H", _arr(I), "1 · Input × 2 · Head mask"),
-                ("depth", f"max {_f(it.get('depth_max'), 1)} px", "2 · Head mask")])
+    b("input", [("I·H", _arr(I), "1 · Input (brain-masked)"),
+                ("depth", f"max {_f(it.get('depth_max'), 1)} px", "1 · Input")])
     b("sub", "PROCESS · interior region and multi-level Otsu (Eq. 3.1)")
     b("eq", ["interior = { x ∈ H : depth(x) ≥ max( c, η · depth_max ) }",
              "(t₁ … t_K−1) = argmax Σₖ ωₖ (μₖ − μ_T)²   over the interior histogram",
@@ -351,18 +382,18 @@ def _candidates(result, cfg, b):
     if ch:
         b("good", f"C* = component {ch['id']} (area {ch['area']} px)")
     elif si.get("status") != "OK":
-        b("bad", f"{si.get('status')}: " + "; ".join(si.get("warnings", [])))
+        b("bad", "No tumor candidate: " + "; ".join(si.get("warnings", [])))
     b("sub", "OUTPUT")
     b("output", [("C", _arr(st.image, "mask"), "display: top-class pixels of H"),
-                 ("C*", f"component {ch['id']}" if ch else "none", "5 · Seed core")])
+                 ("C*", f"component {ch['id']}" if ch else "none", "4 · Seed core")])
     tips = {
         "c, η, K": "c = minimum clearance, η = interior fraction, K = number of Otsu classes. Tuned on the "
                    "BRISC 2025 training split and frozen (Table 3.4); K can be changed under Adjust Parameters.",
-        "depth_max": "The largest depth(x) in H (Stage 2 distance map): how far the most central head pixel "
+        "depth_max": "The largest depth(x) in H (distance map of the brain mask): how far the most central head pixel "
                      "lies from the head outline.",
         "depth cut": "Pixels shallower than this are scalp, skull or rim and are left out of the histogram; "
                      "the cut is at least c px and grows with the head size through η.",
-        "interior pixels": "Pixels of H with depth(x) ≥ depth cut, read from the Stage 2 depth map. Only "
+        "interior pixels": "Pixels of H with depth(x) ≥ depth cut, read from the depth map of the brain mask. Only "
                            "these feed the Otsu histogram, because scalp fat outshines tumor on T1.",
         "κᵢ": "Clearance: depth of the component's deepest point minus its inscribed radius ρᵢ. Near 0 for "
               "scalp hugging the outline, large for an interior tumor.",
@@ -382,7 +413,7 @@ def _candidates(result, cfg, b):
     b("tips", tips)
 
 
-# ─── Stage 5 · Seed core ──────────────────────────────────────────────────────
+# ─── Stage 4 · Seed core ──────────────────────────────────────────────────────
 def _seed(result, cfg, b):
     st = result.stage("seed")
     si = st.info.get("_s_info", {})
@@ -392,7 +423,7 @@ def _seed(result, cfg, b):
     method = result.meta.get("method")
     b("sub", "INPUT")
     if mode == "auto":
-        b("input", [("C*", f"{_n(co['comp_area'])} px" if co else "—", "4 · Candidates")])
+        b("input", [("C*", f"{_n(co['comp_area'])} px" if co else "—", "3 · Candidates")])
     elif mode == "planted":
         b("input", [("planted core", f"{_n(co['comp_area'])} px" if co else f"{_n(core.sum())} px",
                      "evaluation protocol")])
@@ -401,8 +432,7 @@ def _seed(result, cfg, b):
         b("input", [("click disk", f"{_n(disk.sum())} px" if disk is not None else "—",
                      _stage_name(result, "candidates", "operator clicks"))])
     if co:
-        title = "PROCESS · purify manual seed" if co.get("purified") else "PROCESS · seed core (Section 3.2.1, step 2d)"
-        b("sub", title)
+        b("sub", "PROCESS · seed core (Section 3.2.1, step 2d)")
         b("eq", ["dt(x) = distance from x to the boundary of the component",
                  f"S = {{ x : dt(x) ≥ α · dt_max }},  α = {cfg.seed_core_frac:g}"])
         b.table(["quantity", "value"], [
@@ -413,7 +443,7 @@ def _seed(result, cfg, b):
         b("sub", "PROCESS · seed core")
         b("eq", ["S = click disk (used as clicked)"])
     if not core.any():
-        b("bad", f"{st.info.get('status')}: no seed, so growth does not run.")
+        b("bad", "No tumor candidate: no seed, so growth does not run.")
         return
     G, sym, _ = _growth_image(result)
     I = _working_image(result)
@@ -429,7 +459,7 @@ def _seed(result, cfg, b):
     b.table(["initial statistic", "value"], [
         ["n = |S|", _n(n)], [f"μ_A (mean of {sym} over S)", _f(mu, 6)], [f"s_A (SD of {sym} over S)", _f(s, 6)]])
     b("sub", "OUTPUT")
-    to = "6 · Region growing"
+    to = "5 · Region growing"
     b("output", [("S", _arr(core, "mask"), f"{to} (initial region A = S)"),
                  ("n", _n(n), to), ("μ_A", _f(mu, 6), to), ("s_A", _f(s, 6), to)])
     tips = {
@@ -440,16 +470,10 @@ def _seed(result, cfg, b):
         "α": "Core fraction: only pixels at least α of the way from the boundary to the deepest point are "
              "kept, so partial-volume boundary pixels never enter the seed statistics.",
     }
-    if co and co.get("purified"):
-        tips["purify manual seed"] = (
-            "ESRG with manual seeding only. Each click is grown into a disk of radius "
-            f"{cfg.manual_seed_radius} px, which can straddle the tumor edge. Purification applies the "
-            "automatic core's rule to it (keep dt ≥ α·dt_max), because boundary pixels inflate s_A, and a "
-            "larger s_A loosens T_L = k_L·max(s_A, σ_floor) and lets the region leak.")
     b("tips", tips)
 
 
-# ─── Stage 6 · Growth ─────────────────────────────────────────────────────────
+# ─── Stage 5 · Growth ─────────────────────────────────────────────────────────
 GROWTH_TIPS = {
     "μ_loc": "Local reference: mean of L over the pixels already in the region inside the window W_r(y) "
              "around y. If none are there yet, μ_A is used.",
@@ -477,8 +501,8 @@ def _growth_esrg(result, cfg, b, st, tr):
     b("sub", "INPUT")
     b("input", [("L", _arr(log.image), log.name),
                 ("σ_floor", _f(log.info["_noise_floor"]["sigma_floor"], 6), log.name),
-                ("S, n, μ_A, s_A", f"{_n(result.stage('seed').image.sum())} px", "5 · Seed core"),
-                ("H", "growth never leaves H", "2 · Head mask")])
+                ("S, n, μ_A, s_A", f"{_n(result.stage('seed').image.sum())} px", "4 · Seed core"),
+                ("H", "growth never leaves the brain", "1 · Input")])
     if not cfg.use_log:
         b("note", "Log transform OFF for this run: L(x) = I(x), so every quantity below is in intensity units.")
     pd = tr.get("pass_detail", [])
@@ -496,7 +520,8 @@ def _growth_esrg(result, cfg, b, st, tr):
     b("eq", eq)
     b("anchor", "obj3")
     b("sub", "PROCESS · per pass, statistics frozen (Eq. 3.9, 3.10)")
-    b("eq", ["σ_A = max( s_A, σ_floor )",
+    b("eq", [("σ_A = min( max( s_A, σ_floor ), max( σ_cap, σ_floor ) ),  σ_cap = %g" % cfg.sigma_cap
+              if cfg.sigma_cap else "σ_A = max( s_A, σ_floor )"),
              f"T_L = k_L · σ_A,   T_G = k_G · σ_A,   k_L = {k_l:g}, k_G = {cfg.k_global:g}"])
     if cfg.adaptive_k and "adaptive_k_local" in tr:
         b("note", f"Per-image adaptive k_L is ON: k_L = {tr['adaptive_k_local']:g} was set from the seed's "
@@ -521,10 +546,12 @@ def _growth_esrg(result, cfg, b, st, tr):
             b("sub", f"COMPUTATION · pass {d['pass']} pixels (T_L {_f(d['T_L'], 4)}, T_G {_f(d['T_G'], 4)})")
             rows = []
             for e in shown:
-                verdict = {"absorb": "absorb", "reject": "reject >T_G", "stop": "STOP >T_L"}[e[7]]
+                verdict = {"absorb": "absorb", "reject": "reject >T_G", "stop": "STOP >T_L",
+                           "veto": "reject (healthy)", "rescue": "absorb (rescue)",
+                           "skip": "skip >T_L"}.get(e[7], e[7])
                 rows.append([e[1], e[2], _f(e[3], 4), _f(e[4], 4), _f(e[5], 4), _f(e[6], 4), verdict])
-            n_abs = sum(1 for e in pe if e[7] == "absorb")
-            n_rej = sum(1 for e in pe if e[7] == "reject")
+            n_abs = sum(1 for e in pe if e[7] in ("absorb", "rescue"))
+            n_rej = sum(1 for e in pe if e[7] in ("reject", "veto"))
             b.table(["row", "col", "L(y)", "μ_loc", "δ(y)", "|L−μ_A|", "decision"], rows,
                     f"Pass {d['pass']}: {_n(n_abs)} absorbed, {_n(n_rej)} rejected"
                     + (f"; first {PIXEL_CAP} in SSL order shown" + (" plus the stopping pixel" if stop is not None and stop not in pe[:PIXEL_CAP] else "")
@@ -537,16 +564,14 @@ def _growth_srg(result, cfg, b, st, tr):
     g, sym, src = _growth_image(result)
     local, stop = cfg.srg_use_log_local, cfg.srg_use_stopping
     b("sub", "INPUT")
-    rows = [(f"g = {sym}" if sym == "L" else ("g = I·H" if auto else "g = I"), _arr(g), src)]
+    rows = [(f"g = {sym}" if sym == "L" else "g = I", _arr(g), src)]
     if stop:
         rows.append(("σ_floor", _f(result.stage("log").info["_noise_floor"]["sigma_floor"], 6),
                      result.stage("log").name))
-    rows.append(("S, n, μ_A, s_A", f"{_n(result.stage('seed').image.sum())} px", "5 · Seed core (region 1)"))
-    if auto:
-        rows.append(("background seeds", f"{tr.get('n_background_seeds')} on an {cfg.bg_seed_step}-px grid",
-                     "inside H, ≥ 6 px from S"))
-    else:
-        rows.append(("seed regions", str(tr.get("seed_areas", "")), "operator clicks, types 1…n"))
+    rows.append(("S, n, μ_A, s_A", f"{_n(result.stage('seed').image.sum())} px", "4 · Seed core (region 1)"))
+    rows.append(("seed regions", str(tr.get("seed_areas", "")),
+                 "region 1 = automatic core, regions 2–4 planted" if auto
+                 else "operator clicks: 1 tumor, 2 healthy tissue, 3 background, 4 scalp/skull"))
     b("input", rows)
     applied = [n for n, on in (("log-domain local measure", local), ("adaptive termination", stop)) if on]
     b("anchor", "obj2")
@@ -554,11 +579,11 @@ def _growth_srg(result, cfg, b, st, tr):
              + (" + " + ", ".join(applied) + " on region 1" if applied else ", unconditional"))
     eq = ["δ(x) = | g(x) − mean_{y ∈ A} g(y) |   (A = adjacent region)"]
     if local:
-        eq += [f"region 1:  δ(x) = | g(x) − μ_loc(x) |,  μ_loc = mean of g over A₁ ∩ W_r(x),  r = {cfg.local_radius}"]
+        eq += [f"region 1:  δ(x) = | g(x) − μ_loc(x) |,  μ_loc = mean of g over A₁ ∩ W_r(x),  r = {cfg.srg_radius()}"]
     eq += ["pop the smallest δ from the SSL and give x to that region"]
     if stop:
         eq += ["region 1 takes x only if  δ(x) ≤ T_L  ∧  |g(x) − μ_A| ≤ T_G,  else x is left to the others",
-               f"σ_A = max( s_A, σ_floor ),  T_L = k_L·σ_A,  T_G = k_G·σ_A,  k_L = {cfg.k_local:g}, k_G = {cfg.k_global:g}",
+               f"σ_A = {'min( ' if cfg.sigma_cap else ''}max( s_A, σ_floor ){f', σ_cap = {cfg.sigma_cap:g} )' if cfg.sigma_cap else ''},  T_L = k_L·σ_A,  T_G = k_G·σ_A,  k_L = {cfg.srg_k('local'):g}, k_G = {cfg.srg_k('global'):g}",
                "(SRG has no passes: μ_A and s_A are the running values at each decision)"]
     else:
         eq += ["no stopping rule"]
@@ -594,8 +619,8 @@ def _growth_srg(result, cfg, b, st, tr):
     tips = {"mean_A": "Mean of g over the tumor region at the moment x was scored.",
             "δ(x)": "Difference between x and the region it is compared with; the SSL always pops the "
                     "smallest δ of all regions next.",
-            "background seeds": "With automatic seeding SRG has no operator-planted competitors, so a grid of "
-                                "single-pixel seeds inside H plays that role."}
+            "seed regions": "Region 1 is the tumor seed (automatic core or click); regions 2 and 3 are the "
+                            "planted healthy-tissue and background seeds it competes with."}
     if local:
         tips["μ_loc"] = GROWTH_TIPS["μ_loc"].replace("L over", "g over")
     if stop:
@@ -619,30 +644,30 @@ def _growth(result, cfg, b):
     if tr.get("events") is None:
         b("note", "Pixel-level log not recorded for this run.")
     b("sub", "OUTPUT")
-    b("output", [("A", _arr(st.image, "mask"), "7 · Post-processing")])
+    b("output", [("A", _arr(st.image, "mask"), "6 · Post-processing")])
 
 
 def _tessellation(result, cfg, b):
     st = result.stage("tessellation")
     b("sub", "PROCESS · full SRG tessellation (Eq. 3.7)")
     b("note", "Every planted region grows under the same rule until no pixel is unallocated; "
-              "region 1 (the tumor click) is passed on to Stage 6.")
+              "region 1 (the tumor click) is passed on to Stage 5.")
     b.table(["region", "area (px)", "mean g"],
             [[k, _n(v), _f(st.info["region means"][k], 2)] for k, v in st.info["region areas"].items()])
     b("sub", "OUTPUT")
-    b("output", [("labels", f"{st.info['seed regions']} regions", "6 · region 1 = A")])
+    b("output", [("labels", f"{st.info['seed regions']} regions", "5 · region 1 = A")])
 
 
-# ─── Stage 7 · Final ──────────────────────────────────────────────────────────
+# ─── Stage 6 · Final ──────────────────────────────────────────────────────────
 def _final(result, cfg, b):
     st = result.stage("final")
     i = st.info
     if "before" not in i:
-        b("bad", f"{result.status}: no seed, so no region was grown.")
+        b("bad", "No tumor candidate: no seed, so no region was grown.")
         b("output", [("M", "empty mask", "Evaluation")])
         return
     b("sub", "INPUT")
-    b("input", [("A", f"{_n(i['before'])} px", "6 · Region growing"), ("S", "seed core", "5 · Seed core")])
+    b("input", [("A", f"{_n(i['before'])} px", "5 · Region growing"), ("S", "seed core", "4 · Seed core")])
     b("sub", "PROCESS · post-processing (Section 3.2.1, step 4)")
     b("eq", ["A₁ = fill_holes(A)",
              f"A₂ = open(A₁, disk {cfg.post_open_radius})   (skipped if it would empty A₁)",
@@ -654,11 +679,6 @@ def _final(result, cfg, b):
         ["A₂ opened", _n(i["after_open"]), f"{i['after_open'] - i['after_fill']:+,}"],
         ["M = components touching S", _n(i["after"]), f"{i['after'] - i['after_open']:+,}"]],
         f"{i.get('components_dropped', 0)} component(s) not touching S were dropped.")
-    hp, frac = i.get("_head_px"), i.get("_brain_frac")
-    if hp:
-        b("eq", [f"status = WARN  if |M| / |H| > {cfg.leak_warn_frac:.2f}"])
-        line = f"|M| / |H| = {_n(i['after'])} / {_n(hp)} = {frac:.3f}  →  {st.status}"
-        b("good" if st.status == "OK" else "bad", line)
     b("sub", "OUTPUT")
     b("output", [("M", _arr(st.image, "mask"), "Evaluation (compared with the ground truth G)")])
     tips = {
@@ -669,11 +689,7 @@ def _final(result, cfg, b):
                  "spurs and bridges too thin to survive the erosion and keeps the rest of the shape.",
         "components touching S": "After the opening, A₂ is split into connected components; only those "
                                  "containing at least one seed-core pixel are kept as the final mask M.",
-        "WARN": "Diagnostic only, it does not change M: a mask covering this much of the head is a probable leak.",
     }
-    if _srg_manual(result):
-        tips["|H|"] = ("H is the head mask. SRG with manual seeding does not use it to grow; it is computed only "
-                       "for this leakage warning.")
     b("tips", tips)
 
 
@@ -683,10 +699,10 @@ def _evaluation(result, cfg, b, chosen):
     gt = meta.get("ground_truth")
     c = evalx.counts(result)
     b("sub", "INPUT")
-    b("input", [("M", f"{_n(result.mask.sum())} px", "7 · Final"),
+    b("input", [("M", f"{_n(result.mask.sum())} px", "6 · Final"),
                 ("G", f"{_n(c['G'])} px  ({_name(gt)})" if c else "none found", "ground-truth mask (BRISC 2025)"),
-                ("S", f"{_n(result.stage('seed').image.sum())} px", "5 · Seed core (seed hit)")])
-    b("note", f"{str(meta.get('method', '')).upper()} · {meta.get('seed_mode')} seeding · status {result.status}. "
+                ("S", f"{_n(result.stage('seed').image.sum())} px", "4 · Seed core (seed hit)")])
+    b("note", f"{str(meta.get('method', '')).upper()} · {meta.get('seed_mode')} seeding. "
               "Every value is recomputed from the masks of this run (Eq. 3.32–3.39).")
     if not chosen:
         b("note", "No metric selected — tick one above.")
@@ -736,6 +752,5 @@ def report(result, cfg, key, metrics=None):
         b("note", "No stage details for this view.")
         return b.out
     b("head", st.name)
-    b("note", f"status {st.status}")
     STAGES[key](result, cfg, b)
     return b.out

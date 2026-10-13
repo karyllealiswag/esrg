@@ -5,12 +5,17 @@ Purpose : Hold every tunable parameter in one dataclass so runs are reproducible
           and the ablation switches (Chapter 3, Table 3.3) live in one place.
 Function : `Config` is a frozen-by-convention dataclass; `.replace(**kw)` returns a
           validated copy for experiments, and `.save`/`.load` persist it as JSON.
-Notes   : Values reflect the final tuning frozen on the TRAIN split. Phase-1/2/3
+Notes   : Defaults are the values frozen on the BRISC TRAIN split. BraTS runs load
+          configs/esrg_brats_frozen.json (pre_stripped=True, tuned on the BraTS
+          development set, experiments/PROTOCOL_BRATS.md) instead. Phase-1/2/3
           research switches (contrast ranking, orbit exclusion, adaptive k) default
           to their evaluated settings; changing them re-opens the ablation.
 """
 from dataclasses import dataclass, asdict, field
 import json
+
+
+REMOVED = ("purify_manual_seed", "bg_seed_step")
 
 
 @dataclass
@@ -24,9 +29,14 @@ class Config:
     use_log_local: bool = True      # Objective 2: local log-domain difference measure
     use_stopping: bool = True       # Objective 3: adaptive stopping criterion
     use_n4: bool = False            # N4 bias correction (ablation arm only, never part of ESRG)
+    esrg_compete: bool = False      # ESRG + manual/planted seeding only: seeds of type >= 2
+                                    # grow as SRG competitors over the whole image (Experiment
+                                    # E8). Off = ESRG as proposed, which ignores them.
 
     # ── Input ─────────────────────────────────────────────────────────
     max_side: int = 512             # longer side is resized to this (keeps runtime bounded)
+    pre_stripped: bool = False      # input is already skull-stripped (BraTS): the head
+                                    # mask is the non-zero brain, no skull stripping
 
     # ── Skull stripping ───────────────────────────────────────────────
     frame_open_radius: int = 2      # removes thin frames / text / arrows before head detection
@@ -43,14 +53,9 @@ class Config:
     min_clearance: float = 8.0      # a candidate's core must sit this far inside the
                                     # head outline, beyond its own inscribed radius
     manual_seed_radius: int = 3     # manual clicks are dilated into a small region
-    manual_seed_types: int = 4      # number of seed types selectable in manual mode
-                                    # (type 1 = tumor, 2+ = competing regions for SRG)
-    purify_manual_seed: bool = True # ESRG + manual seeding only: erode the click disk to
-                                    # its medial pixels (same seed_core_frac test as the
-                                    # auto core) before growing, so a boundary/partial-
-                                    # volume pixel the disk happened to catch can't inflate
-                                    # the initial sigma_A the stopping bound is based on.
-                                    # No effect on seed_mode="auto" or on method="srg".
+    manual_seed_types: int = 4      # seed types: 1 = tumor, 2 = healthy tissue,
+                                    # 3 = background (air), 4 = scalp/skull (heads that
+                                    # are not skull-stripped); 2-4 compete with the tumor
 
     # ── Phase 1: contrast/shape-aware seed ranking (Improvement Masterplan) ───
     rank_use_contrast: bool = True  # rank by brightness relative to local surround
@@ -89,13 +94,27 @@ class Config:
     local_radius: int = 3           # r  -> (2r+1)x(2r+1) window
     k_local: float = 1.5            # k_L
     k_global: float = 3.0           # k_G  (must be > k_L)
+    sigma_cap: float = None         # upper clamp on sigma_A: min(max(s_A, floor), max(cap, floor)).
+                                    # None = off (the proposed method as evaluated so far)
+    flood_frac: float = None        # stopping-bound arms: if the grown region exceeds this
+                                    # fraction of the brain mask, regrow with k_L, k_G * flood_shrink
+    flood_shrink: float = 0.7       # per-retry multiplier of k_L and k_G (cumulative)
+    flood_tries: int = 3            # maximum retries
+    global_running: bool = False    # ASC global test against the running region mean (per
+                                    # absorbed pixel) instead of the mean frozen per pass
+    healthy_rule: str = "off"       # healthy-tissue rule: "off" | "veto" (reject pixels nearer the
+                                    # healthy prototype than the region mean) | "rescue" (absorb a
+                                    # pixel that fails only the local bound unless it is nearer the
+                                    # healthy prototype) | "both"
+    healthy_proto: str = "median"   # healthy prototype over the brain interior: "median" | "mode"
+                                    # (histogram peak) | "otsu3" (middle class of a 3-class Otsu)
     max_passes: int = 4             # P_max
     sigma_floor_min: float = 0.02   # lower clamp for the estimated noise floor (log units)
     lazy_tol: float = 1e-9          # re-queue tolerance for lazy re-evaluation
 
     # ── Baseline SRG ──────────────────────────────────────────────────
-    bg_seed_step: int = 8           # grid step for automatic background seeds
-                                    # (SRG + automatic seeding only)
+    # With automatic seeding the tumor seed is selected automatically and the
+    # competing seeds (types 2-3) are planted, exactly as under manual seeding.
     # ESRG modules grafted onto the baseline, one at a time, to measure what each
     # adds to SRG on its own (GUI "Applied Methods"). Off = the 1994 algorithm, so
     # every batch configuration dict(method="srg") is unchanged. They act on the
@@ -104,6 +123,14 @@ class Config:
                                     # local measure delta = |L - mu_loc| (radius local_radius)
     srg_use_stopping: bool = False  # Objective 3: region 1 absorbs only within
                                     # T_L = k_local*sigma_A and T_G = k_global*sigma_A
+    # The modules' own tuned values (BraTS: tuned on the same grid as ESRG, PROTOCOL_BRATS
+    # Section 5.3). None = share ESRG's local_radius / k_local / k_global (BRISC behaviour).
+    srg_use_healthy: bool = False   # the healthy-tissue rule on region 1, with ESRG's healthy_rule
+    srg_connectivity: int = 8       # 8 as in Adams & Bischof (1994), Sec. II; 4 reproduces results
+                                    # computed before 2026-10-13
+    srg_local_radius: int = None
+    srg_k_local: float = None
+    srg_k_global: float = None
 
     # ── Post-processing ───────────────────────────────────────────────
     post_open_radius: int = 1
@@ -121,7 +148,24 @@ class Config:
         assert self.k_global > self.k_local, "k_global must exceed k_local"
         assert self.local_radius >= 1 and self.max_passes >= 1
         assert self.manual_seed_types >= 1, "manual_seed_types must be >= 1"
+        assert self.srg_k("global") > self.srg_k("local"), "srg_k_global must exceed srg_k_local"
+        assert self.sigma_cap is None or self.sigma_cap > 0, "sigma_cap must be positive"
+        assert self.healthy_rule in ("off", "veto", "rescue", "both"), "healthy_rule: off|veto|rescue|both"
+        assert self.healthy_proto in ("median", "mode", "otsu3"), "healthy_proto: median|mode|otsu3"
+        assert self.srg_connectivity in (4, 8), "srg_connectivity must be 4 or 8"
+        assert not (self.srg_use_healthy and self.healthy_rule == "off"),             "srg_use_healthy mirrors ESRG's healthy_rule, which must not be 'off'"
+        assert self.flood_frac is None or 0 < self.flood_frac <= 1, "flood_frac must be in (0, 1]"
+        assert 0 < self.flood_shrink < 1 and self.flood_tries >= 1
         return self
+
+    def srg_k(self, which):
+        """k_L ('local') or k_G ('global') read by the SRG + ASC module."""
+        own = self.srg_k_local if which == "local" else self.srg_k_global
+        return own if own is not None else (self.k_local if which == "local" else self.k_global)
+
+    def srg_radius(self):
+        """Window radius read by the SRG + LLDM module."""
+        return self.srg_local_radius if self.srg_local_radius is not None else self.local_radius
 
     def to_dict(self):
         return asdict(self)
@@ -132,8 +176,11 @@ class Config:
 
     @classmethod
     def load(cls, path):
+        """Read a saved config; keys of settings since removed (purify_manual_seed,
+        bg_seed_step) are dropped so older files still load."""
         with open(path) as f:
-            return cls(**json.load(f)).validate()
+            d = json.load(f)
+        return cls(**{k: v for k, v in d.items() if k not in REMOVED}).validate()
 
     def replace(self, **kw):
         """Copy with overrides (used by ablation / tuning scripts)."""

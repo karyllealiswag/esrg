@@ -22,7 +22,6 @@ from . import metrics
 # key, panel label, objective it evaluates
 METRICS = [
     ("dsc", "DSC", "Overall delineation"),
-    ("iou", "IoU", "Overall delineation"),
     ("recall", "Recall", "Objective 2 · undersegmentation"),
     ("precision", "Precision", "Objective 3 · boundary leakage"),
     ("leakage", "Leakage", "Objective 3 · boundary leakage"),
@@ -30,7 +29,7 @@ METRICS = [
     ("assd", "ASSD", "Objective 3 · boundary accuracy"),
     ("seed", "Seed hit", "Objective 1 · seed selection"),
 ]
-NEEDS_GT = {"dsc", "iou", "recall", "precision", "leakage", "hd95", "assd", "seed"}
+NEEDS_GT = {"dsc", "recall", "precision", "leakage", "hd95", "assd", "seed"}
 SUCCESS_DSC = 0.70
 
 
@@ -86,22 +85,6 @@ def _dsc(c):
         f"    = {_n(num)} / {_n(den)}" if den else "    = 0 / 0",
         f"    = {_f(v)}",
         f"Success flag: {_f(v)} {'≥' if den and v >= SUCCESS_DSC else '<'} {SUCCESS_DSC:.2f}",
-    ]
-
-
-def _iou(c):
-    den = c["tp"] + c["fp"] + c["fn"]
-    v = _ratio(c["tp"], den)
-    d = _ratio(2 * c["tp"], 2 * c["tp"] + c["fp"] + c["fn"])
-    return v, "overlap divided by union of M and G", [
-        "IoU = TP / (TP + FP + FN)   (Eq. 3.33)",
-        "    = |M ∩ G| / |M ∪ G|"], [
-        "Substitute the pixel counts:",
-        f"IoU = {_n(c['tp'])} / ({_n(c['tp'])} + {_n(c['fp'])} + {_n(c['fn'])})",
-        f"    = {_n(c['tp'])} / {_n(den)}",
-        f"    = {_f(v)}",
-        f"Cross-check: IoU = DSC / (2 − DSC)",
-        f"    = {_f(d)} / (2 − {_f(d)}) = {_f(d / (2 - d) if den else float('nan'))}",
     ]
 
 
@@ -242,12 +225,11 @@ def _seed(result, gt):
     S = st.image.astype(bool) if st is not None else np.zeros_like(gt)
     mode = result.meta.get("seed_mode", "auto")
     origin = ("automatic: medial core of top-ranked candidate (Eq. 3.14)" if mode == "auto"
-              else "manual clicks dilated to r = 3 disks" + (" and purified to their core"
-                                                             if result.meta.get("method") == "esrg" else ""))
+              else "manual clicks dilated to r = 3 disks")
     if not S.any():
         return None, "no seed: no tumor candidate", [
             "Hit ⇔ S ⊆ G   (Eq. 3.38)"], [
-            "Stage 5 produced no seed core, so the",
+            "Stage 4 produced no seed core, so the",
             "system reported 'no tumor candidate'.",
             "Counted in the batch as a miss."]
     inside = int((S & gt).sum())
@@ -262,7 +244,7 @@ def _seed(result, gt):
         "Inside share = |S ∩ G| / |S|",
         "Localization = distance from the",
         "  centroid of S to the nearest G px"], [
-        "S = Stage 5 · Seed core:",
+        "S = Stage 4 · Seed core:",
         f"  {origin}",
         f"|S|     = {_n(S.sum())} px",
         f"|S ∩ G| = {_n(inside)} px inside the tumor",
@@ -304,8 +286,6 @@ def explain(result, leak_ratio=2.0):
             continue
         if key == "dsc":
             v, verdict, formula, steps = _dsc(c)
-        elif key == "iou":
-            v, verdict, formula, steps = _iou(c)
         elif key == "recall":
             v, verdict, formula, steps = _recall(c)
         elif key == "precision":

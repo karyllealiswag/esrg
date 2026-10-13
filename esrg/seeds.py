@@ -128,34 +128,15 @@ def select_seed(img, mask, depth, cfg):
     return core, info
 
 
-def purify_core(core, cfg, info=None):
-    """
-    Erode a seed core to its own medial pixels (mirrors the dt >= seed_core_frac *
-    dt.max() clip select_seed() already applies to the auto core), so growth's
-    initial Welford stats aren't seeded from partial-volume boundary pixels.
-
-    Used to bring a raw manual click disk up to the same purity guarantee the
-    auto core gets for free from its shape-aware distance transform.
-    """
-    if not core.any():
-        return core
-    dt = ndi.distance_transform_edt(core)
-    clipped = core & (dt >= cfg.seed_core_frac * dt.max())
-    if info is not None:
-        # Recorded for the GUI only; same fields as select_seed()'s "_core".
-        info["_core"] = {"dt_max": float(dt.max()), "cut": float(cfg.seed_core_frac * dt.max()),
-                         "comp_area": int(core.sum()), "fallback": not clipped.any(),
-                         "purified": True}
-    return clipped if clipped.any() else (core & (dt >= dt.max()))
-
-
 def manual_seed(points, shape, cfg):
     """
     Build the seed map from user clicks (baseline comparison / manual mode).
 
-    points are (r, c) or (r, c, type). Type 1 is the tumor; types 2..n are the
-    competing regions the classical SRG tessellates against. Returns (labels, info)
-    where labels == 1 is the tumor core.
+    points are (r, c) or (r, c, type). Type 1 is the tumor; type 2 healthy tissue
+    and type 3 background are the competing regions the classical SRG (and ESRG in
+    compete mode) tessellates against. Returns (labels, info) where labels == 1 is
+    the tumor core. Clicks are used as planted -- no seed is eroded or purified, so
+    SRG and ESRG start from the identical disk.
     """
     labels = np.zeros(shape, np.int32)
     clicks = {}

@@ -10,7 +10,9 @@ Function : normalize() rescales to [0,255] on robust percentiles; head_mask()
           gives a robust sigma for the stopping bound (Objective 3).
 Notes   : Head masking is deliberate — on 2D coronal/sagittal slices the brain
           cannot be separated from face/neck, so interior filtering is delegated to
-          seed selection. N4 is an ablation arm only, never part of ESRG.
+          seed selection. Already skull-stripped input (cfg.pre_stripped, BraTS)
+          skips all of it: brain_mask() takes the non-zero brain. N4 is an ablation
+          arm only, never part of ESRG.
 """
 import numpy as np
 from scipy import ndimage as ndi
@@ -65,6 +67,8 @@ def head_mask(img, cfg):
       info  : granulometry diagnostics, surfaced in the GUI's Stage 2 panel
     """
     info = {"radius": None, "area_drop": 0.0, "ring_found": False, "warnings": []}
+    if cfg.pre_stripped:
+        return brain_mask(img, info)
     g = filters.gaussian(img, sigma=1.0, preserve_range=True)
 
     # Tissue vs background (air and cortical bone are both dark on T1)
@@ -120,6 +124,29 @@ def head_mask(img, cfg):
     return head, depth, info
 
 
+def brain_mask(img, info=None):
+    """
+    Head mask of an already skull-stripped slice (cfg.pre_stripped, BraTS): the
+    stripping set every non-brain pixel to 0, so the brain is the largest non-zero
+    component with its holes (dark CSF, necrosis clipped to 0) filled. No Otsu, no
+    opening and no granulometry -- there is no scalp or skull to remove. depth is
+    then the distance from the brain outline, which the seed stage's interior and
+    clearance filters read.
+    """
+    info = info if info is not None else {"warnings": []}
+    nonzero = img > 0
+    largest = _largest_cc(nonzero)
+    brain = ndi.binary_fill_holes(largest)
+    depth = ndi.distance_transform_edt(brain)
+    info["pre_stripped"] = True
+    info["_steps"] = {"nonzero_px": int(nonzero.sum()), "largest_px": int(largest.sum()),
+                      "head_px": int(brain.sum()), "image_px": int(brain.size),
+                      "depth_max": float(depth.max())}
+    if brain.sum() < 0.02 * brain.size:
+        info["warnings"].append("Brain region very small; check the input image.")
+    return brain, depth, info
+
+
 # ─── 3. N4 bias correction (ablation only) ────────────────────────────────────
 def n4_correct(img, mask, shrink=2, iterations=(50, 50, 30)):
     """N4ITK via SimpleITK. Returns (corrected, bias_field). Raises ImportError if unavailable."""
@@ -161,6 +188,29 @@ def noise_floor_details(L, mask, min_value=0.02):
     return {"n": int(resid.size), "median_resid": med, "mad": mad,
             "raw_sigma": 1.4826 * mad, "min_value": float(min_value),
             "sigma_floor": float(max(1.4826 * mad, min_value))}
+
+
+def healthy_prototype(G, region, how="median"):
+    """
+    Typical healthy-tissue value of G over `region` (the brain interior; the background is
+    already removed by the brain mask). Most of the brain is nearly homogeneous healthy
+    tissue, so a robust centre of its values is used by the healthy-tissue rule:
+      median : median of G (default, robust to the tumor itself)
+      mode   : peak of the smoothed 120-bin histogram
+      otsu3  : mean of the middle class of a 3-class multi-Otsu (dark / healthy / bright)
+    """
+    vals = G[region]
+    if vals.size == 0:
+        return None
+    if how == "median":
+        return float(np.median(vals))
+    if how == "mode":
+        h, e = np.histogram(vals, bins=120)
+        k = int(np.argmax(ndi.gaussian_filter1d(h.astype(float), 2)))
+        return float((e[k] + e[k + 1]) / 2)
+    th = filters.threshold_multiotsu(vals.reshape(-1, 1), classes=3)
+    mid = vals[(vals >= th[0]) & (vals < th[1])]
+    return float(mid.mean()) if mid.size else float(np.median(vals))
 
 
 def noise_floor(L, mask, min_value=0.02):

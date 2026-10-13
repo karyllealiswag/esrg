@@ -5,7 +5,7 @@ Purpose : Load MRI slices and ground-truth masks, and decode BRISC metadata
           (tumor type, plane) from filenames.
 Function : Images load as grayscale float64 in [0,255] (downscaled past max_side);
           masks load as boolean via a >127 threshold with nearest-neighbour resize
-          to match the image; a regex maps BRISC names to tumor/plane fields.
+          to match the image; regexes map BRISC and BraTS names to tumor/plane fields.
 Notes   : BRISC masks are effectively binary with a thin anti-aliased edge fringe,
           so the >127 threshold is stable. Source files are never modified.
 """
@@ -17,6 +17,10 @@ from PIL import Image
 TUMOR_CODES = {"gl": "glioma", "me": "meningioma", "pi": "pituitary", "nt": "no_tumor"}
 PLANE_CODES = {"ax": "axial", "co": "coronal", "sa": "sagittal"}
 _NAME_RE = re.compile(r"brisc2025_(train|test)_(\d+)_([a-z]{2})_([a-z]{2})_t1", re.I)
+# BraTS 2023 slices exported for the evaluation (brats_eval/, experiments/sampling.py):
+# <glioma|meningioma>_BraTS-<GLI|MEN>-<patient>-<session>_ax_<slice>_t1c.png
+_BRATS_RE = re.compile(r"(?:(glioma|meningioma)_)?BraTS-(GLI|MEN)-(\d{5})-(\d{3})_ax_(\d+)_t1c", re.I)
+BRATS_TYPES = {"GLI": "glioma", "MEN": "meningioma"}
 
 
 def load_image(path, max_side=512):
@@ -60,6 +64,28 @@ def parse_brisc_name(path):
     split, idx, t, p = m.groups()
     return {"split": split, "index": int(idx),
             "tumor": TUMOR_CODES.get(t.lower(), t), "plane": PLANE_CODES.get(p.lower(), p)}
+
+
+def parse_brats_name(path):
+    """Return {'tumor','plane','patient','session','slice'} from a BraTS slice name (unknown -> None).
+    The evaluation reads the tumor type from brats_eval/split.csv; this parse only labels
+    a slice opened on its own (GUI, pipeline metadata)."""
+    m = _BRATS_RE.search(os.path.basename(path))
+    if not m:
+        return {"tumor": None, "plane": None, "patient": None, "session": None, "slice": None}
+    _, kind, patient, session, z = m.groups()
+    return {"tumor": BRATS_TYPES[kind.upper()], "plane": "axial", "patient": patient,
+            "session": session, "slice": int(z)}
+
+
+def parse_name(path):
+    """BRISC fields when the name is a BRISC one, else BraTS fields (split/index None)."""
+    k = parse_brisc_name(path)
+    if k["tumor"] is None:
+        b = parse_brats_name(path)
+        if b["tumor"] is not None:
+            k = {"split": None, "index": None, **b}
+    return k
 
 
 def list_pairs(root):
