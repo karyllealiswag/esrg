@@ -65,10 +65,13 @@ Set: test | n = 600 patients (one slice each) | arms: 12. Calls: Holm p < .05 an
 | E5a | ASC replaces competitors: SRG with 3 seeds vs SRG + ASC with the tumor seed | pooled | DSC (guard) | 0.852 | 0.590 | -0.100 | < .001 | -0.61 | worse |
 | E5b | ASC added to SRG, tumor seed only (degenerate baseline) | glioma | Precision | 0.012 | 1.000 | 0.983 | < .001 | 0.86 | better |
 | E5b | ASC added to SRG, tumor seed only (degenerate baseline) | glioma | HD95 (px) | 369.645 | 31.012 | 338.009 | < .001 | 0.86 | better |
+| E5b | ASC added to SRG, tumor seed only (degenerate baseline) | glioma | DSC (guard) | 0.023 | 0.320 | 0.285 | < .001 | 0.82 | better |
 | E5b | ASC added to SRG, tumor seed only (degenerate baseline) | meningioma | Precision | 0.008 | 0.998 | 0.980 | < .001 | 0.86 | better |
 | E5b | ASC added to SRG, tumor seed only (degenerate baseline) | meningioma | HD95 (px) | 375.439 | 10.853 | 359.156 | < .001 | 0.86 | better |
+| E5b | ASC added to SRG, tumor seed only (degenerate baseline) | meningioma | DSC (guard) | 0.015 | 0.802 | 0.788 | < .001 | 0.85 | better |
 | E5b | ASC added to SRG, tumor seed only (degenerate baseline) | pooled | Precision | 0.010 | 1.000 | 0.982 | < .001 | 0.86 | better |
 | E5b | ASC added to SRG, tumor seed only (degenerate baseline) | pooled | HD95 (px) | 372.216 | 20.607 | 348.859 | < .001 | 0.86 | better |
+| E5b | ASC added to SRG, tumor seed only (degenerate baseline) | pooled | DSC (guard) | 0.019 | 0.590 | 0.564 | < .001 | 0.84 | better |
 | E6 | ASC removed from ESRG (compete mode) | glioma | Precision | 0.073 | 1.000 | 0.872 | < .001 | 0.86 | better |
 | E6 | ASC removed from ESRG (compete mode) | glioma | HD95 (px) | 185.319 | 25.049 | 154.664 | < .001 | 0.81 | better |
 | E6 | ASC removed from ESRG (compete mode) | glioma | DSC (guard) | 0.136 | 0.542 | 0.325 | < .001 | 0.55 | better |

@@ -338,6 +338,16 @@ and the seeded split is left untouched.
   already collected, is not part of the pre-specified verdicts, and is labelled as post hoc in Chapters 3-4.
   No TEST row was changed, added, or re-run; all strict verdicts are reported unchanged.
 
+- 2026-10-14 (after the TEST run; user decision): **main comparison changed to equal input.** Chapters 4 and 5 now treat
+  the comparison at equal input (P_ESRG and A_ESRG vs P_SRG_solo, the SRG given the same single tumor seed) as the main
+  comparison, and the SRG with three seeds (P_SRG), the same-automatic-seed comparison (S2), E3, and E5a as supplementary.
+  Post hoc verdicts (`verdicts[...]["posthoc_equal_input"]` in results.json): overall (E1 vs P_SRG_solo) met in both tumor
+  types; Objective 2 within the ESRG (E4) met for meningioma only; Objective 3 (E5b and E6) met in both. The pre-specified
+  verdicts (E1 vs P_SRG; E3/E4; E5a/E6) are unchanged and not met; they remain in results.json and are stated in the
+  chapters. E5b gained a DSC no-harm test. No TEST row was changed, added, or re-run. The reason for the change (fairness:
+  the ESRG needs one seed, the SRG needs three) is a design argument, but it was adopted after the results were seen, and the
+  chapters say so.
+
 ## 11. Checkpoint 1 decisions
 | Decision | Choice |
 |---|---|

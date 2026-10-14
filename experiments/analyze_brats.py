@@ -44,7 +44,7 @@ PAIRED = {
     "E3":  ("P_SRG", "P_SRG_L", ["recall"], "dsc", "2", "LLDM added to SRG"),
     "E4":  ("P_ESRG_noL", "P_ESRG", ["recall"], "dsc", "2", "LLDM removed from ESRG (no cap, intensity domain)"),
     "E5a": ("P_SRG", "P_SRG_solo_S", ["precision", "hd95_wc"], "dsc", "3", "ASC replaces competitors: SRG with 3 seeds vs SRG + ASC with the tumor seed"),
-    "E5b": ("P_SRG_solo", "P_SRG_solo_S", ["precision", "hd95_wc"], None, "3", "ASC added to SRG, tumor seed only (degenerate baseline)"),
+    "E5b": ("P_SRG_solo", "P_SRG_solo_S", ["precision", "hd95_wc"], "dsc", "3", "ASC added to SRG, tumor seed only (degenerate baseline)"),
     "E6":  ("P_ESRG_C_noS", "P_ESRG_C", ["precision", "hd95_wc"], "dsc", "3", "ASC removed from ESRG (compete mode)"),
 }
 
@@ -192,7 +192,18 @@ def verdicts(R):
         o2 = all(t(e, "recall")["call"] == "better" and t(e, "dsc")["call"] != "worse" for e in ("E3", "E4"))
         o3 = all(t(e, "precision")["call"] == "better" and t(e, "hd95_wc")["call"] == "better"
                  and t(e, "dsc")["call"] != "worse" for e in ("E5a", "E6"))
-        V[sc] = {"overall": overall, "objective1": o1, "objective2": o2, "objective3": o3}
+        # POST HOC (defined after the TEST run, PROTOCOL_BRATS §10): the like-for-like comparisons at equal input.
+        # Objective 2 within the ESRG (E4); Objective 3 with the ASC added to / removed from a single-seed region
+        # (E5b, E6). The pre-specified verdicts above (E1 vs P_SRG, E3/E4, E5a/E6) are unchanged and still reported.
+        ok = lambda e, m, call: t(e, m)["call"] == call
+        o2_eq = ok("E4", "recall", "better") and t("E4", "dsc")["call"] != "worse"
+        o3_eq = all(ok(e, "precision", "better") and ok(e, "hd95_wc", "better") and t(e, "dsc")["call"] != "worse"
+                    for e in ("E5b", "E6"))
+        e1p = R["e1"][sc]["metrics"]["dsc"]["post"]
+        o_eq = (e1p["P_ESRG vs P_SRG_solo"]["call"] == "better") and (e1p["A_ESRG vs P_SRG_solo"]["call"] == "better")
+        V[sc] = {"overall": overall, "objective1": o1, "objective2": o2, "objective3": o3,
+                 "posthoc_equal_input": {"overall": bool(o_eq), "objective2_within_esrg": bool(o2_eq),
+                                         "objective3": bool(o3_eq)}}
     return V
 
 
